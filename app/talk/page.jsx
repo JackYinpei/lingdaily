@@ -8,7 +8,7 @@ import { useSession } from "next-auth/react"
 import NewsFeed from "@/app/components/NewsFeed";
 import { History } from "@/app/components/History";
 
-import { CombineInitPrompt } from '@/lib/utils';
+import { CombineInitPrompt } from '@/app/lib/utils';
 import { useLanguage } from '@/app/contexts/LanguageContext';
 import { GeminiLiveServiceImpl } from '@/app/lib/GeminiLiveService';
 
@@ -539,12 +539,6 @@ export default function Home() {
                             <p className="text-muted-foreground mt-1">Learn English through news and AI conversation</p>
                         </div>
                         <div className="flex items-center gap-4">
-                            <a href="/history" className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
-                                {uiText.history}
-                            </a>
-                            <a href="/history/words" className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
-                                {uiText.vocab}
-                            </a>
                         </div>
                     </div>
                 </div>
@@ -557,9 +551,6 @@ export default function Home() {
                     <div className="lg:hidden flex-shrink-0">
                         <div className="flex items-center justify-between">
                             <h2 className="text-xl font-semibold text-foreground">Latest News</h2>
-                            <a href="/history" className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors text-sm">
-                                {uiText.historyShort}
-                            </a>
                         </div>
                         <div className="overflow-x-auto custom-scroll pb-2 -mx-4 px-4">
                             <NewsFeed

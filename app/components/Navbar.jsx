@@ -16,7 +16,6 @@ export default function Navbar() {
           {status === 'authenticated' && (
             <nav className="flex items-center gap-4 text-sm">
               <Link href="/talk" className="hover:underline">对话</Link>
-              <Link href="/history" className="hover:underline">历史</Link>
             </nav>
           )}
         </div>

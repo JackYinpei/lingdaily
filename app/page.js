@@ -87,11 +87,8 @@ export default async function Home() {
     <>
       <noscript>
         <section className="mx-auto my-6 max-w-3xl rounded-2xl border border-border bg-card/60 p-4 text-sm leading-relaxed text-foreground">
-          <strong>LingDaily works without JavaScript.</strong> Read curated news summaries, study
-          vocabulary from our Longtail Library, and start a guided English conversation at{" "}
-          <Link href="/talk">lingdaily.yasobi.xyz/talk</Link>. You can always review open transcripts
-          at <Link href="/longtail">lingdaily.yasobi.xyz/longtail</Link> for additional practice
-          ideas.
+          <strong>LingDaily works without JavaScript.</strong> Read curated news summaries and start a guided English conversation at{" "}
+          <Link href="/talk">lingdaily.yasobi.xyz/talk</Link>.
         </section>
       </noscript>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />

@@ -65,12 +65,6 @@ export default function HomePageClient({ signedIn, signOutAction, locale = DEFAU
                   <Link href="/talk" className="text-muted-foreground hover:text-foreground transition-colors">
                     {t.nav.talk}
                   </Link>
-                  <Link href="/podcasts" className="text-muted-foreground hover:text-foreground transition-colors">
-                    {t.nav.podcasts}
-                  </Link>
-                  <Link href="/history" className="text-muted-foreground hover:text-foreground transition-colors">
-                    {t.nav.history}
-                  </Link>
                   <ThemeToggle />
                   <form action={signOutAction}>
                     <Button variant="outline" className="font-semibold">
@@ -80,9 +74,6 @@ export default function HomePageClient({ signedIn, signOutAction, locale = DEFAU
                 </>
               ) : (
                 <>
-                  <Link href="/podcasts" className="text-muted-foreground hover:text-foreground transition-colors">
-                    {t.nav.podcasts}
-                  </Link>
                   <Link href="#features" className="text-muted-foreground hover:text-foreground transition-colors">
                     {t.nav.features}
                   </Link>
@@ -124,37 +115,6 @@ export default function HomePageClient({ signedIn, signOutAction, locale = DEFAU
                 </Button>
               </Link>
               <HeroVideoDemo buttonLabel={t.hero.secondaryBtn} />
-            </div>
-          </div>
-        </section>
-
-        {/* Podcasts Section */}
-        <section className="bg-gradient-to-tr from-rose-500/10 to-orange-500/10 border-y border-rose-500/20 py-16">
-          <div className="container mx-auto px-4 text-center">
-            <div className="max-w-3xl mx-auto">
-              <span className="inline-block px-3 py-1 rounded-full bg-rose-500/20 text-rose-500 text-sm font-semibold mb-4">
-                New Feature
-              </span>
-              <h2 className="text-3xl md:text-4xl font-bold mb-4">{t.podcasts.title}</h2>
-              <p className="text-xl text-muted-foreground mb-8">
-                {t.podcasts.subtitle}
-              </p>
-              <div className="flex flex-wrap justify-center gap-4 mb-8">
-                {t.podcasts.features.map((feature, i) => (
-                  <div key={i} className="flex items-center gap-2 bg-background/50 px-4 py-2 rounded-full border border-border">
-                    <CheckCircle className="w-4 h-4 text-rose-500" />
-                    <span className="text-sm font-medium">{feature}</span>
-                  </div>
-                ))}
-              </div>
-              <Link href="/podcasts">
-                <Button size="lg" className="bg-gradient-to-r from-rose-500 to-orange-500 hover:from-rose-600 hover:to-orange-600 text-white border-0 shadow-lg shadow-rose-500/20">
-                  <div className="mr-2 p-1 bg-white/20 rounded-full">
-                    <div className="w-0 h-0 border-t-[4px] border-t-transparent border-l-[6px] border-l-white border-b-[4px] border-b-transparent ml-0.5"></div>
-                  </div>
-                  {t.podcasts.btn}
-                </Button>
-              </Link>
             </div>
           </div>
         </section>
@@ -301,7 +261,6 @@ export default function HomePageClient({ signedIn, signOutAction, locale = DEFAU
               <h4 className="font-semibold mb-4">{t.footer.learning}</h4>
               <ul className="space-y-2 text-muted-foreground">
                 <li><Link href="/talk" className="hover:text-foreground transition-colors">{t.footer.startLearning}</Link></li>
-                <li><Link href="/history" className="hover:text-foreground transition-colors">{t.footer.conversationHistory}</Link></li>
                 <li><Link href="#" className="hover:text-foreground transition-colors">{t.footer.tipsGuides}</Link></li>
               </ul>
             </div>

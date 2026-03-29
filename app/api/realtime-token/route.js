@@ -1,10 +1,9 @@
-import { GoogleGenAI, Type, Behavior, Modality } from "@google/genai";
+import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { NextResponse } from 'next/server';
 import { auth } from "@/app/auth";
 
 export const extractUnfamiliarEnglishToolDecl = {
     name: "extract_unfamiliar_english",
-    behavior: Behavior.NON_BLOCKING,
     description: "Aggressive MODE: Call this tool AGGRESSIVELY whenever the above history contains ANY English (full sentence, a single word, code comments, or CN-EN mixed). Even if the user does NOT explicitly ask about a word, scan for potentially unfamiliar vocabulary, phrases, collocations, idioms, phrasal verbs, or grammar patterns",
     parameters: {
         type: Type.OBJECT,
@@ -68,7 +67,7 @@ export async function POST() {
                 uses: 1,
                 expireTime: expireTime,
                 liveConnectConstraints: {
-                    model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+                    model: 'gemini-3.1-flash-live-preview',
                     config: {
                         responseModalities: [Modality.AUDIO],
                         speechConfig: {

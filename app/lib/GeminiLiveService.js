@@ -1,11 +1,8 @@
-import { GoogleGenAI, Modality, Behavior, FunctionResponseScheduling, Type } from "@google/genai";
+import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { base64ToBytes, decodeAudioData, createPcmBlob } from "./audioUtils";
 
-// Tool structure for Gemini
-// Tool structure for Gemini
 export const extractUnfamiliarEnglishToolDecl = {
     name: "extract_unfamiliar_english",
-    behavior: Behavior.NON_BLOCKING,
     description: "Aggressive MODE: Call this tool AGGRESSIVELY whenever the above history contains ANY English (full sentence, a single word, code comments, or CN-EN mixed). Even if the user does NOT explicitly ask about a word, scan for potentially unfamiliar vocabulary, phrases, collocations, idioms, phrasal verbs, or grammar patterns",
     parameters: {
         type: Type.OBJECT,
@@ -93,7 +90,7 @@ export class GeminiLiveServiceImpl {
         console.log("Gemini Live Connecting with tools:", toolsConfig);
 
         const sessionPromise = this.ai.live.connect({
-            model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+            model: 'gemini-3.1-flash-live-preview',
             callbacks: {
                 onopen: async () => {
                     this.config.onConnectionUpdate(true);
@@ -228,47 +225,29 @@ export class GeminiLiveServiceImpl {
 
     async handleExtractUnfamiliarEnglish(args, callId) {
         console.log('Gemini requested tool: extract_unfamiliar_english', args);
-        try {
-            const res = await fetch('/api/learning/unfamiliar-english', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    items: args.items,
-                    context: args.context,
-                    timestamp: new Date().toISOString(),
-                    userMessage: args.userMessage ?? null,
-                }),
+
+        // Respond to tool call immediately to unblock the model (3.1 is blocking)
+        if (this.session) {
+            await this.session.sendToolResponse({
+                functionResponses: [{
+                    name: 'extract_unfamiliar_english',
+                    id: callId,
+                    response: { result: "saved" }
+                }]
             });
-            const data = await res.json().catch(() => ({}));
-
-            if (this.session) {
-                await this.session.sendToolResponse({
-                    functionResponses: [{
-                        name: 'extract_unfamiliar_english',
-                        id: callId,
-                        response: {
-                            result: "saved",
-                            data,
-                            scheduling: FunctionResponseScheduling.SILENT
-                        }
-                    }]
-                });
-            }
-
-        } catch (e) {
-            console.error('Error executing extract_unfamiliar_english:', e);
-            if (this.session) {
-                await this.session.sendToolResponse({
-                    functionResponses: [{
-                        name: 'extract_unfamiliar_english',
-                        id: callId,
-                        response: {
-                            error: String(e)
-                        }
-                    }]
-                });
-            }
         }
+
+        // Fire-and-forget: save to backend asynchronously
+        fetch('/api/learning/unfamiliar-english', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                items: args.items,
+                context: args.context,
+                timestamp: new Date().toISOString(),
+                userMessage: args.userMessage ?? null,
+            }),
+        }).catch(e => console.error('Error saving unfamiliar english:', e));
     }
 
     async sendText(text) {

@@ -48,83 +48,47 @@ export async function POST() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const provider = process.env.AI_PROVIDER === 'openai' ? 'openai' : 'gemini';
+        const rawApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+        const apiKey = rawApiKey ? rawApiKey.trim() : "";
 
-        if (provider === 'openai') {
-            const rawApiKey = process.env.OPENAI_API_KEY;
-            const apiKey = rawApiKey ? rawApiKey.trim() : "";
-
-            if (!apiKey) {
-                return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 });
-            }
-
-            // Create an ephemeral token for OpenAI Realtime API
-            const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
-                method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${apiKey}`,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    model: "gpt-4o-realtime-preview-2024-12-17",
-                    voice: "verse",
-                    modalities: ["audio", "text"],
-                    instructions: "", // to be sent by client via session.update
-                    tool_choice: "auto",
-                }),
-            });
-            const data = await response.json();
-            if (!response.ok) {
-                throw new Error(data.error?.message || "Failed to create OpenAI ephemeral token");
-            }
-
-            return NextResponse.json({
-                token: data.client_secret.value,
-                provider: 'openai'
-            });
-        } else {
-            // Gemini flow
-            const rawApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-            const apiKey = rawApiKey ? rawApiKey.trim() : "";
-
-            if (!apiKey) {
-                return NextResponse.json({ error: 'Google API key not configured' }, { status: 500 });
-            }
-
-            const client = new GoogleGenAI({ apiKey });
-            const toolsConfig = [{ functionDeclarations: [extractUnfamiliarEnglishToolDecl] }, { googleSearch: {} }];
-            const expireTime = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-
-            const token = await client.authTokens.create({
-                config: {
-                    uses: 1, // One-time use per connection
-                    expireTime: expireTime,
-                    liveConnectConstraints: {
-                        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-                        config: {
-                            responseModalities: [Modality.AUDIO],
-                            speechConfig: {
-                                voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
-                            },
-                            tools: toolsConfig,
-                            outputAudioTranscription: {},
-                            inputAudioTranscription: {},
-                            thinkingConfig: {
-                                thinkingBudget: 1024,
-                            },
-                        }
-                    },
-                    httpOptions: {
-                        apiVersion: 'v1alpha'
-                    },
-                }
-            });
-
-            return NextResponse.json({
-                token: token.name,
-                provider: 'gemini'
-            });
+        if (!apiKey) {
+            return NextResponse.json({ error: 'Google API key not configured' }, { status: 500 });
         }
+
+        const geminiBaseUrl = process.env.NEXT_PUBLIC_GEMINI_BASE_URL;
+        const client = new GoogleGenAI({
+            apiKey,
+            ...(geminiBaseUrl && { httpOptions: { baseUrl: geminiBaseUrl, apiVersion: 'v1alpha' } }),
+        });
+        const toolsConfig = [{ functionDeclarations: [extractUnfamiliarEnglishToolDecl] }, { googleSearch: {} }];
+        const expireTime = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+
+        const token = await client.authTokens.create({
+            config: {
+                uses: 1,
+                expireTime: expireTime,
+                liveConnectConstraints: {
+                    model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+                    config: {
+                        responseModalities: [Modality.AUDIO],
+                        speechConfig: {
+                            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
+                        },
+                        tools: toolsConfig,
+                        outputAudioTranscription: {},
+                        inputAudioTranscription: {},
+                        thinkingConfig: {
+                            thinkingBudget: 1024,
+                        },
+                    }
+                },
+                httpOptions: {
+                    apiVersion: 'v1alpha'
+                },
+            }
+        });
+
+        return NextResponse.json({ token: token.name });
     } catch (error) {
         console.error('Error creating token:', error);
         return NextResponse.json({ error: error.message || 'Failed to create token' }, { status: 500 });

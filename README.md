@@ -1,6 +1,6 @@
 # LingDaily
 
-AI 驱动的英语新闻会话练习应用，基于 Next.js App Router 与 NextAuth 构建。用户可以通过邮箱或（在配置后）Google 账号登录，和 OpenAI Realtime 能力驱动的对话助手持续练习口语并追踪词汇。
+AI 驱动的英语新闻会话练习应用，基于 Next.js App Router 与 NextAuth 构建。用户可以通过邮箱或（在配置后）Google 账号登录，和 Gemini Live API 驱动的实时对话助手持续练习口语并追踪词汇。
 
 
 ## 效果
@@ -54,7 +54,8 @@ npm run start
 | --- | --- | --- |
 | `AUTH_SECRET` | `openssl rand -base64 32` 生成 | NextAuth 用于签名 JWT 的密钥。务必保密。 |
 | `AUTH_URL` | `http://localhost:3000` | NextAuth 基准 URL，本地开发通常为 localhost，部署时填入公网域名。 |
-| `OPENAI_API_KEY` | `sk-...` | OpenAI API Key，用于实时会话能力。 |
+| `GEMINI_API_KEY` | `AIzaSy...` | Google API Key，用于 Gemini Live 实时会话。 |
+| `NEXT_PUBLIC_GEMINI_BASE_URL` | `https://api.talknews.ai` | （可选）Gemini API 代理地址，国内用户需配置以中转 WebSocket 连接。 |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://your-project.supabase.co` | Supabase 项目 URL，需对外暴露，因此使用 `NEXT_PUBLIC_` 前缀。 |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJhbGciOi...` | Supabase 匿名密钥，供前端访问。 |
 | `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOi...` | Supabase Service Role Key，仅在服务器端使用，勿泄露。 |
@@ -67,7 +68,7 @@ npm run start
 
 - 使用 NextAuth v5 集成邮箱密码与可选的 Google 登录。若未配置 `AUTH_GOOGLE_ID/SECRET`，后端不会注册对应 provider，前端登录页也不会显示 Google 选项。
 - 与 Supabase 集成以存储用户数据，并在凭证登录时透传 Supabase Access Token（用于受 RLS 保护的 API 调用）。
-- 通过 OpenAI Realtime 能力提供实时对话练习。
+- 通过 Gemini Live API 提供实时语音对话练习。
 - 使用 Tailwind CSS 与自定义 UI 组件实现响应式界面。
 
 ## 开发提示
@@ -82,17 +83,14 @@ npm run start
 2. 确保 `AUTH_URL` 与部署域名完全一致（包含协议），否则 OAuth 回调可能失败。
 3. 若不启用 Google 登录，可省略 `AUTH_GOOGLE_ID/SECRET`，应用会自动仅保留邮箱登录。
 4. 使用 `npm run build` 预构建，确认通过后再进行上线。
-```
-curl -X POST https://api.openai.com/v1/realtime/client_secrets \
-   -H "Authorization: Bearer $token" \
-   -H "Content-Type: application/json" \
-   -d '{
-     "session": {
-       "type": "realtime",
-       "model": "gpt-realtime-mini"
-     }
-   }'
-```
+
+## Nginx 国内中转代理配置 (可选)
+
+由于国内网络环境限制，如果用户无法直接连通 Google Gemini API，建议在海外云服务器上部署 Nginx 反向代理进行中转。
+
+完整的 Nginx 配置文件位于 [`nginx/gemini-proxy.conf`](nginx/gemini-proxy.conf)，支持 HTTP API 和 WebSocket (Gemini Live) 的转发。
+
+搭建完成后，在 `.env.local` 中配置 `NEXT_PUBLIC_GEMINI_BASE_URL=https://<YOUR_PROXY_DOMAIN>` 即可。
 ## sitemap
 use this to generate sitemap
 `npm run sitemap`

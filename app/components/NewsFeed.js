@@ -114,14 +114,90 @@ const categories = [
 ];
 
 
-export default function NewsFeed({ onArticleSelect, selectedNews = null, targetLanguage = 'zh-CN', nativeLanguage = 'zh-CN', isMobile = false }) {
+export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNews = null, targetLanguage = 'zh-CN', nativeLanguage = 'zh-CN', isMobile = false }) {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(categories[0].categoryId);
+  const [isReady, setIsReady] = useState(false);
   const cardRefs = useRef({});
   const listContainerRef = useRef(null);
   const previousScrollLeftRef = useRef(null);
+
+  const fetchNews = useCallback(async (category) => {
+    setLoading(true);
+    setError(null);
+    setArticles([]);
+
+    try {
+      const response = await fetch(`/api/news?category=${encodeURIComponent(category)}`, { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch news for category: ${category}`);
+      }
+      const rssText = await response.text();
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(rssText, 'application/xml');
+      const items = xmlDoc.querySelectorAll('item');
+
+      const newArticles = Array.from(items).map((item, index) => {
+        let description = item.querySelector('description')?.textContent || '';
+        const sourcesIndex = description.indexOf('<h3>Sources:</h3>');
+        if (sourcesIndex !== -1) {
+          description = description.substring(0, sourcesIndex);
+        }
+
+        const imgMatch = description.match(/<img src='([^']*)'/);
+        const urlToImage = imgMatch ? imgMatch[1] : null;
+        description = description.replace(/<[^>]*>/g, '').trim();
+        description = description.replace(/\[[^\]]*?(?:#\d+|\.[a-z]{2,4})[^\]]*?\]/gi, '').trim();
+        description = description.replace(/\s+/g, ' ').trim();
+
+        return {
+          id: `${category}-${index}`,
+          title: item.querySelector('title')?.textContent || 'Untitled',
+          link: item.querySelector('link')?.textContent || '',
+          description: description || 'No description available',
+          urlToImage: urlToImage,
+          category: categories.find(cat => cat.categoryId === category)?.categoryName || 'News',
+          date: item.querySelector('pubDate')?.textContent || new Date().toISOString(),
+        };
+      });
+
+      setArticles(newArticles);
+
+    } catch (err) {
+      console.error('Failed to fetch news:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // On mount: restore saved category from localStorage, then mark ready.
+  // Both setSelectedCategory and setIsReady are batched into the same re-render,
+  // so the fetch effect below will fire exactly once with the correct category.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('talk-news-category');
+      if (saved && categories.some(c => c.categoryId === saved)) {
+        setSelectedCategory(saved);
+      }
+    } catch (_) { /* ignore */ }
+    setIsReady(true);
+  }, []);
+
+  // Fetch news whenever category changes, but only after the initial restore is done.
+  useEffect(() => {
+    if (!isReady) return;
+    fetchNews(selectedCategory);
+  }, [selectedCategory, isReady, fetchNews]);
+
+  // Handle user clicking a category button: persist + update state + notify parent
+  const handleCategoryClick = useCallback((categoryId) => {
+    setSelectedCategory(categoryId);
+    try { localStorage.setItem('talk-news-category', categoryId); } catch (_) { /* ignore */ }
+    onCategoryChange?.();
+  }, [onCategoryChange]);
 
   const translateArticleTitles = useCallback((newArticles) => {
     newArticles.forEach((article) => {
@@ -148,69 +224,6 @@ export default function NewsFeed({ onArticleSelect, selectedNews = null, targetL
         });
     });
   }, [nativeLanguage]);
-
-  const fetchNews = useCallback(async (category) => {
-    setLoading(true);
-    setError(null);
-    setArticles([]);
-
-    try {
-      const response = await fetch(`/api/news?category=${encodeURIComponent(category)}`, { cache: 'no-store' });
-      if (!response.ok) {
-        throw new Error(`Failed to fetch news for category: ${category}`);
-      }
-      const rssText = await response.text();
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(rssText, 'application/xml');
-      const items = xmlDoc.querySelectorAll('item');
-
-      const newArticles = Array.from(items).map((item, index) => {
-        let description = item.querySelector('description')?.textContent || '';
-        const sourcesIndex = description.indexOf('<h3>Sources:</h3>');
-        if (sourcesIndex !== -1) {
-          description = description.substring(0, sourcesIndex);
-        }
-
-        // 先提取图片URL（在清理HTML标签之前）
-        const imgMatch = description.match(/<img src='([^']*)'/);
-        const urlToImage = imgMatch ? imgMatch[1] : null;
-
-        // 清理HTML标签
-        description = description.replace(/<[^>]*>/g, '').trim();
-
-        // 清理各种引用标记格式，包括但不限于: [lemonde.fr#1], [scmp.com#1], [site.com], [#1], etc.
-        description = description.replace(/\[[^\]]*?(?:#\d+|\.[a-z]{2,4})[^\]]*?\]/gi, '').trim();
-
-        // 清理多余的空白字符
-        description = description.replace(/\s+/g, ' ').trim();
-
-        return {
-          id: `${category}-${index}`,
-          title: item.querySelector('title')?.textContent || 'Untitled',
-          link: item.querySelector('link')?.textContent || '',
-          description: description || 'No description available',
-          urlToImage: urlToImage,
-          category: categories.find(cat => cat.categoryId === category)?.categoryName || 'News',
-          date: item.querySelector('pubDate')?.textContent || new Date().toISOString(),
-        };
-      });
-
-      setArticles(newArticles);
-      // translateArticleTitles(newArticles);
-
-    } catch (err) {
-      console.error('Failed to fetch news:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (selectedCategory) {
-      fetchNews(selectedCategory);
-    }
-  }, [selectedCategory, fetchNews]);
 
   const mobileHasSelection = Boolean(isMobile && selectedNews);
 
@@ -254,49 +267,63 @@ export default function NewsFeed({ onArticleSelect, selectedNews = null, targetL
     }
   }, [isMobile, selectedNews]);
 
-  const CategorySelector = () => {
-    const hasSelectedNews = mobileHasSelection;
+  const categorySelectorRef = useRef(null);
 
-    return (
-      <div
-        className={`transition-all duration-500 ease-in-out ${isMobile ? "px-2 sticky top-0 bg-background z-10" : "px-2"} ${hasSelectedNews
-            ? 'max-h-0 opacity-0 pointer-events-none overflow-hidden -translate-y-2 mb-0 custom-scroll'
-            : 'max-h-24 opacity-100 pointer-events-auto mb-4 translate-y-0'
-          }`}
-      >
-        <div className={`relative flex items-center min-h-0 transition-all duration-500 ease-in-out ${hasSelectedNews ? "scale-95" : "scale-100"}`}>
-          <div
-            className={`flex overflow-x-auto custom-scroll gap-2 py-2 transition-opacity duration-300 ease-in-out ${hasSelectedNews ? "opacity-0" : "opacity-100"}`}
-            style={{
-              touchAction: 'pan-x pinch-zoom',
-              overscrollBehaviorX: 'contain',
-              overscrollBehaviorY: 'none'
-            }}
-            aria-hidden={hasSelectedNews}
-          >
-            {categories.map((category) => (
-              <button
-                key={category.categoryId}
-                onClick={() => setSelectedCategory(category.categoryId)}
-                disabled={loading}
-                className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${selectedCategory === category.categoryId
-                    ? "bg-primary text-primary-foreground shadow-md scale-105"
-                    : "bg-secondary hover:bg-secondary/80 text-secondary-foreground hover:scale-102"
-                  } ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
-              >
-                {category.categoryName}
-              </button>
-            ))}
-          </div>
+  // Auto-scroll category bar so the selected category is visible
+  // Also re-runs when loading finishes to handle the DOM being stable after fetch
+  useEffect(() => {
+    const container = categorySelectorRef.current;
+    if (!container) return;
+    const activeBtn = container.querySelector('[data-category-active="true"]');
+    if (activeBtn) {
+      // scrollIntoView with inline 'center' puts the button in the middle of the scrollable area
+      activeBtn.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    }
+  }, [selectedCategory, loading]);
+
+  const hasSelectedNews = mobileHasSelection;
+
+  const categorySelectorJSX = (
+    <div
+      className={`transition-all duration-500 ease-in-out ${isMobile ? "px-2 sticky top-0 bg-background z-10" : "px-2"} ${hasSelectedNews
+          ? 'max-h-0 opacity-0 pointer-events-none overflow-hidden -translate-y-2 mb-0 custom-scroll'
+          : 'max-h-24 opacity-100 pointer-events-auto mb-4 translate-y-0'
+        }`}
+    >
+      <div className={`relative flex items-center min-h-0 transition-all duration-500 ease-in-out ${hasSelectedNews ? "scale-95" : "scale-100"}`}>
+        <div
+          ref={categorySelectorRef}
+          className={`flex overflow-x-auto custom-scroll gap-2 py-2 transition-opacity duration-300 ease-in-out ${hasSelectedNews ? "opacity-0" : "opacity-100"}`}
+          style={{
+            touchAction: 'pan-x pinch-zoom',
+            overscrollBehaviorX: 'contain',
+            overscrollBehaviorY: 'none'
+          }}
+          aria-hidden={hasSelectedNews}
+        >
+          {categories.map((category) => (
+            <button
+              key={category.categoryId}
+              data-category-active={selectedCategory === category.categoryId ? "true" : null}
+              onClick={() => handleCategoryClick(category.categoryId)}
+              disabled={loading}
+              className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${selectedCategory === category.categoryId
+                  ? "bg-primary text-primary-foreground shadow-md scale-105"
+                  : "bg-secondary hover:bg-secondary/80 text-secondary-foreground hover:scale-102"
+                } ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
+            >
+              {category.categoryName}
+            </button>
+          ))}
         </div>
       </div>
-    );
-  };
+    </div>
+  );
 
   if (loading) {
     return (
       <div>
-        <CategorySelector />
+        {categorySelectorJSX}
         <div className={isMobile ? "flex gap-3" : "space-y-4 px-2 py-2"}>
           {[...Array(3)].map((_, i) => (
             <div key={i} className="animate-pulse">
@@ -315,7 +342,7 @@ export default function NewsFeed({ onArticleSelect, selectedNews = null, targetL
   if (error) {
     return (
       <div>
-        <CategorySelector />
+        {categorySelectorJSX}
         <div className="p-4">
           <div className="text-red-500 bg-red-100 p-3 rounded-lg">
             Error loading news: {error}
@@ -327,7 +354,7 @@ export default function NewsFeed({ onArticleSelect, selectedNews = null, targetL
 
   return (
     <div>
-      <CategorySelector />
+      {categorySelectorJSX}
       <div
         ref={isMobile ? listContainerRef : null}
         className={isMobile ? "flex gap-3 overflow-x-auto custom-scroll px-2" : "space-y-4 px-2 py-2"}

@@ -20,6 +20,11 @@ You are ChatLearn, a friendly ${targetLabel} conversation tutor. Your goal is to
 Core Role:
 - Lead immersive ${targetLabel} conversation and provide targeted learning support.
 
+OPENING (VERY IMPORTANT):
+- When the conversation starts and a news article is provided, your VERY FIRST response must introduce the news to the user.
+- Use a natural MIX of ${nativeLabel} and ${targetLabel} for this opening — do NOT use only one language.
+- Keep the intro brief (2-4 sentences), highlight the most interesting point, then invite the user to discuss.
+
 Key Behaviors:
 - Mix the user's native language (${nativeLabel}) and ${targetLabel} in conversation at first; then adjust toward more ${targetLabel} or more ${nativeLabel} according to user preference.
 - After each substantive user message, call the extract_unfamiliar_english tool.
@@ -37,7 +42,7 @@ Control & Topic Management:
 
 Learning Content Format:
 1. Use a mix of ${nativeLabel} and ${targetLabel} in conversation.
-2. Vocabulary format: target-language word (Chinese translation).
+2. Vocabulary format: target-language word (${nativeLabel} translation).
 3. Keep explanations concise and contextual.
 4. Identify and reinforce the user's language patterns.
 
@@ -52,6 +57,11 @@ Be encouraging and patient, while maintaining clear conversational leadership fo
 
 役割:
 - 没入型の${targetLabel}会話を主導し、的確な学習サポートを提供する。
+
+開始時（重要）:
+- 会話開始時にニュース記事が提供されたら、最初の返答でそのニュースを紹介すること。
+- 母語（${nativeLabel}）と${targetLabel}を自然に混ぜて紹介する。
+- 紹介は簡潔に（2〜4文）、最も興味深い点を挙げ、ユーザーに議論を促すこと。
 
 重要な行動:
 - 会話の冒頭は母語（${nativeLabel}）と${targetLabel}を織り交ぜ、ユーザーの好みに応じてより${targetLabel}寄り／より${nativeLabel}寄りへ調整する。
@@ -84,6 +94,11 @@ Be encouraging and patient, while maintaining clear conversational leadership fo
 你是ChatLearn，一位友好的${targetLabel}对话导师，通过自然对话帮助用户练习${targetLabel}。
 
 【核心角色】主导沉浸式${targetLabel}对话，提供针对性学习支持。
+
+【开场规则（非常重要）】
+- 对话开始时，如果提供了新闻文章，你的第一句话必须介绍这篇新闻的主要内容；
+- 介绍时必须用${nativeLabel}和${targetLabel}夹杂的方式，不能只用一种语言；
+- 介绍要简洁（2~4句话），突出最有趣的信息点，然后邀请用户展开讨论。
 
 【关键行为】
 - 用${nativeLabel}和${targetLabel}夹杂的方式进行交谈，然后根据用户偏好，采取更多${targetLabel}或者更多${nativeLabel}的表达方式；
@@ -219,6 +234,11 @@ export default function Home() {
     const newsContextMessageRef = useRef(null)
     const persistTimeoutRef = useRef(null)
 
+    // When category changes, clear the selected news (which cascades to clearing chat history)
+    const handleCategoryChange = useCallback(() => {
+        setSelectedNews(null);
+    }, []);
+
     // UI strings ...
     const uiText = useMemo(() => ({
         en: { history: 'History', historyShort: 'History', vocab: 'Vocabulary' },
@@ -313,6 +333,9 @@ export default function Home() {
         saveSelectedNewsToStorage(selectedNews);
         const contextMessage = createNewsContextMessage(selectedNews);
         newsContextMessageRef.current = contextMessage;
+
+        // Clear history immediately to prevent showing stale content from previous article
+        setHistory([]);
 
         // If we are already connected, we need to inform the AI about the new news context
         if (serviceRef.current && serviceRef.current.session) {
@@ -460,6 +483,14 @@ export default function Home() {
             setIsConnected(false);
         } else {
             setIsConnecting(true);
+
+            // ── Prime AudioContext FIRST, synchronously, before any await ──
+            // Chrome's user gesture activation window (~5s) may expire during
+            // the token fetch + WebSocket setup. Creating & resuming now ensures
+            // the first audio chunk plays without requiring another interaction.
+            initService();
+            serviceRef.current?.primeOutputAudio();
+
             // Fetch ephemeral token
             let token;
             try {
@@ -475,8 +506,6 @@ export default function Home() {
                 return;
             }
 
-            initService();
-
             // Build Context Prompt
             const baseInstructions = buildInstructions(
                 uiLangCode,
@@ -486,11 +515,19 @@ export default function Home() {
 
             await serviceRef.current?.connect(baseInstructions, token);
 
-            // Once connected, if there is a selected news item, send it as a context update immediately
+            // Once connected, seed the model with news context and instruct it to open with a bilingual intro
             if (selectedNewsRef.current && serviceRef.current) {
                 const newsContext = CombineInitPrompt(selectedNewsRef.current);
-                // Send as an invisible context update to "seed" the conversation with the news
-                await serviceRef.current.sendContextMessage(`[System Initialize] User is viewing this news article. START the conversation by briefly introducing this news to the user:\n${newsContext}`);
+                const nativeL = nativeLanguage?.label || '中文';
+                const targetL = learningLanguage?.label || 'English';
+                const openingGuide = uiLangCode === 'en'
+                    ? `Please introduce this news now using a natural mix of ${nativeL} and ${targetL}, then invite the user to discuss.`
+                    : uiLangCode === 'ja'
+                    ? `このニュースを今すぐ${nativeL}と${targetL}を混ぜて自然に紹介し、ユーザーに議論を促してください。`
+                    : `请现在用${nativeL}和${targetL}夹杂的方式简短介绍这篇新闻的主要内容，然后邀请用户展开讨论。`;
+                await serviceRef.current.sendContextMessage(
+                    `[System Initialize] The user is viewing the following news article.\n${openingGuide}\n\n${newsContext}`
+                );
             }
         }
     }
@@ -555,6 +592,7 @@ export default function Home() {
                         <div className="overflow-x-auto custom-scroll pb-2 -mx-4 px-4">
                             <NewsFeed
                                 onArticleSelect={setSelectedNews}
+                                onCategoryChange={handleCategoryChange}
                                 selectedNews={selectedNews}
                                 targetLanguage={learningLanguage?.code || 'en'}
                                 nativeLanguage={nativeLanguage?.code || 'zh-CN'}
@@ -572,6 +610,7 @@ export default function Home() {
                         >
                             <NewsFeed
                                 onArticleSelect={setSelectedNews}
+                                onCategoryChange={handleCategoryChange}
                                 selectedNews={selectedNews}
                                 targetLanguage={learningLanguage?.code || 'en'}
                                 nativeLanguage={nativeLanguage?.code || 'zh-CN'}

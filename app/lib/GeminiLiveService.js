@@ -69,12 +69,16 @@ export class GeminiLiveServiceImpl {
         this.systemInstruction = "";
         this.isMuted = false;
         this.connected = false;
+        this.outputGainNode = null;
 
         this.config = config;
     }
 
     setMuted(muted) {
         this.isMuted = muted;
+        if (this.outputGainNode) {
+            this.outputGainNode.gain.value = muted ? 0 : 1;
+        }
     }
 
     /**
@@ -102,10 +106,14 @@ export class GeminiLiveServiceImpl {
             return;
         }
 
-        // Build WebSocket URL — same as official reference
+        // Build WebSocket URL — use proxy base URL if configured
         const MODEL = "gemini-3.1-flash-live-preview";
-        const wsUrl =
-            `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${token}`;
+        const wsPath = `/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${token}`;
+        const configuredBase = process.env.NEXT_PUBLIC_GEMINI_BASE_URL;
+        const wsBase = configuredBase
+            ? configuredBase.replace(/^http/, 'ws').replace(/\/$/, '')
+            : 'wss://generativelanguage.googleapis.com';
+        const wsUrl = wsBase + wsPath;
 
         console.log("Connecting to:", wsUrl.replace(token, "TOKEN_HIDDEN"));
 
@@ -119,6 +127,10 @@ export class GeminiLiveServiceImpl {
             this.outputAudioContext = new AudioContextClass({ sampleRate: 24000 });
         }
         if (this.outputAudioContext.state === 'suspended') await this.outputAudioContext.resume();
+        // (Re)create gain node so it belongs to the current context
+        this.outputGainNode = this.outputAudioContext.createGain();
+        this.outputGainNode.gain.value = this.isMuted ? 0 : 1;
+        this.outputGainNode.connect(this.outputAudioContext.destination);
 
         // Open WebSocket
         return new Promise((resolve, reject) => {
@@ -262,7 +274,7 @@ export class GeminiLiveServiceImpl {
             if (audioBuffer) {
                 const source = this.outputAudioContext.createBufferSource();
                 source.buffer = audioBuffer;
-                source.connect(this.outputAudioContext.destination);
+                source.connect(this.outputGainNode);
                 source.start(this.nextStartTime);
                 this.nextStartTime += audioBuffer.duration;
                 source.addEventListener('ended', () => this.sources.delete(source));

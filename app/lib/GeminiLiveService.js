@@ -7,7 +7,19 @@
 // Tool declaration for extracting unfamiliar English
 export const extractUnfamiliarEnglishToolDecl = {
     name: "extract_unfamiliar_english",
-    description: "Aggressive MODE: Call this tool AGGRESSIVELY whenever the above history contains ANY English (full sentence, a single word, code comments, or CN-EN mixed). Even if the user does NOT explicitly ask about a word, scan for potentially unfamiliar vocabulary, phrases, collocations, idioms, phrasal verbs, or grammar patterns",
+    description: `Call this tool after a user message to record English the user genuinely does NOT know yet.
+
+ONLY include an item if it meets at least one of these criteria:
+1. The user expressed the concept in their native language (e.g. Chinese/Japanese) instead of English — they wanted to say something but lacked the English word.
+2. The user attempted an English word/phrase but clearly struggled: hesitated (\"uh\", \"um\", repeated words), used broken/incorrect grammar, substituted a wrong word, or mixed in their native language mid-phrase.
+3. The user explicitly asked what a word or phrase means.
+
+DO NOT include:
+- Common everyday English that any beginner knows (e.g. "look at", "that's enough", "what do you think", "powerful tool", "bad man").
+- Any word or phrase the user said fluently and correctly without hesitation.
+- Full sentences the user said correctly — only extract the specific word/phrase they struggled with.
+
+If the user's message contains no evidence of the above, call this tool with an empty items array.`,
     parameters: {
         type: "OBJECT",
         properties: {
@@ -17,18 +29,18 @@ export const extractUnfamiliarEnglishToolDecl = {
             },
             items: {
                 type: "ARRAY",
-                description: "List of unfamiliar or interesting elements identified from user input",
+                description: "Words or phrases the user genuinely does not know, based strictly on the criteria above. Empty array if none qualify.",
                 items: {
                     type: "OBJECT",
                     properties: {
                         text: {
                             type: "STRING",
-                            description: "The exact word, phrase, or grammar pattern the user is unsure about or curious about"
+                            description: "The English word or phrase the user does not know. If they expressed it in their native language, write the correct English equivalent here."
                         },
                         type: {
                             type: "STRING",
                             enum: ["word", "phrase", "grammar", "other"],
-                            description: "The category of the unfamiliar element"
+                            description: "Category of the item"
                         }
                     },
                     required: ["text", "type"]
@@ -36,7 +48,7 @@ export const extractUnfamiliarEnglishToolDecl = {
             },
             context: {
                 type: "STRING",
-                description: "Additional context about the conversation or user level if known"
+                description: "Brief note on why this item was flagged (e.g. 'user said in Chinese', 'user hesitated and repeated', 'user used wrong word')"
             }
         },
         required: ["userMessage", "items"]

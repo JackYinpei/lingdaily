@@ -8,6 +8,7 @@ import { useSession } from "next-auth/react"
 import NewsFeed from "@/app/components/NewsFeed";
 import { History } from "@/app/components/History";
 
+import Link from 'next/link';
 import { CombineInitPrompt } from '@/app/lib/utils';
 import { useLanguage } from '@/app/contexts/LanguageContext';
 import { GeminiLiveServiceImpl } from '@/app/lib/GeminiLiveService';
@@ -47,7 +48,10 @@ Learning Content Format:
 4. Identify and reinforce the user's language patterns.
 
 Tool Usage:
-- After any user message containing substantive English, call extract_unfamiliar_english to identify learning opportunities.
+- After each user message, call extract_unfamiliar_english.
+- ONLY flag items where the user demonstrably did not know the English: they said it in their native language, visibly hesitated/stumbled, made a grammar error, or explicitly asked.
+- Do NOT flag words the user said fluently and correctly — even simple ones. Fluency = knowledge.
+- Pass an empty items array when the user's English showed no gaps.
 
 Be encouraging and patient, while maintaining clear conversational leadership for the best learning outcome.`;
     }
@@ -85,7 +89,10 @@ Be encouraging and patient, while maintaining clear conversational leadership fo
 4. ユーザーの言語パターンを識別・強化する。
 
 ツールの使用:
-- 実質的な英語が含まれるユーザーメッセージの後は、extract_unfamiliar_english を呼び出し、学習機会を特定する。
+- 各ユーザーメッセージの後に extract_unfamiliar_english を呼び出す。
+- 登録するのは、ユーザーが本当に知らないと判断できる語句のみ：母語で言い換えた、明らかに詰まった・繰り返した、文法ミスがあった、または明示的に意味を聞いた場合。
+- 流暢に正確に言えた語句は登録しない（流暢 ＝ 知っている）。
+- 語句に問題がなければ items を空配列で渡す。
 
 励ましと忍耐を保ちつつ、最良の学習効果のために会話の主導権を明確に維持してください。`;
     }
@@ -122,7 +129,10 @@ Be encouraging and patient, while maintaining clear conversational leadership fo
 4. 识别并强化用户的语言模式。
 
 【工具使用】
-- 在每个包含实质英语内容的用户消息后调用 extract_unfamiliar_english，识别学习机会。
+- 在每个用户消息后调用 extract_unfamiliar_english。
+- 只记录用户确实不懂的英文：用母语代替说的词、明显犹豫/重复/说错的词、语法错误、或明确询问意思的词。
+- 不要记录用户流畅说出的词，哪怕是简单词——说得流利 = 已经会了。
+- 若用户英文没有明显问题，传入空的 items 数组。
 
 保持鼓励和耐心，同时维持清晰的对话主导权以获得最佳学习效果。`;
 }
@@ -576,6 +586,12 @@ export default function Home() {
                             <p className="text-muted-foreground mt-1">Learn English through news and AI conversation</p>
                         </div>
                         <div className="flex items-center gap-4">
+                            <Link
+                                href="/vocabulary"
+                                className="px-4 py-2 border border-border text-foreground rounded hover:bg-accent transition-colors text-sm font-medium"
+                            >
+                                {uiText?.vocab || '生词本'}
+                            </Link>
                         </div>
                     </div>
                 </div>

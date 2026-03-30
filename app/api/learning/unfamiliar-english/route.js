@@ -25,11 +25,16 @@ export async function POST(req) {
     const body = await req.json().catch(() => ({}))
     const { items, context, timestamp, userMessage } = body || {}
 
-    if (!Array.isArray(items) || items.length === 0) {
+    if (!Array.isArray(items)) {
       return new Response(
-        JSON.stringify({ error: "'items' array is required" }),
+        JSON.stringify({ error: "'items' must be an array" }),
         { status: 400 }
       )
+    }
+
+    // Empty items means Gemini found no unfamiliar words — valid, skip DB write
+    if (items.length === 0) {
+      return new Response(JSON.stringify({ ok: true, skipped: true }), { status: 200 })
     }
 
     // Normalize items to expected shape: [{ text, type }]

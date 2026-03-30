@@ -1,44 +1,6 @@
-import { GoogleGenAI, Type, Modality } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from 'next/server';
 import { auth } from "@/app/auth";
-
-export const extractUnfamiliarEnglishToolDecl = {
-    name: "extract_unfamiliar_english",
-    description: "Aggressive MODE: Call this tool AGGRESSIVELY whenever the above history contains ANY English (full sentence, a single word, code comments, or CN-EN mixed). Even if the user does NOT explicitly ask about a word, scan for potentially unfamiliar vocabulary, phrases, collocations, idioms, phrasal verbs, or grammar patterns",
-    parameters: {
-        type: Type.OBJECT,
-        properties: {
-            userMessage: {
-                type: Type.STRING,
-                description: "The user's original message that was analyzed"
-            },
-            items: {
-                type: Type.ARRAY,
-                description: "List of unfamiliar or interesting elements identified from user input",
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        text: {
-                            type: Type.STRING,
-                            description: "The exact word, phrase, or grammar pattern the user is unsure about or curious about"
-                        },
-                        type: {
-                            type: Type.STRING,
-                            enum: ["word", "phrase", "grammar", "other"],
-                            description: "The category of the unfamiliar element"
-                        }
-                    },
-                    required: ["text", "type"]
-                }
-            },
-            context: {
-                type: Type.STRING,
-                description: "Additional context about the conversation or user level if known"
-            }
-        },
-        required: ["userMessage", "items"]
-    }
-};
 
 export async function POST() {
     try {
@@ -57,30 +19,23 @@ export async function POST() {
         const geminiBaseUrl = process.env.NEXT_PUBLIC_GEMINI_BASE_URL;
         const client = new GoogleGenAI({
             apiKey,
-            ...(geminiBaseUrl && { httpOptions: { baseUrl: geminiBaseUrl, apiVersion: 'v1alpha' } }),
+            ...(geminiBaseUrl
+                ? { httpOptions: { baseUrl: geminiBaseUrl, apiVersion: 'v1alpha' } }
+                : { httpOptions: { apiVersion: 'v1alpha' } }),
         });
-        const toolsConfig = [{ functionDeclarations: [extractUnfamiliarEnglishToolDecl] }, { googleSearch: {} }];
-        const expireTime = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
+        const now = new Date();
+        const expireTime = new Date(now.getTime() + 30 * 60 * 1000).toISOString();
+        const newSessionExpireTime = new Date(now.getTime() + 2 * 60 * 1000).toISOString();
+
+        // Match official example: simple token without liveConnectConstraints.
+        // All config (model, tools, systemInstruction) will be sent by the
+        // client in the WebSocket setup message.
         const token = await client.authTokens.create({
             config: {
                 uses: 1,
                 expireTime: expireTime,
-                liveConnectConstraints: {
-                    model: 'gemini-3.1-flash-live-preview',
-                    config: {
-                        responseModalities: [Modality.AUDIO],
-                        speechConfig: {
-                            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
-                        },
-                        tools: toolsConfig,
-                        outputAudioTranscription: {},
-                        inputAudioTranscription: {},
-                        thinkingConfig: {
-                            thinkingBudget: 1024,
-                        },
-                    }
-                },
+                newSessionExpireTime: newSessionExpireTime,
                 httpOptions: {
                     apiVersion: 'v1alpha'
                 },

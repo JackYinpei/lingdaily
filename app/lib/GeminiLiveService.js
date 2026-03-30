@@ -1,28 +1,32 @@
-import { GoogleGenAI, Modality, Type } from "@google/genai";
-import { base64ToBytes, decodeAudioData, createPcmBlob } from "./audioUtils";
+/**
+ * GeminiLiveService — Raw WebSocket implementation
+ * Based on the official Google reference:
+ * https://github.com/google-gemini/gemini-live-api-examples/tree/main/gemini-live-ephemeral-tokens-websocket
+ */
 
+// Tool declaration for extracting unfamiliar English
 export const extractUnfamiliarEnglishToolDecl = {
     name: "extract_unfamiliar_english",
     description: "Aggressive MODE: Call this tool AGGRESSIVELY whenever the above history contains ANY English (full sentence, a single word, code comments, or CN-EN mixed). Even if the user does NOT explicitly ask about a word, scan for potentially unfamiliar vocabulary, phrases, collocations, idioms, phrasal verbs, or grammar patterns",
     parameters: {
-        type: Type.OBJECT,
+        type: "OBJECT",
         properties: {
             userMessage: {
-                type: Type.STRING,
+                type: "STRING",
                 description: "The user's original message that was analyzed"
             },
             items: {
-                type: Type.ARRAY,
+                type: "ARRAY",
                 description: "List of unfamiliar or interesting elements identified from user input",
                 items: {
-                    type: Type.OBJECT,
+                    type: "OBJECT",
                     properties: {
                         text: {
-                            type: Type.STRING,
+                            type: "STRING",
                             description: "The exact word, phrase, or grammar pattern the user is unsure about or curious about"
                         },
                         type: {
-                            type: Type.STRING,
+                            type: "STRING",
                             enum: ["word", "phrase", "grammar", "other"],
                             description: "The category of the unfamiliar element"
                         }
@@ -31,7 +35,7 @@ export const extractUnfamiliarEnglishToolDecl = {
                 }
             },
             context: {
-                type: Type.STRING,
+                type: "STRING",
                 description: "Additional context about the conversation or user level if known"
             }
         },
@@ -41,168 +45,237 @@ export const extractUnfamiliarEnglishToolDecl = {
 
 export class GeminiLiveServiceImpl {
     constructor(config) {
-        this.session = null;
+        this.session = null; // kept for API compat: truthy when connected
+        this.webSocket = null;
         this.inputAudioContext = null;
         this.outputAudioContext = null;
         this.nextStartTime = 0;
         this.mediaStream = null;
+        this.scriptProcessor = null;
+        this.mediaSource = null;
         this.sources = new Set();
         this.systemInstruction = "";
         this.isMuted = false;
+        this.connected = false;
 
         this.config = config;
-        this.ai = null;
     }
 
     setMuted(muted) {
         this.isMuted = muted;
     }
 
+    /**
+     * Call this synchronously in the button click handler BEFORE any await.
+     * It creates and resumes the outputAudioContext while the browser still
+     * considers this a user gesture, ensuring the first audio chunk plays.
+     */
+    primeOutputAudio() {
+        if (this.outputAudioContext && this.outputAudioContext.state !== 'closed') return;
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        this.outputAudioContext = new AudioContextClass({ sampleRate: 24000 });
+        // Call resume() synchronously (no await) — Chrome only needs the call
+        // to happen during the gesture; we don't need to await completion here.
+        this.outputAudioContext.resume();
+        console.log("Output AudioContext primed, state:", this.outputAudioContext.state);
+    }
+
+    // ─── Connection ────────────────────────────────────────────────────
+
     async connect(systemInstruction, token) {
         this.systemInstruction = systemInstruction;
 
-        // Initialize AI client just before connection (using fresh token)
-        const apiKey = token || this.config.apiKey;
-        if (!apiKey) {
-            this.config.onError("No API Key or Token provided");
+        if (!token) {
+            this.config.onError("No ephemeral token provided");
             return;
         }
 
-        this.ai = new GoogleGenAI({
-            apiKey: apiKey,
-            httpOptions: {
-                baseUrl: process.env.NEXT_PUBLIC_GEMINI_BASE_URL,
-                apiVersion: 'v1alpha'
-            }
-        });
+        // Build WebSocket URL — same as official reference
+        const MODEL = "gemini-3.1-flash-live-preview";
+        const wsUrl =
+            `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${token}`;
 
-        // Use standard window.AudioContext, with webkit fallback if necessary (mostly for older Safari, but standard is widely supported now)
+        console.log("Connecting to:", wsUrl.replace(token, "TOKEN_HIDDEN"));
+
+        // Prepare AudioContexts — reuse outputAudioContext if already primed
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-
         this.inputAudioContext = new AudioContextClass({ sampleRate: 16000 });
-        this.outputAudioContext = new AudioContextClass({ sampleRate: 24000 });
-
-        // Resume AudioContexts if they are suspended (browser autoplay policy)
         if (this.inputAudioContext.state === 'suspended') await this.inputAudioContext.resume();
+        // outputAudioContext was already created & resumed by primeOutputAudio()
+        // but create it now if not pre-primed (e.g. reconnect flow)
+        if (!this.outputAudioContext || this.outputAudioContext.state === 'closed') {
+            this.outputAudioContext = new AudioContextClass({ sampleRate: 24000 });
+        }
         if (this.outputAudioContext.state === 'suspended') await this.outputAudioContext.resume();
 
-        const toolsConfig = [{ functionDeclarations: [extractUnfamiliarEnglishToolDecl] }, { googleSearch: {} }];
-        console.log("Gemini Live Connecting with tools:", toolsConfig);
+        // Open WebSocket
+        return new Promise((resolve, reject) => {
+            this.webSocket = new WebSocket(wsUrl);
 
-        const sessionPromise = this.ai.live.connect({
-            model: 'gemini-3.1-flash-live-preview',
-            callbacks: {
-                onopen: async () => {
-                    this.config.onConnectionUpdate(true);
-                    await this.startMic(sessionPromise);
-                },
-                onmessage: async (message) => {
-                    this.handleServerMessage(message);
-                },
-                onclose: () => {
-                    console.log("Session closed");
-                    this.disconnect();
-                },
-                onerror: (e) => {
-                    console.error("Session Error:", e);
-                    this.config.onError("Session Error: " + (e.message || "Unknown error"));
-                    this.disconnect();
+            this.webSocket.onopen = () => {
+                console.log("WebSocket open");
+                this.connected = true;
+                this.session = true; // compatibility flag
+
+                // Send setup message (official reference pattern)
+                const toolDecls = [extractUnfamiliarEnglishToolDecl];
+                const setupMessage = {
+                    setup: {
+                        model: `models/${MODEL}`,
+                        generationConfig: {
+                            responseModalities: ["AUDIO"],
+                            speechConfig: {
+                                voiceConfig: {
+                                    prebuiltVoiceConfig: { voiceName: "Kore" },
+                                },
+                            },
+                        },
+                        systemInstruction: {
+                            parts: [{ text: systemInstruction }],
+                        },
+                        tools: [
+                            { functionDeclarations: toolDecls },
+                        ],
+                        inputAudioTranscription: {},
+                        outputAudioTranscription: {},
+                        realtimeInputConfig: {
+                            automaticActivityDetection: {
+                                disabled: false,
+                            },
+                            activityHandling: "ACTIVITY_HANDLING_UNSPECIFIED",
+                            turnCoverage: "TURN_INCLUDES_ONLY_ACTIVITY",
+                        },
+                    },
+                };
+                console.log("Sending setup:", JSON.stringify(setupMessage).slice(0, 500));
+                this.webSocket.send(JSON.stringify(setupMessage));
+            };
+
+            this.webSocket.onmessage = async (event) => {
+                let jsonData;
+                if (event.data instanceof Blob) {
+                    jsonData = await event.data.text();
+                } else {
+                    jsonData = event.data;
                 }
-            },
-            config: {
-                responseModalities: [Modality.AUDIO],
-                systemInstruction: { parts: [{ text: systemInstruction }] },
-                speechConfig: {
-                    voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
-                },
-                tools: toolsConfig,
-                outputAudioTranscription: {},
-                inputAudioTranscription: {},
-                thinkingConfig: {
-                    thinkingBudget: 1024,
-                },
-            },
-        });
-
-        // Wait for connection to establish before assigning session
-        this.session = await sessionPromise;
-    }
-
-    async startMic(sessionPromise) {
-        if (!this.inputAudioContext) return;
-
-        try {
-            this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-            if (this.inputAudioContext.state === 'closed') return;
-
-            const source = this.inputAudioContext.createMediaStreamSource(this.mediaStream);
-            const scriptProcessor = this.inputAudioContext.createScriptProcessor(4096, 1, 1);
-
-            scriptProcessor.onaudioprocess = (e) => {
-                if (this.isMuted || !this.session) return; // Skip processing if muted or not connected
-                const inputData = e.inputBuffer.getChannelData(0);
-                const pcmBlob = createPcmBlob(inputData);
 
                 try {
-                    const result = this.session.sendRealtimeInput({ media: pcmBlob });
-                    // Handle async errors if it returns a promise to suppress "WebSocket closed" errors
-                    if (result && typeof result.then === 'function') {
-                        result.catch(() => { });
+                    const msg = JSON.parse(jsonData);
+                    this.handleServerMessage(msg);
+
+                    // After setup complete, start mic & signal connected
+                    if (msg.setupComplete) {
+                        console.log("Setup complete — starting mic");
+                        this.config.onConnectionUpdate(true);
+                        await this.startMic();
+                        resolve();
                     }
                 } catch (err) {
-                    // Ignore specific sending errors during shutdown
+                    console.error("Error parsing server message:", err, jsonData);
                 }
             };
 
-            source.connect(scriptProcessor);
-            scriptProcessor.connect(this.inputAudioContext.destination);
+            this.webSocket.onclose = (event) => {
+                console.log("WebSocket closed", "code:", event.code, "reason:", event.reason, "wasClean:", event.wasClean);
+                this.connected = false;
+                this.session = null;
+                this.disconnect();
+            };
+
+            this.webSocket.onerror = (event) => {
+                console.error("WebSocket error:", event);
+                this.config.onError("WebSocket connection error");
+                this.connected = false;
+                this.session = null;
+                reject(new Error("WebSocket error"));
+            };
+        });
+    }
+
+    // ─── Microphone ────────────────────────────────────────────────────
+
+    async startMic() {
+        if (!this.inputAudioContext) return;
+        try {
+            this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            if (this.inputAudioContext.state === 'closed') return;
+
+            this.mediaSource = this.inputAudioContext.createMediaStreamSource(this.mediaStream);
+            this.scriptProcessor = this.inputAudioContext.createScriptProcessor(4096, 1, 1);
+
+            this.scriptProcessor.onaudioprocess = (e) => {
+                if (this.isMuted || !this.connected) return;
+                const inputData = e.inputBuffer.getChannelData(0);
+                const pcm16 = this.float32ToPcm16Base64(inputData);
+
+                try {
+                    if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
+                        const message = {
+                            realtimeInput: {
+                                audio: {
+                                    data: pcm16,
+                                    mimeType: "audio/pcm;rate=16000",
+                                },
+                            },
+                        };
+                        this.webSocket.send(JSON.stringify(message));
+                    }
+                } catch (err) {
+                    // Ignore send errors during shutdown
+                }
+            };
+
+            this.mediaSource.connect(this.scriptProcessor);
+            this.scriptProcessor.connect(this.inputAudioContext.destination);
         } catch (e) {
             console.error("Mic Error", e);
             this.config.onError("Could not access microphone.");
         }
     }
 
+    // ─── Server message handling ───────────────────────────────────────
+
     async handleServerMessage(message) {
-        const isAudioMessage = message.serverContent?.modelTurn?.parts?.some(part => part.inlineData?.mimeType?.startsWith('audio/pcm'));
-        const isSystemMessage = message.setupComplete || message.sessionResumptionUpdate;
+        const serverContent = message.serverContent;
 
-        if (!isAudioMessage && !isSystemMessage) {
-            console.log("SERVER MESSAGE:", JSON.stringify(message, null, 2));
-        }
         // Audio Output
-        const audioData = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+        const audioData = serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
         if (audioData && this.outputAudioContext) {
+            // Resume output context if browser suspended it (autoplay policy)
+            if (this.outputAudioContext.state === 'suspended') {
+                await this.outputAudioContext.resume();
+            }
             this.nextStartTime = Math.max(this.nextStartTime, this.outputAudioContext.currentTime);
-            const audioBuffer = await decodeAudioData(base64ToBytes(audioData), this.outputAudioContext);
-            const source = this.outputAudioContext.createBufferSource();
-            source.buffer = audioBuffer;
-            source.connect(this.outputAudioContext.destination);
-            source.start(this.nextStartTime);
-            this.nextStartTime += audioBuffer.duration;
-
-            source.addEventListener('ended', () => {
-                this.sources.delete(source);
-            });
-            this.sources.add(source);
+            const audioBuffer = this.decodeAudioFromBase64(audioData);
+            if (audioBuffer) {
+                const source = this.outputAudioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(this.outputAudioContext.destination);
+                source.start(this.nextStartTime);
+                this.nextStartTime += audioBuffer.duration;
+                source.addEventListener('ended', () => this.sources.delete(source));
+                this.sources.add(source);
+            }
         }
 
         // Output Transcription (AI Text)
-        if (message.serverContent?.outputTranscription?.text) {
-            this.config.onMessage(message.serverContent.outputTranscription.text, false, 'model');
+        if (serverContent?.outputTranscription?.text) {
+            this.config.onMessage(serverContent.outputTranscription.text, false, 'model');
         }
 
         // Input Transcription (User Text)
-        if (message.serverContent?.inputTranscription?.text) {
-            this.config.onMessage(message.serverContent.inputTranscription.text, false, 'user');
+        if (serverContent?.inputTranscription?.text) {
+            this.config.onMessage(serverContent.inputTranscription.text, false, 'user');
         }
 
-        if (message.serverContent?.turnComplete) {
+        // Turn complete
+        if (serverContent?.turnComplete) {
             this.config.onMessage("", true, 'model');
             this.config.onMessage("", true, 'user');
         }
 
-        if (message.serverContent?.interrupted) {
+        // Interrupted
+        if (serverContent?.interrupted) {
             this.sources.forEach(s => s.stop());
             this.sources.clear();
             this.nextStartTime = 0;
@@ -211,7 +284,7 @@ export class GeminiLiveServiceImpl {
 
         // Tool Call Handling
         if (message.toolCall) {
-            console.log("Gemini requested tool call:", message.toolCall);
+            console.log("Tool call received:", message.toolCall);
             const toolCalls = message.toolCall?.functionCalls;
             if (toolCalls && toolCalls.length > 0) {
                 for (const call of toolCalls) {
@@ -224,20 +297,23 @@ export class GeminiLiveServiceImpl {
     }
 
     async handleExtractUnfamiliarEnglish(args, callId) {
-        console.log('Gemini requested tool: extract_unfamiliar_english', args);
+        console.log('Tool: extract_unfamiliar_english', args);
 
-        // Respond to tool call immediately to unblock the model (3.1 is blocking)
-        if (this.session) {
-            await this.session.sendToolResponse({
-                functionResponses: [{
-                    name: 'extract_unfamiliar_english',
-                    id: callId,
-                    response: { result: "saved" }
-                }]
-            });
+        // Respond to tool call immediately
+        if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
+            const toolResponse = {
+                toolResponse: {
+                    functionResponses: [{
+                        name: 'extract_unfamiliar_english',
+                        id: callId,
+                        response: { result: "saved" }
+                    }]
+                }
+            };
+            this.webSocket.send(JSON.stringify(toolResponse));
         }
 
-        // Fire-and-forget: save to backend asynchronously
+        // Fire-and-forget: save to backend
         fetch('/api/learning/unfamiliar-english', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -250,41 +326,107 @@ export class GeminiLiveServiceImpl {
         }).catch(e => console.error('Error saving unfamiliar english:', e));
     }
 
+    // ─── Send text ─────────────────────────────────────────────────────
+
     async sendText(text) {
-        if (this.session) {
-            // Optimistically update UI
-            this.config.onMessage(text, true, 'user');
+        if (!this.connected || !this.webSocket) return;
 
-            // Use sendClientContent for text input as per Gemini Live API docs
-            // content: [{ parts: [{ text }] }] is for sendRealtimeInput which is mainly for media
-            // sendClientContent is better for text turns
-            this.session.sendClientContent({ turns: text, turnComplete: true });
-        }
+        // Optimistically update UI
+        this.config.onMessage(text, true, 'user');
+
+        // Use realtimeInput.text — same as official reference
+        const message = {
+            realtimeInput: {
+                text: text,
+            },
+        };
+        this.webSocket.send(JSON.stringify(message));
     }
 
-    /**
-     * Sends a context update (e.g. news content) to the model without displaying it in the user's chat UI.
-     * This acts as a 'System' or 'Context' injection during the session.
-     */
     async sendContextMessage(text) {
-        if (this.session) {
-            this.session.sendClientContent({ turns: text, turnComplete: true });
-        }
+        if (!this.connected || !this.webSocket) return;
+
+        // Use realtimeInput.text — same as official reference
+        const message = {
+            realtimeInput: {
+                text: text,
+            },
+        };
+        this.webSocket.send(JSON.stringify(message));
     }
+
+    // ─── Disconnect ────────────────────────────────────────────────────
 
     disconnect() {
+        if (this.scriptProcessor) {
+            this.scriptProcessor.disconnect();
+            this.scriptProcessor = null;
+        }
+        if (this.mediaSource) {
+            this.mediaSource.disconnect();
+            this.mediaSource = null;
+        }
         if (this.mediaStream) {
             this.mediaStream.getTracks().forEach(t => t.stop());
+            this.mediaStream = null;
         }
-        this.sources.forEach(s => s.stop());
+        this.sources.forEach(s => { try { s.stop(); } catch (_) { } });
+        this.sources.clear();
         if (this.inputAudioContext && this.inputAudioContext.state !== 'closed') {
             this.inputAudioContext.close();
         }
         if (this.outputAudioContext && this.outputAudioContext.state !== 'closed') {
             this.outputAudioContext.close();
         }
-
+        if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
+            this.webSocket.close();
+        }
+        this.webSocket = null;
+        this.connected = false;
         this.session = null;
         this.config.onConnectionUpdate(false);
+    }
+
+    // ─── Audio helpers ─────────────────────────────────────────────────
+
+    float32ToPcm16Base64(float32Array) {
+        const pcm16 = new Int16Array(float32Array.length);
+        for (let i = 0; i < float32Array.length; i++) {
+            const s = Math.max(-1, Math.min(1, float32Array[i]));
+            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        const bytes = new Uint8Array(pcm16.buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+    }
+
+    decodeAudioFromBase64(base64) {
+        try {
+            // Gemini returns raw PCM16 little-endian at 24kHz
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+
+            // Convert PCM16 (Int16) → Float32
+            const pcm16 = new Int16Array(bytes.buffer);
+            const float32 = new Float32Array(pcm16.length);
+            for (let i = 0; i < pcm16.length; i++) {
+                float32[i] = pcm16[i] / 32768;
+            }
+
+            // Create AudioBuffer (mono, 24kHz)
+            const audioBuffer = this.outputAudioContext.createBuffer(1, float32.length, 24000);
+            audioBuffer.getChannelData(0).set(float32);
+            return audioBuffer;
+        } catch (err) {
+            console.error("Audio decode error:", err);
+            return null;
+        }
     }
 }

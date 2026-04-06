@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/JackYinpei/lingdaily:latest
+    image: ghcr.io/jackyinpei/lingdaily:latest
     ports:
       - "8000:8000"
     env_file:

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react"
 import { signIn } from "next-auth/react"
 import Link from "next/link"
-import { LogIn, MessageCircle, ShieldCheck } from "lucide-react"
+import { LogIn, MessageCircle, ShieldCheck, Terminal } from "lucide-react"
 
 import { Button } from "@/app/components/ui/button"
 import {
@@ -15,7 +15,7 @@ import {
   CardTitle,
 } from "@/app/components/ui/card"
 
-export default function SignInClient({ googleEnabled }) {
+export default function SignInClient({ googleEnabled, linuxDoEnabled }) {
   const [isPending, startTransition] = useTransition()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -25,6 +25,13 @@ export default function SignInClient({ googleEnabled }) {
     if (!googleEnabled) return
     startTransition(() => {
       void signIn("google", { callbackUrl: "/" })
+    })
+  }
+
+  const handleLinuxDoSignIn = () => {
+    if (!linuxDoEnabled) return
+    startTransition(() => {
+      void signIn("linux-do", { callbackUrl: "/" })
     })
   }
 
@@ -83,17 +90,32 @@ export default function SignInClient({ googleEnabled }) {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {googleEnabled ? (
+            {(googleEnabled || linuxDoEnabled) ? (
               <>
-                <Button
-                  onClick={handleGoogleSignIn}
-                  className="w-full bg-white text-black hover:bg-white/90"
-                  size="lg"
-                  disabled={isPending}
-                >
-                  <GoogleLogo />
-                  <span>{isPending ? "Redirecting…" : "Continue with Google"}</span>
-                </Button>
+                <div className="space-y-3">
+                  {googleEnabled ? (
+                    <Button
+                      onClick={handleGoogleSignIn}
+                      className="w-full bg-white text-black hover:bg-white/90"
+                      size="lg"
+                      disabled={isPending}
+                    >
+                      <GoogleLogo />
+                      <span>{isPending ? "Redirecting…" : "Continue with Google"}</span>
+                    </Button>
+                  ) : null}
+                  {linuxDoEnabled ? (
+                    <Button
+                      onClick={handleLinuxDoSignIn}
+                      className="w-full bg-black text-white border border-white/20 hover:bg-white/10"
+                      size="lg"
+                      disabled={isPending}
+                    >
+                      <LinuxDoLogo />
+                      <span>{isPending ? "Redirecting…" : "Continue with Linux.do"}</span>
+                    </Button>
+                  ) : null}
+                </div>
                 <div className="relative my-2 text-center text-white/50 text-xs">
                   <span className="bg-transparent px-2">OR</span>
                 </div>
@@ -160,6 +182,10 @@ export default function SignInClient({ googleEnabled }) {
       </div>
     </div>
   )
+}
+
+function LinuxDoLogo() {
+  return <Terminal className="mr-2 size-4" aria-hidden="true" />
 }
 
 function GoogleLogo() {

@@ -3,6 +3,29 @@ import NextAuth from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import Google from "next-auth/providers/google"
 
+const LinuxDo = {
+  id: "linux-do",
+  name: "Linux.do",
+  type: "oauth",
+  clientId: process.env.AUTH_LINUXDO_ID,
+  clientSecret: process.env.AUTH_LINUXDO_SECRET,
+  authorization: {
+    url: "https://connect.linux.do/oauth2/authorize",
+    params: { scope: "openid" },
+  },
+  token: "https://connect.linux.do/oauth2/token",
+  userinfo: "https://connect.linux.do/api/user",
+  profile(profile) {
+    return {
+      id: String(profile.id),
+      name: profile.name || profile.username || profile.login,
+      email: profile.email,
+      image: profile.avatar_url || profile.picture,
+    }
+  },
+  checks: ["state"],
+}
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
 
@@ -70,6 +93,10 @@ const providers = [
 
 if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
   providers.unshift(Google)
+}
+
+if (process.env.AUTH_LINUXDO_ID && process.env.AUTH_LINUXDO_SECRET) {
+  providers.unshift(LinuxDo)
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({

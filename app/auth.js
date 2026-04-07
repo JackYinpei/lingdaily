@@ -15,12 +15,13 @@ const LinuxDo = {
   },
   token: "https://connect.linux.do/oauth2/token",
   userinfo: "https://connect.linux.do/api/user",
+  idToken: false,
   profile(profile) {
     return {
-      id: String(profile.id),
+      id: String(profile.id || profile.sub),
       name: profile.name || profile.username || profile.login,
-      email: profile.email,
-      image: profile.avatar_url || profile.picture,
+      email: profile.email || `${profile.username || profile.id}@linux.do`,
+      image: profile.avatar_url || profile.picture || null,
     }
   },
   checks: ["state"],

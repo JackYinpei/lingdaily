@@ -13,9 +13,17 @@ const LinuxDo = {
     url: "https://connect.linux.do/oauth2/authorize",
     params: {},
   },
-  token: "https://connect.linux.do/oauth2/token",
+  token: {
+    url: "https://connect.linux.do/oauth2/token",
+    async conform(response) {
+      const body = await response.json()
+      if (body.id_token) {
+        delete body.id_token
+        return new Response(JSON.stringify(body), response)
+      }
+    },
+  },
   userinfo: "https://connect.linux.do/api/user",
-  idToken: false,
   profile(profile) {
     return {
       id: String(profile.id || profile.sub),

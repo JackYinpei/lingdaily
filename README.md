@@ -98,3 +98,6 @@ use this to generate sitemap
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=JackYinpei/talk-news&type=date&legend=top-left)](https://www.star-history.com/#JackYinpei/talk-news&type=date&legend=top-left)
+
+
+#### 项目首发在 https://linux.do 感谢各位佬友的支持以及star

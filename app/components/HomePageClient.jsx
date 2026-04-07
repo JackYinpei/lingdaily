@@ -6,6 +6,7 @@ import { MessageCircle, Users, Globe, CheckCircle, Star } from 'lucide-react'
 import StartLearningWithLanguage from '@/app/components/StartLearningWithLanguage'
 import ThemeToggle from '@/app/components/ThemeToggle'
 import HeroVideoDemo from '@/app/components/HeroVideoDemo'
+import MobileNav from '@/app/components/MobileNav'
 
 const I18N = {
   en: {
@@ -52,14 +53,15 @@ export default function HomePageClient({ signedIn, signOutAction, locale = DEFAU
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
-      <header className="border-b border-border">
+      <header className="border-b border-border relative">
         <div className="container mx-auto px-4 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <MessageCircle className="h-8 w-8" />
               <span className="text-2xl font-bold text-foreground">LingDaily</span>
             </div>
-            <nav className="hidden md:flex items-center space-x-6">
+            {/* Desktop nav — shown from lg (1024 px) up */}
+            <nav className="hidden lg:flex items-center space-x-4">
               {signedIn ? (
                 <>
                   <Link href="/talk" className="text-muted-foreground hover:text-foreground transition-colors">
@@ -74,25 +76,27 @@ export default function HomePageClient({ signedIn, signOutAction, locale = DEFAU
                 </>
               ) : (
                 <>
-                  <Link href="#features" className="text-muted-foreground hover:text-foreground transition-colors">
+                  <Link href="#features" className="text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
                     {t.nav.features}
                   </Link>
-                  <Link href="#how-it-works" className="text-muted-foreground hover:text-foreground transition-colors">
+                  <Link href="#how-it-works" className="text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
                     {t.nav.how}
                   </Link>
-                  <Link href="#testimonials" className="text-muted-foreground hover:text-foreground transition-colors">
+                  <Link href="#testimonials" className="text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
                     {t.nav.reviews}
                   </Link>
                   <StartLearningWithLanguage startLabel={t.nav.startLearning} learningLabel={t.start.learningLabel} nativeLabel={t.start.nativeLabel} />
                   <ThemeToggle />
                   <Link href="/sign-in">
-                    <Button variant="outline" className="font-semibold">
+                    <Button variant="outline" className="font-semibold whitespace-nowrap">
                       {t.nav.signIn}
                     </Button>
                   </Link>
                 </>
               )}
             </nav>
+            {/* Mobile hamburger — shown below lg */}
+            <MobileNav t={t} signedIn={signedIn} signOutAction={signOutAction} />
           </div>
         </div>
       </header>
@@ -107,7 +111,7 @@ export default function HomePageClient({ signedIn, signOutAction, locale = DEFAU
               <span className="text-transparent bg-gradient-to-r from-white to-zinc-400 bg-clip-text"> {t.hero.h1Highlight}</span>
             </h1>
             <p className="text-xl md:text-2xl text-muted-foreground mb-8 leading-relaxed">{t.hero.desc}</p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex flex-row flex-wrap gap-4 justify-center">
               <Link href="/talk">
                 <Button size="lg" className="font-semibold px-8 py-4 text-lg">
                   {t.hero.primaryBtn}

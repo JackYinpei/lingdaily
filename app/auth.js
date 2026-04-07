@@ -11,7 +11,7 @@ const LinuxDo = {
   clientSecret: process.env.AUTH_LINUXDO_SECRET,
   authorization: {
     url: "https://connect.linux.do/oauth2/authorize",
-    params: { scope: "openid" },
+    params: {},
   },
   token: "https://connect.linux.do/oauth2/token",
   userinfo: "https://connect.linux.do/api/user",

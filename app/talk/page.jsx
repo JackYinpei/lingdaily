@@ -598,7 +598,10 @@ export default function Home() {
             </header>
 
             {/* Main Content */}
-            <div className="container mx-auto px-4 py-2 flex flex-col h-screen lg:h-auto lg:min-h-0">
+            <div
+                className="container mx-auto px-4 py-2 flex flex-col h-screen lg:h-auto lg:min-h-0"
+                style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}
+            >
                 <div className="flex flex-col lg:flex-row lg:gap-6 flex-1 min-h-0 lg:h-[calc(100vh-140px)]">
                     {/* Mobile News Cards - 在中等屏幕以下显示 */}
                     <div className="lg:hidden flex-shrink-0">

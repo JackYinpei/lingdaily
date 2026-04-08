@@ -61,13 +61,23 @@ export const metadata = {
   },
 };
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#0a0a0a' },
+  ],
+};
+
 export default async function RootLayout({ children }) {
   const h = await headers()
   const acceptLanguage = h.get('accept-language') || ''
   const themeScript = `(()=>{try{var s=localStorage.getItem('theme');var m=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;var t=s==='light'?'light':s==='dark'?'dark':(m?'dark':'light');var d=document.documentElement;d.classList.toggle('dark',t==='dark');}catch(e){document.documentElement.classList.add('dark');}})()`
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className="bg-background">
+      <body suppressHydrationWarning className="bg-background min-h-screen">
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <SessionProvider>
           <LanguageProvider initialAcceptLanguage={acceptLanguage}>

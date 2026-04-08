@@ -386,7 +386,7 @@ export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNe
               className={
                 isMobile
                   ? mobileHasSelection
-                    ? `flex-shrink-0 transition-all duration-300 ease-in-out w-full min-w-full max-w-full h-auto ${isSelected ? "scale-100 opacity-100" : "scale-95 opacity-80"}`
+                    ? `flex-shrink-0 transition-all duration-300 ease-in-out w-full min-w-full max-w-full h-[25vh] ${isSelected ? "scale-100 opacity-100" : "scale-95 opacity-80"}`
                     : "flex-shrink-0 transition-all duration-300 ease-in-out w-[260px] h-48"
                   : `transition-all duration-300 ease-in-out ${isSelected ? "h-96" : "h-48"}`
               }

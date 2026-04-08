@@ -3,6 +3,23 @@
  * Based on the official Google reference:
  * https://github.com/google-gemini/gemini-live-api-examples/tree/main/gemini-live-ephemeral-tokens-websocket
  */
+import confetti from 'canvas-confetti';
+
+// Tiny, non-intrusive celebration burst — small particle count, short duration,
+// fired near the bottom-center so it never obscures the chat.
+function fireTinyConfetti() {
+    try {
+        confetti({
+            particleCount: 18,
+            spread: 45,
+            startVelocity: 25,
+            scalar: 0.7,
+            ticks: 120,
+            origin: { x: 0.5, y: 0.85 },
+            disableForReducedMotion: true,
+        });
+    } catch (_) { /* ignore */ }
+}
 
 // Tool declaration for extracting unfamiliar English
 export const extractUnfamiliarEnglishToolDecl = {
@@ -90,9 +107,20 @@ export class GeminiLiveServiceImpl {
         if (this.outputAudioContext && this.outputAudioContext.state !== 'closed') return;
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         this.outputAudioContext = new AudioContextClass({ sampleRate: 24000 });
-        // Call resume() synchronously (no await) — Chrome only needs the call
-        // to happen during the gesture; we don't need to await completion here.
         this.outputAudioContext.resume();
+
+        // Hard-unlock AudioContext by actually playing a silent 1-sample buffer
+        // during the user gesture. On iOS/mobile, merely calling resume() is not
+        // enough — the context must schedule real (even silent) audio to allow
+        // future playback without another gesture.
+        try {
+            const silentBuffer = this.outputAudioContext.createBuffer(1, 1, 24000);
+            const silentSource = this.outputAudioContext.createBufferSource();
+            silentSource.buffer = silentBuffer;
+            silentSource.connect(this.outputAudioContext.destination);
+            silentSource.start(0);
+        } catch (_) { /* ignore — best-effort unlock */ }
+
         console.log("Output AudioContext primed, state:", this.outputAudioContext.state);
     }
 
@@ -337,7 +365,9 @@ export class GeminiLiveServiceImpl {
             this.webSocket.send(JSON.stringify(toolResponse));
         }
 
-        // Fire-and-forget: save to backend
+        // Fire-and-forget: save to backend. Only celebrate when the server
+        // actually persisted new items (skip empty-items no-ops).
+        const hasItems = Array.isArray(args.items) && args.items.length > 0;
         fetch('/api/learning/unfamiliar-english', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -347,7 +377,11 @@ export class GeminiLiveServiceImpl {
                 timestamp: new Date().toISOString(),
                 userMessage: args.userMessage ?? null,
             }),
-        }).catch(e => console.error('Error saving unfamiliar english:', e));
+        })
+            .then(res => {
+                if (res.ok && hasItems) fireTinyConfetti();
+            })
+            .catch(e => console.error('Error saving unfamiliar english:', e));
     }
 
     // ─── Send text ─────────────────────────────────────────────────────

@@ -79,6 +79,36 @@ export async function POST(req) {
       return { response, data: parsed }
     }
 
+    // Ensure user row exists in public.users to satisfy the FK constraint.
+    // OAuth users and credentials users without a DB trigger won't have a row yet.
+    if (supabaseServiceRoleKey) {
+      const userRow = {
+        id: session.user.id,
+        email: session.user.email || null,
+        name: session.user.name || null,
+      }
+      try {
+        const userUpsertRes = await fetch(`${supabaseUrl}/rest/v1/users?on_conflict=id`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseServiceRoleKey,
+            Authorization: `Bearer ${supabaseServiceRoleKey}`,
+            'Content-Profile': supabaseSchema,
+            Prefer: 'return=minimal,resolution=ignore-duplicates',
+          },
+          body: JSON.stringify(userRow),
+          cache: 'no-store',
+        })
+        if (!userUpsertRes.ok) {
+          const txt = await userUpsertRes.text()
+          console.warn('[unfamiliar-english] user upsert failed (non-fatal):', txt)
+        }
+      } catch (upsertErr) {
+        console.warn('[unfamiliar-english] user upsert error (non-fatal):', upsertErr?.message)
+      }
+    }
+
     // Attempt insert once using preferred bearer (service role > session token > anon)
     const { response: res, data } = await doInsert(initialBearer)
 

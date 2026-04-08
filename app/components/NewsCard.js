@@ -18,7 +18,7 @@ export function NewsCard({
       className={cn(
         "cursor-pointer transition-all duration-200 hover:shadow-md w-full h-full flex flex-col overflow-hidden p-0",
         isSelected ? "ring-2 ring-inset ring-primary bg-accent/10" : "hover:bg-card/80",
-        showCompactSelected && "max-h-[40vh]",
+        showCompactSelected && "max-h-[25vh]",
         useMobileActiveLayout && !isSelected && "opacity-90"
       )}
       onClick={(e) => {

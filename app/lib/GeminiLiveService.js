@@ -30,9 +30,10 @@ ONLY include an item if it meets at least one of these criteria:
 1. The user expressed the concept in their native language (e.g. Chinese/Japanese) instead of English — they wanted to say something but lacked the English word.
 2. The user attempted an English word/phrase but clearly struggled: hesitated (\"uh\", \"um\", repeated words), used broken/incorrect grammar, substituted a wrong word, or mixed in their native language mid-phrase.
 3. The user explicitly asked what a word or phrase means.
+4. The user mispronounced a word badly enough to suggest they don't really know it (e.g. read "manslaughter" as "must leather").
 
 DO NOT include:
-- Common everyday English that any beginner knows (e.g. "look at", "that's enough", "what do you think", "powerful tool", "bad man").
+- Common everyday English that any intermediate learner knows (e.g. "look at", "that's enough", "what do you think", "powerful tool", "bad man").
 - Any word or phrase the user said fluently and correctly without hesitation.
 - Full sentences the user said correctly — only extract the specific word/phrase they struggled with.
 

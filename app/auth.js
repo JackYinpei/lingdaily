@@ -37,6 +37,52 @@ const LinuxDo = {
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+/**
+ * Ensure an OAuth user exists in Supabase auth.users via Admin API.
+ * Returns the Supabase auth UUID so all tables can use a consistent user_id.
+ */
+async function ensureAuthUser({ email, name, image }) {
+  if (!supabaseUrl || !supabaseServiceRoleKey || !email) return null
+
+  const headers = {
+    'Content-Type': 'application/json',
+    apikey: supabaseServiceRoleKey,
+    Authorization: `Bearer ${supabaseServiceRoleKey}`,
+  }
+
+  // Try creating the user via Supabase Admin API
+  const createRes = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      email,
+      email_confirm: true,
+      user_metadata: { name, avatar_url: image },
+    }),
+  })
+
+  if (createRes.ok) {
+    const data = await createRes.json()
+    console.log('[auth] Created auth.users entry for OAuth user:', data.id)
+    return data.id
+  }
+
+  // User already exists (422) — look up by email
+  const listRes = await fetch(
+    `${supabaseUrl}/auth/v1/admin/users?filter=${encodeURIComponent(email)}&page=1&per_page=10`,
+    { method: 'GET', headers },
+  )
+  if (listRes.ok) {
+    const listData = await listRes.json()
+    const users = listData.users || []
+    const match = users.find(u => u.email === email)
+    if (match) return match.id
+  }
+
+  return null
+}
 
 async function signInWithSupabase(email, password) {
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -114,7 +160,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   session: { strategy: "jwt" },
   callbacks: {
     async jwt({ token, user }) {
-      if (user?.id) token.uid = user.id
+      if (user?.id) {
+        if (user.supabaseAccessToken) {
+          // Credentials user — already in auth.users
+          token.uid = user.id
+        } else if (user.email) {
+          // OAuth user — ensure they exist in auth.users, use Supabase UUID
+          try {
+            const authId = await ensureAuthUser({
+              email: user.email,
+              name: user.name,
+              image: user.image,
+            })
+            token.uid = authId || user.id
+          } catch (e) {
+            console.error('[auth] ensureAuthUser failed:', e?.message)
+            token.uid = user.id
+          }
+        } else {
+          token.uid = user.id
+        }
+      }
       if (user?.email) token.email = user.email
       if (user?.name) token.name = user.name
       if (user?.image) token.picture = user.image

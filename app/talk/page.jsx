@@ -6,14 +6,29 @@ import { useSession } from "next-auth/react"
 
 // UI components
 import NewsFeed from "@/app/components/NewsFeed";
+import ScenarioFeed from "@/app/components/ScenarioFeed";
+import { ModeToggle } from "@/app/components/ModeToggle";
 import { History } from "@/app/components/History";
 
 import Link from 'next/link';
 import { CombineInitPrompt } from '@/app/lib/utils';
+import { buildScenarioPrompt } from '@/app/lib/scenarioPrompt';
 import { useLanguage } from '@/app/contexts/LanguageContext';
 import { GeminiLiveServiceImpl } from '@/app/lib/GeminiLiveService';
 
-function buildInstructions(lang, nativeLabel, targetLabel) {
+function buildInstructions(lang, nativeLabel, targetLabel, isScenario = false) {
+    const openingContent = isScenario
+        ? {
+            en: `- When the conversation starts and a scenario is provided, your VERY FIRST response must introduce the scenario and begin the role-play.\n- Use a natural MIX of ${nativeLabel} and ${targetLabel} for this opening — do NOT use only one language.\n- Keep the intro brief (2-4 sentences), set the scene, then start the role-play interaction.`,
+            zh: `- 对话开始时，如果提供了场景，你的第一句话必须介绍这个场景并开始角色扮演；\n- 介绍时必须用${nativeLabel}和${targetLabel}夹杂的方式，不能只用一种语言；\n- 介绍要简洁（2~4句话），设定场景，然后开始角色扮演互动。`,
+            ja: `- 会話開始時にシナリオが提供されたら、最初の返答でそのシナリオを紹介しロールプレイを始めること。\n- 母語（${nativeLabel}）と${targetLabel}を自然に混ぜて紹介する。\n- 紹介は簡潔に（2〜4文）、場面を設定し、ロールプレイを始めること。`,
+        }
+        : {
+            en: `- When the conversation starts and a news article is provided, your VERY FIRST response must introduce the news to the user.\n- Use a natural MIX of ${nativeLabel} and ${targetLabel} for this opening — do NOT use only one language.\n- Keep the intro brief (2-4 sentences), highlight the most interesting point, then invite the user to discuss.`,
+            zh: `- 对话开始时，如果提供了新闻文章，你的第一句话必须介绍这篇新闻的主要内容；\n- 介绍时必须用${nativeLabel}和${targetLabel}夹杂的方式，不能只用一种语言；\n- 介绍要简洁（2~4句话），突出最有趣的信息点，然后邀请用户展开讨论。`,
+            ja: `- 会話開始時にニュース記事が提供されたら、最初の返答でそのニュースを紹介すること。\n- 母語（${nativeLabel}）と${targetLabel}を自然に混ぜて紹介する。\n- 紹介は簡潔に（2〜4文）、最も興味深い点を挙げ、ユーザーに議論を促すこと。`,
+        };
+
     if (lang === 'en') {
         return `
 You are ChatLearn, a friendly ${targetLabel} conversation tutor. Your goal is to help users practice ${targetLabel} through natural conversation while discovering learning opportunities.
@@ -22,9 +37,7 @@ Core Role:
 - Lead immersive ${targetLabel} conversation and provide targeted learning support.
 
 OPENING (VERY IMPORTANT):
-- When the conversation starts and a news article is provided, your VERY FIRST response must introduce the news to the user.
-- Use a natural MIX of ${nativeLabel} and ${targetLabel} for this opening — do NOT use only one language.
-- Keep the intro brief (2-4 sentences), highlight the most interesting point, then invite the user to discuss.
+${openingContent.en}
 
 Key Behaviors:
 - Mix the user's native language (${nativeLabel}) and ${targetLabel} in conversation at first; then adjust toward more ${targetLabel} or more ${nativeLabel} according to user preference.
@@ -63,9 +76,7 @@ Be encouraging and patient, while maintaining clear conversational leadership fo
 - 没入型の${targetLabel}会話を主導し、的確な学習サポートを提供する。
 
 開始時（重要）:
-- 会話開始時にニュース記事が提供されたら、最初の返答でそのニュースを紹介すること。
-- 母語（${nativeLabel}）と${targetLabel}を自然に混ぜて紹介する。
-- 紹介は簡潔に（2〜4文）、最も興味深い点を挙げ、ユーザーに議論を促すこと。
+${openingContent.ja}
 
 重要な行動:
 - 会話の冒頭は母語（${nativeLabel}）と${targetLabel}を織り交ぜ、ユーザーの好みに応じてより${targetLabel}寄り／より${nativeLabel}寄りへ調整する。
@@ -103,9 +114,7 @@ Be encouraging and patient, while maintaining clear conversational leadership fo
 【核心角色】主导沉浸式${targetLabel}对话，提供针对性学习支持。
 
 【开场规则（非常重要）】
-- 对话开始时，如果提供了新闻文章，你的第一句话必须介绍这篇新闻的主要内容；
-- 介绍时必须用${nativeLabel}和${targetLabel}夹杂的方式，不能只用一种语言；
-- 介绍要简洁（2~4句话），突出最有趣的信息点，然后邀请用户展开讨论。
+${openingContent.zh}
 
 【关键行为】
 - 用${nativeLabel}和${targetLabel}夹杂的方式进行交谈，然后根据用户偏好，采取更多${targetLabel}或者更多${nativeLabel}的表达方式；
@@ -144,13 +153,14 @@ const sanitizeKeyString = (value) => String(value || 'default').replace(/\s+/g, 
 
 const getNewsKey = (news) => {
     if (!news) return 'default';
+    if (news._isScenario) return `scenario:${news._scenarioId}`;
     const base = news.originalTitle || news.title || news.link || news.id || 'default';
     return sanitizeKeyString(base);
 };
 
 const createNewsContextMessage = (news) => {
     if (!news) return null;
-    const contextText = CombineInitPrompt(news);
+    const contextText = news._isScenario ? buildScenarioPrompt(news) : CombineInitPrompt(news);
     if (!contextText) return null;
     const newsKey = getNewsKey(news);
     return {
@@ -239,6 +249,7 @@ export default function Home() {
     const [history, setHistory] = useState([]);
     const [error, setError] = useState(null);
 
+    const [mode, setMode] = useState('news'); // 'news' | 'scenario'
     const [selectedNews, setSelectedNews] = useState(null)
     const selectedNewsRef = useRef(null)
     const newsContextMessageRef = useRef(null)
@@ -247,6 +258,12 @@ export default function Home() {
     // When category changes, clear the selected news (which cascades to clearing chat history)
     const handleCategoryChange = useCallback(() => {
         setSelectedNews(null);
+    }, []);
+
+    const handleModeToggle = useCallback((newMode) => {
+        setMode(newMode);
+        setSelectedNews(null);
+        try { localStorage.setItem('talk-mode', newMode); } catch (_) { /* ignore */ }
     }, []);
 
     // UI strings ...
@@ -266,6 +283,7 @@ export default function Home() {
             newsContent: news,
             history: conversationHistory,
             summary: null,
+            sourceType: news._isScenario ? 'scenario' : 'news',
         };
 
         try {
@@ -324,6 +342,10 @@ export default function Home() {
 
     // 加载初始状态
     useEffect(() => {
+        try {
+            const savedMode = localStorage.getItem('talk-mode');
+            if (savedMode === 'news' || savedMode === 'scenario') setMode(savedMode);
+        } catch (_) { /* ignore */ }
         const savedNews = loadSelectedNewsFromStorage();
         if (savedNews) {
             setSelectedNews(savedNews);
@@ -347,11 +369,15 @@ export default function Home() {
         // Clear history immediately to prevent showing stale content from previous article
         setHistory([]);
 
-        // If we are already connected, we need to inform the AI about the new news context
+        // If we are already connected, we need to inform the AI about the new context
         if (serviceRef.current && serviceRef.current.session) {
-            const newsContext = CombineInitPrompt(selectedNews);
-            // Send as an invisible context update
-            serviceRef.current.sendContextMessage(`[System Update] The user has switched to a new news article. Please focus on this new content:\n${newsContext}`);
+            if (selectedNews._isScenario) {
+                const scenarioContext = buildScenarioPrompt(selectedNews);
+                serviceRef.current.sendContextMessage(`[System Update] The user has switched to a new scenario. Please start this role-play:\n${scenarioContext}`);
+            } else {
+                const newsContext = CombineInitPrompt(selectedNews);
+                serviceRef.current.sendContextMessage(`[System Update] The user has switched to a new news article. Please focus on this new content:\n${newsContext}`);
+            }
         }
 
         if (!userSession?.user?.id) {
@@ -520,24 +546,39 @@ export default function Home() {
             const baseInstructions = buildInstructions(
                 uiLangCode,
                 nativeLanguage?.label || '中文',
-                learningLanguage?.label || 'English'
+                learningLanguage?.label || 'English',
+                selectedNewsRef.current?._isScenario || false
             );
 
             await serviceRef.current?.connect(baseInstructions, token);
 
-            // Once connected, seed the model with news context and instruct it to open with a bilingual intro
+            // Once connected, seed the model with context and instruct it to open with a bilingual intro
             if (selectedNewsRef.current && serviceRef.current) {
-                const newsContext = CombineInitPrompt(selectedNewsRef.current);
+                const current = selectedNewsRef.current;
                 const nativeL = nativeLanguage?.label || '中文';
                 const targetL = learningLanguage?.label || 'English';
-                const openingGuide = uiLangCode === 'en'
-                    ? `Please introduce this news now using a natural mix of ${nativeL} and ${targetL}, then invite the user to discuss.`
-                    : uiLangCode === 'ja'
-                    ? `このニュースを今すぐ${nativeL}と${targetL}を混ぜて自然に紹介し、ユーザーに議論を促してください。`
-                    : `请现在用${nativeL}和${targetL}夹杂的方式简短介绍这篇新闻的主要内容，然后邀请用户展开讨论。`;
-                await serviceRef.current.sendContextMessage(
-                    `[System Initialize] The user is viewing the following news article.\n${openingGuide}\n\n${newsContext}`
-                );
+
+                if (current._isScenario) {
+                    const scenarioContext = buildScenarioPrompt(current);
+                    const openingGuide = uiLangCode === 'en'
+                        ? `Please start the scenario role-play now using a natural mix of ${nativeL} and ${targetL}.`
+                        : uiLangCode === 'ja'
+                        ? `今すぐ${nativeL}と${targetL}を混ぜてシナリオのロールプレイを始めてください。`
+                        : `请现在用${nativeL}和${targetL}夹杂的方式开始这个场景的角色扮演。`;
+                    await serviceRef.current.sendContextMessage(
+                        `[System Initialize] The user wants to practice a scenario.\n${openingGuide}\n\n${scenarioContext}`
+                    );
+                } else {
+                    const newsContext = CombineInitPrompt(current);
+                    const openingGuide = uiLangCode === 'en'
+                        ? `Please introduce this news now using a natural mix of ${nativeL} and ${targetL}, then invite the user to discuss.`
+                        : uiLangCode === 'ja'
+                        ? `このニュースを今すぐ${nativeL}と${targetL}を混ぜて自然に紹介し、ユーザーに議論を促してください。`
+                        : `请现在用${nativeL}和${targetL}夹杂的方式简短介绍这篇新闻的主要内容，然后邀请用户展开讨论。`;
+                    await serviceRef.current.sendContextMessage(
+                        `[System Initialize] The user is viewing the following news article.\n${openingGuide}\n\n${newsContext}`
+                    );
+                }
             }
         }
     }
@@ -603,37 +644,64 @@ export default function Home() {
                 style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}
             >
                 <div className="flex flex-col lg:flex-row lg:gap-6 flex-1 min-h-0 lg:h-[calc(100vh-140px)]">
-                    {/* Mobile News Cards - 在中等屏幕以下显示 */}
+                    {/* Mobile Cards - 在中等屏幕以下显示 */}
                     <div className="lg:hidden flex-shrink-0">
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-xl font-semibold text-foreground">Latest News</h2>
+                        <div className="flex items-center justify-between mb-1">
+                            <h2 className="text-xl font-semibold text-foreground">
+                                {mode === 'news' ? 'Latest News' : (uiLangCode === 'zh' ? '场景练习' : uiLangCode === 'ja' ? 'シナリオ' : 'Scenarios')}
+                            </h2>
+                            <ModeToggle mode={mode} onToggle={handleModeToggle} lang={uiLangCode} />
                         </div>
                         <div className="overflow-x-auto custom-scroll pb-2 -mx-4 px-4">
-                            <NewsFeed
-                                onArticleSelect={setSelectedNews}
-                                onCategoryChange={handleCategoryChange}
-                                selectedNews={selectedNews}
-                                targetLanguage={learningLanguage?.code || 'en'}
-                                nativeLanguage={nativeLanguage?.code || 'zh-CN'}
-                                isMobile={true}
-                            />
+                            {mode === 'news' ? (
+                                <NewsFeed
+                                    onArticleSelect={setSelectedNews}
+                                    onCategoryChange={handleCategoryChange}
+                                    selectedNews={selectedNews}
+                                    targetLanguage={learningLanguage?.code || 'en'}
+                                    nativeLanguage={nativeLanguage?.code || 'zh-CN'}
+                                    isMobile={true}
+                                />
+                            ) : (
+                                <ScenarioFeed
+                                    onArticleSelect={setSelectedNews}
+                                    onCategoryChange={handleCategoryChange}
+                                    selectedNews={selectedNews}
+                                    isMobile={true}
+                                    lang={uiLangCode}
+                                />
+                            )}
                         </div>
                     </div>
 
-                    {/* Desktop News Cards - 在大屏幕以上显示 */}
+                    {/* Desktop Cards - 在大屏幕以上显示 */}
                     <div className="hidden lg:flex lg:w-[40%] flex-col min-h-0 h-[calc(100vh-140px)]">
-                        <h2 className="text-xl font-semibold text-foreground mb-4">Latest News</h2>
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-xl font-semibold text-foreground">
+                                {mode === 'news' ? 'Latest News' : (uiLangCode === 'zh' ? '场景练习' : uiLangCode === 'ja' ? 'シナリオ' : 'Scenarios')}
+                            </h2>
+                            <ModeToggle mode={mode} onToggle={handleModeToggle} lang={uiLangCode} />
+                        </div>
                         <div
                             className="min-h-0 h-full overflow-y-auto custom-scroll overscroll-contain"
                             style={{ overscrollBehaviorY: 'contain' }}
                         >
-                            <NewsFeed
-                                onArticleSelect={setSelectedNews}
-                                onCategoryChange={handleCategoryChange}
-                                selectedNews={selectedNews}
-                                targetLanguage={learningLanguage?.code || 'en'}
-                                nativeLanguage={nativeLanguage?.code || 'zh-CN'}
-                            />
+                            {mode === 'news' ? (
+                                <NewsFeed
+                                    onArticleSelect={setSelectedNews}
+                                    onCategoryChange={handleCategoryChange}
+                                    selectedNews={selectedNews}
+                                    targetLanguage={learningLanguage?.code || 'en'}
+                                    nativeLanguage={nativeLanguage?.code || 'zh-CN'}
+                                />
+                            ) : (
+                                <ScenarioFeed
+                                    onArticleSelect={setSelectedNews}
+                                    onCategoryChange={handleCategoryChange}
+                                    selectedNews={selectedNews}
+                                    lang={uiLangCode}
+                                />
+                            )}
                         </div>
                     </div>
 

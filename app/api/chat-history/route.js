@@ -32,6 +32,7 @@ export async function POST(req) {
       newsContent,
       history,
       summary,
+      sourceType,
     } = payload || {};
 
     if (!newsKey || typeof newsKey !== "string") {
@@ -49,6 +50,7 @@ export async function POST(req) {
       news: newsContent ?? null,
       history,
       summary: typeof summary === "string" ? summary : summary ?? null,
+      source_type: sourceType || "news",
     };
 
     const bearer = supabaseServiceRoleKey || session.supabaseAccessToken || supabaseAnonKey;

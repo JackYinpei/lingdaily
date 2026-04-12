@@ -1,15 +1,6 @@
 import clsx from 'clsx';
 import React from 'react';
-
-const CustomLink = ({ href, children, ...props }) => (
-  <a
-    href={href}
-    {...props}
-    className="rounded-full py-1 px-2 text-sm font-medium bg-accent text-accent-foreground hover:bg-accent/80"
-  >
-    {children}
-  </a>
-);
+import ReactMarkdown from 'react-markdown';
 
 export function TextMessage({ text, isUser }) {
   return (
@@ -19,14 +10,14 @@ export function TextMessage({ text, isUser }) {
       })}
     >
       <div
-        className={clsx('rounded-[16px] whitespace-pre-wrap', {
+        className={clsx('rounded-[16px]', {
           // User bubble (right)
-          'px-4 py-2 max-w-[90%] ml-4 bg-secondary text-secondary-foreground': isUser,
+          'px-4 py-2 max-w-[90%] ml-4 bg-secondary text-secondary-foreground whitespace-pre-wrap': isUser,
           // Assistant bubble (left)
-          'px-4 py-2 max-w-[90%] mr-4 bg-muted text-foreground border border-border': !isUser,
+          'px-4 py-2 max-w-[90%] mr-4 bg-muted text-foreground border border-border prose prose-sm dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-headings:my-2 max-w-none': !isUser,
         })}
       >
-        {text}
+        {isUser ? text : <ReactMarkdown>{text}</ReactMarkdown>}
       </div>
     </div>
   );

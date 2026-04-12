@@ -148,9 +148,35 @@ export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNe
 
         const imgMatch = description.match(/<img src='([^']*)'/);
         const urlToImage = imgMatch ? imgMatch[1] : null;
-        description = description.replace(/<[^>]*>/g, '').trim();
-        description = description.replace(/\[[^\]]*?(?:#\d+|\.[a-z]{2,4})[^\]]*?\]/gi, '').trim();
-        description = description.replace(/\s+/g, ' ').trim();
+
+        // Remove images and <br> tags
+        description = description.replace(/<img[^>]*>/gi, '');
+        description = description.replace(/<br\s*\/?>/gi, '\n');
+        // Convert structural HTML to formatted text
+        description = description.replace(/<h3[^>]*>(.*?)<\/h3>/gi, '\n\n$1\n');
+        description = description.replace(/<li[^>]*>(.*?)<\/li>/gi, '\n• $1');
+        description = description.replace(/<\/p>/gi, '\n');
+        description = description.replace(/<p[^>]*>/gi, '');
+        // Strip remaining HTML tags
+        description = description.replace(/<[^>]*>/g, '');
+        // Decode HTML entities
+        description = description
+          .replace(/&#x27;/g, "'")
+          .replace(/&#x2F;/g, "/")
+          .replace(/&quot;/g, '"')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(code))
+          .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+        // Remove bracket patterns with URLs/file extensions
+        description = description.replace(/\[[^\]]*?(?:#\d+|\.[a-z]{2,4})[^\]]*?\]/gi, '');
+        // Remove standalone source/link references like "(Reuters)" or "(The Hindu)"
+        description = description.replace(/\s*\([^)]*\)\s*$/gm, '');
+        // Clean up excessive whitespace while preserving intentional line breaks
+        description = description.replace(/[ \t]+/g, ' ');
+        description = description.replace(/\n{3,}/g, '\n\n');
+        description = description.trim();
 
         return {
           id: `${category}-${index}`,

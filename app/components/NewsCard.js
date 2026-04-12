@@ -100,11 +100,11 @@ export function NewsCard({
 
           <div
             className={cn(
-              "text-muted-foreground leading-relaxed transition-all duration-300 ease-in-out",
+              "text-muted-foreground leading-relaxed transition-all duration-300 ease-in-out whitespace-pre-line",
               useMobileActiveLayout ? "text-sm" : compact ? "text-xs" : "text-sm"
             )}
           >
-            {isSelected ? news.description : `${news.description.substring(0, 250)}...`}
+            {isSelected ? news.description : news.description.split('\n')[0].substring(0, 250) + '...'}
           </div>
         </div>
       </div>

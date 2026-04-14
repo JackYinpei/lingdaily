@@ -1,8 +1,8 @@
 import { checkAdmin } from "@/app/lib/adminAuth";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 const supabaseSchema = process.env.SUPABASE_SCHEMA || "public";
 const tableUrl = supabaseUrl ? `${supabaseUrl}/rest/v1/scenarios` : null;
 
@@ -24,7 +24,6 @@ function sbHeaders() {
   };
 }
 
-// Admin: list all scenarios (including inactive)
 export async function GET(req) {
   try {
     const session = await checkAdmin();
@@ -32,15 +31,12 @@ export async function GET(req) {
     if (!tableUrl) return jsonResponse({ error: "Missing Supabase config" }, 500);
 
     const { searchParams } = new URL(req.url);
-    const categoryId = searchParams.get("categoryId");
+    const categorySlug = searchParams.get("categorySlug");
 
     const query = new URLSearchParams({ order: "sort_order.asc,title_en.asc", select: "*" });
-    if (categoryId) query.set("category_id", `eq.${categoryId}`);
+    if (categorySlug) query.set("category_slug", `eq.${categorySlug}`);
 
-    const res = await fetch(`${tableUrl}?${query}`, {
-      headers: sbHeaders(),
-      cache: "no-store",
-    });
+    const res = await fetch(`${tableUrl}?${query}`, { headers: sbHeaders(), cache: "no-store" });
     const data = await res.json().catch(() => []);
     if (!res.ok) return jsonResponse({ error: data?.message || "Fetch failed" }, res.status);
     return jsonResponse({ ok: true, data });
@@ -56,13 +52,18 @@ export async function POST(req) {
     if (!tableUrl) return jsonResponse({ error: "Missing Supabase config" }, 500);
 
     const body = await req.json().catch(() => ({}));
-    const { category_id, title_zh, title_en, system_prompt } = body;
-    if (!category_id || !title_zh || !title_en || !system_prompt) {
-      return jsonResponse({ error: "category_id, title_zh, title_en, system_prompt are required" }, 400);
+    const { title_zh, title_en, system_prompt, category_slug } = body;
+    if (!title_zh || !title_en || !system_prompt || !category_slug) {
+      return jsonResponse({ error: "title_zh, title_en, system_prompt, category_slug are required" }, 400);
     }
 
     const row = {
-      category_id,
+      category_slug,
+      category_name_zh: body.category_name_zh || null,
+      category_name_en: body.category_name_en || null,
+      category_name_ja: body.category_name_ja || null,
+      category_icon: body.category_icon || null,
+      category_sort: body.category_sort ?? 0,
       title_zh,
       title_en,
       title_ja: body.title_ja || null,
@@ -73,6 +74,8 @@ export async function POST(req) {
       system_prompt,
       sort_order: body.sort_order ?? 0,
       is_active: body.is_active !== false,
+      is_public: body.is_public !== false, // system scenarios are public by default
+      user_id: null,
     };
 
     const res = await fetch(tableUrl, {

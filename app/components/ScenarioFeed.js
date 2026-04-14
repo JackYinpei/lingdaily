@@ -1,7 +1,45 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import { ScenarioCard } from "./ScenarioCard";
+import GenerateScenarioDialog from "./GenerateScenarioDialog";
+
+const MY_CATEGORY_ID = "__mine__";
+const PUBLIC_CATEGORY_ID = "__public__";
+
+const i18n = {
+  zh: {
+    myScenarios: "我的场景",
+    publicScenarios: "社区场景",
+    noScenarios: "暂无场景",
+    noMine: "还没有自己创建的场景",
+    noPublic: "暂无社区场景",
+    createBtn: "✨ AI 创建",
+    loginToCreate: "登录后可创建场景",
+    deleteConfirm: "确认删除这个场景？",
+  },
+  en: {
+    myScenarios: "My Scenarios",
+    publicScenarios: "Community",
+    noScenarios: "No scenarios yet",
+    noMine: "No custom scenarios yet",
+    noPublic: "No community scenarios yet",
+    createBtn: "✨ Create with AI",
+    loginToCreate: "Log in to create scenarios",
+    deleteConfirm: "Delete this scenario?",
+  },
+  ja: {
+    myScenarios: "マイシナリオ",
+    publicScenarios: "コミュニティ",
+    noScenarios: "シナリオがありません",
+    noMine: "カスタムシナリオなし",
+    noPublic: "コミュニティシナリオなし",
+    createBtn: "✨ AIで作成",
+    loginToCreate: "ログインして作成",
+    deleteConfirm: "このシナリオを削除しますか？",
+  },
+};
 
 export default function ScenarioFeed({
   onArticleSelect,
@@ -10,12 +48,15 @@ export default function ScenarioFeed({
   isMobile = false,
   lang = "en",
 }) {
+  const { data: session } = useSession();
   const [categories, setCategories] = useState([]);
   const [scenarios, setScenarios] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showGenerateDialog, setShowGenerateDialog] = useState(false);
 
+  const t = i18n[lang] || i18n.en;
   const nameKey = `name_${lang}`;
   const titleKey = `title_${lang}`;
   const descKey = `description_${lang}`;
@@ -30,9 +71,8 @@ export default function ScenarioFeed({
         if (cancelled) return;
         const cats = Array.isArray(json?.data) ? json.data : [];
         setCategories(cats);
-        // Restore or default to first
         const saved = localStorage.getItem("scenario-category");
-        const initial = cats.find((c) => c.id === saved) || cats[0];
+        const initial = cats.find((c) => c.slug === saved) || cats[0];
         if (initial) setSelectedCategory(initial);
       } catch (err) {
         if (!cancelled) setError(err.message);
@@ -49,9 +89,18 @@ export default function ScenarioFeed({
     let cancelled = false;
     setLoading(true);
     setScenarios([]);
+
     (async () => {
       try {
-        const res = await fetch(`/api/scenarios?categoryId=${selectedCategory.id}`, { cache: "no-store" });
+        let url;
+        if (selectedCategory.id === MY_CATEGORY_ID) {
+          url = "/api/scenarios?mine=true";
+        } else if (selectedCategory.id === PUBLIC_CATEGORY_ID) {
+          url = "/api/scenarios?public=true";
+        } else {
+          url = `/api/scenarios?categorySlug=${selectedCategory.slug}`;
+        }
+        const res = await fetch(url, { cache: "no-store" });
         const json = await res.json();
         if (!cancelled) setScenarios(Array.isArray(json?.data) ? json.data : []);
       } catch (err) {
@@ -66,7 +115,9 @@ export default function ScenarioFeed({
   const handleCategoryClick = useCallback(
     (cat) => {
       setSelectedCategory(cat);
-      localStorage.setItem("scenario-category", cat.id);
+      if (cat.id !== MY_CATEGORY_ID && cat.id !== PUBLIC_CATEGORY_ID) {
+        localStorage.setItem("scenario-category", cat.slug);
+      }
       onCategoryChange?.();
     },
     [onCategoryChange]
@@ -94,16 +145,67 @@ export default function ScenarioFeed({
     [selectedNews, selectedCategory, onArticleSelect, nameKey, titleKey, descKey]
   );
 
+  const handleDelete = useCallback(
+    async (scenario, e) => {
+      e.stopPropagation();
+      if (!confirm(t.deleteConfirm)) return;
+      try {
+        await fetch(`/api/scenarios?id=${scenario.id}`, { method: "DELETE" });
+        setScenarios((prev) => prev.filter((s) => s.id !== scenario.id));
+        if (selectedNews?._scenarioId === scenario.id) {
+          onArticleSelect?.(null);
+        }
+      } catch {}
+    },
+    [selectedNews, onArticleSelect, t.deleteConfirm]
+  );
+
+  const handleSaved = useCallback((saved) => {
+    // If we're viewing "My Scenarios", add the new one to the list
+    if (selectedCategory?.id === MY_CATEGORY_ID) {
+      setScenarios((prev) => [saved, ...prev]);
+    }
+  }, [selectedCategory]);
+
+  const handleScenarioReady = useCallback((scenario) => {
+    onArticleSelect?.(scenario);
+  }, [onArticleSelect]);
+
+  // Build virtual categories for mine/public
+  const virtualCats = [];
+  if (session?.user) {
+    virtualCats.push({
+      id: MY_CATEGORY_ID,
+      slug: "__mine__",
+      icon: "⭐",
+      name_zh: t.myScenarios,
+      name_en: t.myScenarios,
+      name_ja: t.myScenarios,
+    });
+  }
+  virtualCats.push({
+    id: PUBLIC_CATEGORY_ID,
+    slug: "__public__",
+    icon: "🌐",
+    name_zh: t.publicScenarios,
+    name_en: t.publicScenarios,
+    name_ja: t.publicScenarios,
+  });
+
+  const allCats = [...virtualCats, ...categories];
+
+  const isUserCategory = selectedCategory?.id === MY_CATEGORY_ID || selectedCategory?.id === PUBLIC_CATEGORY_ID;
+
   // Category pills
   const categorySelectorJSX = (
-    <div className={`${isMobile ? "px-2 sticky top-0 bg-background z-10" : "px-2"} mb-4`}>
-      <div className="flex overflow-x-auto custom-scroll gap-2 py-2">
-        {categories.map((cat) => (
+    <div className={`${isMobile ? "px-2 sticky top-0 bg-background z-10" : "px-2"} mb-3`}>
+      <div className="flex overflow-x-auto custom-scroll gap-2 py-2 items-center">
+        {allCats.map((cat) => (
           <button
             key={cat.id}
             onClick={() => handleCategoryClick(cat)}
             disabled={loading}
-            className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+            className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${
               selectedCategory?.id === cat.id
                 ? "bg-primary text-primary-foreground shadow-md scale-105"
                 : "bg-secondary hover:bg-secondary/80 text-secondary-foreground"
@@ -113,6 +215,22 @@ export default function ScenarioFeed({
             {cat[nameKey] || cat.name_en}
           </button>
         ))}
+
+        {/* AI Create button */}
+        <button
+          onClick={() => {
+            if (!session?.user) return;
+            setShowGenerateDialog(true);
+          }}
+          title={!session?.user ? t.loginToCreate : undefined}
+          className={`flex-shrink-0 ml-1 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all border ${
+            session?.user
+              ? "border-primary/40 text-primary hover:bg-primary/10 active:scale-95"
+              : "border-border text-muted-foreground cursor-not-allowed opacity-60"
+          }`}
+        >
+          {t.createBtn}
+        </button>
       </div>
     </div>
   );
@@ -147,42 +265,88 @@ export default function ScenarioFeed({
     );
   }
 
+  const noScenariosText =
+    selectedCategory?.id === MY_CATEGORY_ID
+      ? t.noMine
+      : selectedCategory?.id === PUBLIC_CATEGORY_ID
+      ? t.noPublic
+      : t.noScenarios;
+
   return (
     <div>
       {categorySelectorJSX}
       <div className={isMobile ? "flex gap-3 overflow-x-auto custom-scroll px-2" : "space-y-4 px-2 py-2"}>
         {scenarios.map((scenario) => {
           const isSelected = selectedNews?._scenarioId === scenario.id;
+          const isOwn = scenario.user_id && scenario.user_id === session?.user?.id;
+
           return (
             <div
               key={scenario.id}
               className={
                 isMobile
                   ? "flex-shrink-0 transition-all duration-300 ease-in-out w-[260px] h-48"
-                  : `transition-all duration-300 ease-in-out ${isSelected ? "h-72" : "h-40"}`
+                  : `transition-all duration-300 ease-in-out ${isSelected ? "h-auto min-h-48" : "h-40"}`
               }
             >
-              <ScenarioCard
-                scenario={{
-                  ...scenario,
-                  title: scenario[titleKey] || scenario.title_en,
-                  description: scenario[descKey] || scenario.description_en,
-                  category: selectedCategory?.[nameKey] || selectedCategory?.name_en || "",
-                }}
-                isSelected={isSelected}
-                onSelect={() => handleSelect(scenario)}
-                compact={isMobile}
-                lang={lang}
-              />
+              <div className="relative h-full">
+                <ScenarioCard
+                  scenario={{
+                    ...scenario,
+                    title: scenario[titleKey] || scenario.title_en,
+                    description: scenario[descKey] || scenario.description_en,
+                    category: selectedCategory?.[nameKey] || selectedCategory?.name_en || "",
+                  }}
+                  isSelected={isSelected}
+                  onSelect={() => handleSelect(scenario)}
+                  compact={isMobile}
+                  lang={lang}
+                />
+                {/* Delete button for own scenarios */}
+                {isOwn && (
+                  <button
+                    onClick={(e) => handleDelete(scenario, e)}
+                    className="absolute top-2 right-2 w-6 h-6 rounded-full bg-background/80 hover:bg-red-100 text-muted-foreground hover:text-red-500 flex items-center justify-center text-xs transition-colors"
+                    title="Delete"
+                  >
+                    ×
+                  </button>
+                )}
+                {/* Public badge for community scenarios */}
+                {scenario.user_id && scenario.is_public && !isOwn && (
+                  <span className="absolute top-2 right-2 text-xs bg-background/80 px-1.5 py-0.5 rounded text-muted-foreground">
+                    🌐
+                  </span>
+                )}
+              </div>
             </div>
           );
         })}
         {!loading && scenarios.length === 0 && (
           <div className="text-muted-foreground text-sm px-2 py-8 text-center">
-            {lang === "zh" ? "暂无场景" : lang === "ja" ? "シナリオがありません" : "No scenarios yet"}
+            {noScenariosText}
+            {selectedCategory?.id === MY_CATEGORY_ID && session?.user && (
+              <div className="mt-3">
+                <button
+                  onClick={() => setShowGenerateDialog(true)}
+                  className="px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
+                >
+                  {t.createBtn}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {showGenerateDialog && (
+        <GenerateScenarioDialog
+          lang={lang}
+          onClose={() => setShowGenerateDialog(false)}
+          onScenarioReady={handleScenarioReady}
+          onSaved={handleSaved}
+        />
+      )}
     </div>
   );
 }

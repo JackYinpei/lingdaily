@@ -100,7 +100,7 @@ export function NewsCard({
 
           <div
             className={cn(
-              "text-muted-foreground leading-relaxed transition-all duration-300 ease-in-out whitespace-pre-line",
+              "text-muted-foreground leading-[2.4] transition-all duration-300 ease-in-out whitespace-pre-line",
               useMobileActiveLayout ? "text-sm" : compact ? "text-xs" : "text-sm"
             )}
           >

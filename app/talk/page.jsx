@@ -15,6 +15,7 @@ import { CombineInitPrompt } from '@/app/lib/utils';
 import { buildScenarioPrompt } from '@/app/lib/scenarioPrompt';
 import { useLanguage } from '@/app/contexts/LanguageContext';
 import { GeminiLiveServiceImpl } from '@/app/lib/GeminiLiveService';
+import OnboardingGuide from '@/app/components/OnboardingGuide';
 
 function buildInstructions(lang, nativeLabel, targetLabel, isScenario = false) {
     const openingContent = isScenario
@@ -739,6 +740,7 @@ export default function Home() {
                     </div>
                 </div>
             </div>
+            <OnboardingGuide lang={uiLangCode} />
         </div>
     )
 }

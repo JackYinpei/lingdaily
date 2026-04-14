@@ -41,6 +41,9 @@ yarn-error.log*
 next-env.d.ts
 /public/tmp
 
+# generated sitemap
+/public/sitemap*.xml
+
 reference/
 experience/
 .claude/

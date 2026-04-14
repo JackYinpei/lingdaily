@@ -311,6 +311,7 @@ export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNe
 
   const categorySelectorJSX = (
     <div
+      data-tour="category-bar"
       className={`transition-all duration-500 ease-in-out ${isMobile ? "px-2 sticky top-0 bg-background z-10" : "px-2"} ${hasSelectedNews
           ? 'max-h-0 opacity-0 pointer-events-none overflow-hidden -translate-y-2 mb-0 custom-scroll'
           : 'max-h-24 opacity-100 pointer-events-auto mb-4 translate-y-0'
@@ -391,7 +392,7 @@ export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNe
           overscrollBehaviorY: 'none'
         } : {}}
       >
-        {articles.map((article) => {
+        {articles.map((article, index) => {
           // 转换数据格式以匹配现有NewsCard组件
           const newsData = {
             id: article.id,
@@ -409,6 +410,7 @@ export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNe
           return (
             <div
               key={article.id}
+              {...(index === 0 ? { "data-tour": "news-card" } : {})}
               className={
                 isMobile
                   ? mobileHasSelection

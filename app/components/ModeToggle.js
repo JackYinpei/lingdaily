@@ -10,7 +10,7 @@ const modes = [
 export function ModeToggle({ mode, onToggle, lang = "en" }) {
   const labelKey = `label_${lang}`;
   return (
-    <div className="inline-flex rounded-full bg-secondary p-0.5 gap-0.5">
+    <div className="inline-flex rounded-full bg-secondary p-0.5 gap-0.5" data-tour="mode-toggle">
       {modes.map((m) => (
         <button
           key={m.key}

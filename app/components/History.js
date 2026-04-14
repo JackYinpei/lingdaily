@@ -122,6 +122,7 @@ export function History({
             </div>
             <div className="flex gap-1 mt-2 items-center">
                 <button
+                    data-tour="connect-btn"
                     onClick={() => !isConnecting && connect()}
                     disabled={isConnecting}
                     className={`${isInputFocused ? 'hidden sm:flex' : 'flex'} w-10 h-10 lg:w-auto lg:px-4 rounded-full lg:rounded-lg font-medium transition-colors items-center justify-center text-lg flex-shrink-0 ${isConnected

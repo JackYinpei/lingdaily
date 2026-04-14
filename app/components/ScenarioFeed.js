@@ -198,7 +198,7 @@ export default function ScenarioFeed({
 
   // Category pills
   const categorySelectorJSX = (
-    <div className={`${isMobile ? "px-2 sticky top-0 bg-background z-10" : "px-2"} mb-3`}>
+    <div data-tour="category-bar" className={`${isMobile ? "px-2 sticky top-0 bg-background z-10" : "px-2"} mb-3`}>
       <div className="flex overflow-x-auto custom-scroll gap-2 py-2 items-center">
         {allCats.map((cat) => (
           <button
@@ -276,13 +276,14 @@ export default function ScenarioFeed({
     <div>
       {categorySelectorJSX}
       <div className={isMobile ? "flex gap-3 overflow-x-auto custom-scroll px-2" : "space-y-4 px-2 py-2"}>
-        {scenarios.map((scenario) => {
+        {scenarios.map((scenario, index) => {
           const isSelected = selectedNews?._scenarioId === scenario.id;
           const isOwn = scenario.user_id && scenario.user_id === session?.user?.id;
 
           return (
             <div
               key={scenario.id}
+              {...(index === 0 ? { "data-tour": "news-card" } : {})}
               className={
                 isMobile
                   ? "flex-shrink-0 transition-all duration-300 ease-in-out w-[260px] h-48"

@@ -126,7 +126,7 @@ export async function GET(req) {
       cache: 'no-store',
       // Some servers behave better with a UA
       headers: {
-        'User-Agent': 'LingDaily/1.0 (+https://talknews.ai)'
+        'User-Agent': 'LingDaily/1.0 (+https://lingdaily.ai)'
       }
     });
 

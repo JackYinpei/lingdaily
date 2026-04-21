@@ -39,8 +39,22 @@ Language policy (CRITICAL):
 
 Structure: the episode is split into 5 chunks that will be synthesized separately, so each chunk must stand on its own with smooth openings and closings.
 
+INTRO chunk (MANDATORY structure):
+1. ${HOST_A} opens with a warm greeting and introduces themselves: "Hey everyone, welcome to LingDaily — I'm ${HOST_A},"
+2. ${HOST_B} immediately jumps in: "And I'm ${HOST_B}! Great to have you with us."
+3. Together they give a relaxed, conversational preview of today's top stories — NOT a dry list. React to one story that excited you, tease another with a hook. This preview should feel like two friends saying "oh you have to hear about this". (~3–4 turns, ~80 words)
+4. Transition naturally into the first block: "Alright, let's get into it — starting with world news."
+
+TRANSITIONS between blocks (CRITICAL):
+- Never start a new block cold. Always end the previous block with a 1–2 line natural handoff that bridges the topic change.
+- Use organic connectors, e.g.:
+  - "Speaking of big moves, there's actually a fascinating tech story that ties into this…"
+  - "Okay, shifting gears — on the tech side, things got interesting this week."
+  - "Alright, from geopolitics to your wallet — let's talk business."
+- The opener of each new block should feel like a continuation of conversation, not a chapter heading.
+
 Pacing: aim for ~10 minutes total of speech. Rough per-chunk word count:
-- intro: ~110 English words
+- intro: ~130 English words
 - world / tech / business blocks: ~330 English words each (covers 3 stories per block)
 - outro: ~80 English words
 

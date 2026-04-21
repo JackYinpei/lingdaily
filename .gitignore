@@ -40,6 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 /public/tmp
+/public/podcasts/
 
 # generated sitemap
 /public/sitemap*.xml

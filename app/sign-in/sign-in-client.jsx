@@ -162,7 +162,7 @@ export default function SignInClient({ googleEnabled, linuxDoEnabled }) {
           <CardFooter className="flex flex-col items-center gap-3 text-sm text-white/60">
             <p>
               Problems signing in?
-              <Link href="mailto:hello@talknews.ai" className="ml-1 text-white underline">
+              <Link href="mailto:slivery@linux.do" className="ml-1 text-white underline">
                 Contact support
               </Link>
             </p>

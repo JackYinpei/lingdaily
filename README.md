@@ -55,7 +55,7 @@ npm run start
 | `AUTH_SECRET` | `openssl rand -base64 32` 生成 | NextAuth 用于签名 JWT 的密钥。务必保密。 |
 | `AUTH_URL` | `http://localhost:3000` | NextAuth 基准 URL，本地开发通常为 localhost，部署时填入公网域名。 |
 | `GEMINI_API_KEY` | `AIzaSy...` | Google API Key，用于 Gemini Live 实时会话。 |
-| `NEXT_PUBLIC_GEMINI_BASE_URL` | `https://api.talknews.ai` | （可选）Gemini API 代理地址，国内用户需配置以中转 WebSocket 连接。 |
+| `NEXT_PUBLIC_GEMINI_BASE_URL` | `https://api.lingdaily.ai` | （可选）Gemini API 代理地址，国内用户需配置以中转 WebSocket 连接。 |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://your-project.supabase.co` | Supabase 项目 URL，需对外暴露，因此使用 `NEXT_PUBLIC_` 前缀。 |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJhbGciOi...` | Supabase 匿名密钥，供前端访问。 |
 | `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOi...` | Supabase Service Role Key，仅在服务器端使用，勿泄露。 |
@@ -97,7 +97,7 @@ use this to generate sitemap
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=JackYinpei/talk-news&type=date&legend=top-left)](https://www.star-history.com/#JackYinpei/talk-news&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=JackYinpei/lingdaily&type=date&legend=top-left)](https://www.star-history.com/#JackYinpei/lingdaily&type=date&legend=top-left)
 
 
 #### 项目首发在 https://linux.do 感谢各位佬友的支持以及star

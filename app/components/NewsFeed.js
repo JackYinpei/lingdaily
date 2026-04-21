@@ -204,7 +204,7 @@ export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNe
   // so the fetch effect below will fire exactly once with the correct category.
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('talk-news-category');
+      const saved = localStorage.getItem('lingdaily-category');
       if (saved && categories.some(c => c.categoryId === saved)) {
         setSelectedCategory(saved);
       }
@@ -221,7 +221,7 @@ export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNe
   // Handle user clicking a category button: persist + update state + notify parent
   const handleCategoryClick = useCallback((categoryId) => {
     setSelectedCategory(categoryId);
-    try { localStorage.setItem('talk-news-category', categoryId); } catch (_) { /* ignore */ }
+    try { localStorage.setItem('lingdaily-category', categoryId); } catch (_) { /* ignore */ }
     onCategoryChange?.();
   }, [onCategoryChange]);
 

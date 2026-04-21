@@ -8,24 +8,24 @@ AI 驱动的英语新闻会话练习应用，基于 Next.js App Router 与 NextA
 
 ### 主页
 
-![homepage](public/showcast/dark-home.png)
+![homepage](public/showcase/dark-home.png)
 
 ### 聊天
 
-![聊天界面](public/showcast/talk.png)
+![聊天界面](public/showcase/talk.png)
 
 ### 历史
 
-![历史](public/showcast/history.png)
+![历史](public/showcase/history.png)
 
 
 ### 生单词
 
-![生单词](public/showcast/words.png)
+![生单词](public/showcase/words.png)
 
 ### 播客
 
-![播客](public/showcast/podcasts.png)
+![播客](public/showcase/podcasts.jpg)
 
 ## 快速开始
 

@@ -2,9 +2,9 @@
 // Splitting per chunk keeps each TTS call under the "few minutes" drift threshold.
 
 import { GoogleGenAI } from "@google/genai";
-import { spawn } from "node:child_process";
-import { mkdir, writeFile, rm, stat } from "node:fs/promises";
+import { mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
+import Mp3Encoder from "@breezystack/lamejs";
 import { HOST_A, HOST_B } from "./script.js";
 
 const ai = new GoogleGenAI({
@@ -18,6 +18,7 @@ const TTS_MODEL = "gemini-3.1-flash-tts-preview";
 const SAMPLE_RATE = 24000;
 const CHANNELS = 1;
 const SAMPLE_WIDTH = 2;
+const MP3_KBPS = 96;
 
 const VOICE_A = "Sulafat";    // Warm
 const VOICE_B = "Laomedeia";  // Upbeat
@@ -46,44 +47,26 @@ function renderChunkPrompt(chunk) {
   return DIRECTOR_PREAMBLE + renderChunkTranscript(chunk);
 }
 
-function writeWavHeader(pcmLength) {
-  const byteRate = SAMPLE_RATE * CHANNELS * SAMPLE_WIDTH;
-  const blockAlign = CHANNELS * SAMPLE_WIDTH;
-  const header = Buffer.alloc(44);
-  header.write("RIFF", 0);
-  header.writeUInt32LE(36 + pcmLength, 4);
-  header.write("WAVE", 8);
-  header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20); // PCM
-  header.writeUInt16LE(CHANNELS, 22);
-  header.writeUInt32LE(SAMPLE_RATE, 24);
-  header.writeUInt32LE(byteRate, 28);
-  header.writeUInt16LE(blockAlign, 32);
-  header.writeUInt16LE(SAMPLE_WIDTH * 8, 34);
-  header.write("data", 36);
-  header.writeUInt32LE(pcmLength, 40);
-  return header;
-}
+// Encode concatenated PCM buffers directly to MP3 using lamejs (no ffmpeg needed).
+function pcmBuffersToMp3(pcmBuffers) {
+  const encoder = new Mp3Encoder.Mp3Encoder(CHANNELS, SAMPLE_RATE, MP3_KBPS);
+  const mp3Parts = [];
 
-async function pcmToWavFile(pcmBuffer, filePath) {
-  const header = writeWavHeader(pcmBuffer.length);
-  await writeFile(filePath, Buffer.concat([header, pcmBuffer]));
-}
+  for (const pcm of pcmBuffers) {
+    // lamejs expects Int16Array
+    const samples = new Int16Array(pcm.buffer, pcm.byteOffset, pcm.byteLength / 2);
+    const blockSize = 1152;
+    for (let i = 0; i < samples.length; i += blockSize) {
+      const chunk = samples.subarray(i, i + blockSize);
+      const encoded = encoder.encodeBuffer(chunk);
+      if (encoded.length > 0) mp3Parts.push(Buffer.from(encoded));
+    }
+  }
 
-function runProcess(cmd, args) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    proc.stdout.on("data", (d) => (stdout += d.toString()));
-    proc.stderr.on("data", (d) => (stderr += d.toString()));
-    proc.on("error", reject);
-    proc.on("close", (code) => {
-      if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error(`${cmd} exited ${code}: ${stderr.slice(-500)}`));
-    });
-  });
+  const flushed = encoder.flush();
+  if (flushed.length > 0) mp3Parts.push(Buffer.from(flushed));
+
+  return Buffer.concat(mp3Parts);
 }
 
 async function synthesizeChunkWithRetry(chunk, attempts = 3) {
@@ -118,53 +101,26 @@ async function synthesizeChunkWithRetry(chunk, attempts = 3) {
   throw new Error(`TTS chunk "${chunk.name}" failed after ${attempts} attempts: ${lastErr?.message}`);
 }
 
-async function getMp3Duration(mp3Path) {
-  try {
-    const { stdout } = await runProcess("ffprobe", [
-      "-v", "error",
-      "-show_entries", "format=duration",
-      "-of", "default=noprint_wrappers=1:nokey=1",
-      mp3Path,
-    ]);
-    const seconds = parseFloat(stdout.trim());
-    return Number.isFinite(seconds) ? Math.round(seconds) : 0;
-  } catch {
-    return 0;
-  }
+function estimateMp3Duration(pcmBuffers) {
+  const totalSamples = pcmBuffers.reduce((acc, b) => acc + b.byteLength / SAMPLE_WIDTH, 0);
+  return Math.round(totalSamples / SAMPLE_RATE);
 }
 
 // Synthesize every chunk, concat to single MP3, return { size, duration }.
 export async function synthesizePodcast(script, { outputMp3Path, workDir }) {
   await mkdir(workDir, { recursive: true });
 
-  const wavFiles = [];
+  const pcmBuffers = [];
   for (const chunk of script.chunks) {
     const pcm = await synthesizeChunkWithRetry(chunk);
-    const wavPath = path.join(workDir, `${chunk.name}.wav`);
-    await pcmToWavFile(pcm, wavPath);
-    wavFiles.push(wavPath);
+    pcmBuffers.push(pcm);
   }
 
-  const listPath = path.join(workDir, "concat.txt");
-  const listContent = wavFiles.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n");
-  await writeFile(listPath, listContent);
-
-  await runProcess("ffmpeg", [
-    "-y",
-    "-f", "concat",
-    "-safe", "0",
-    "-i", listPath,
-    "-c:a", "libmp3lame",
-    "-b:a", "96k",
-    "-ac", "1",
-    "-ar", "24000",
-    outputMp3Path,
-  ]);
-
-  const { size } = await stat(outputMp3Path);
-  const duration = await getMp3Duration(outputMp3Path);
+  const duration = estimateMp3Duration(pcmBuffers);
+  const mp3Buffer = pcmBuffersToMp3(pcmBuffers);
+  await writeFile(outputMp3Path, mp3Buffer);
 
   await rm(workDir, { recursive: true, force: true });
 
-  return { size, duration };
+  return { size: mp3Buffer.length, duration };
 }

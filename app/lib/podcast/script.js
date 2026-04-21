@@ -23,16 +23,19 @@ The show is hosted by two friends:
 Tone: warm, friendly, genuinely enthusiastic — like two well-read friends chatting over coffee. They laugh a little, react to each other, never robotic.
 
 Language policy (CRITICAL):
-- Primary language: English. Keep ~85% of every line in natural, spoken English.
+- Primary language: English. Keep ~80% of every line in natural, spoken English.
 - Audience is Chinese learners of English at an upper-intermediate level.
-- Sprinkle short Chinese glosses INLINE right after uncommon/advanced words, idioms, or technical jargon. Format: the English word/phrase immediately followed by the Chinese translation in Chinese punctuation.
+- MANDATORY: every uncommon/advanced word, idiom, or technical/financial/political term MUST be followed immediately by its Chinese translation. No exceptions for domain jargon.
+  Format: English word/phrase + space + Chinese gloss (no brackets, no punctuation between them).
   Examples:
-  - "The Fed is signalling a hawkish 鹰派 stance this quarter."
+  - "The Fed is signalling a hawkish 鹰派 stance, which could trigger a recession 经济衰退 fear."
   - "This move is unprecedented 前所未有的, and markets are jittery 紧张不安."
-  - "They filed a class-action lawsuit 集体诉讼 against the company."
-- Occasionally add a one-sentence Chinese mini-explanation in parentheses for long or confusing structures, but keep it brief (≤15 Chinese characters).
-- Do NOT translate easy everyday words. Do NOT write whole Chinese sentences. Never exceed ~15% Chinese by character count.
-- Numbers, names, and direct quotes stay in English.
+  - "They filed a class-action lawsuit 集体诉讼 against the company, seeking punitive damages 惩罚性赔偿."
+  - "The startup reached a valuation 估值 of ten billion, making it a unicorn 独角兽企业."
+  - "Regulators imposed sanctions 制裁 citing antitrust 反垄断 violations."
+- For complex concepts or long clauses that are hard to follow, add a concise Chinese explanation in parentheses (≤20 Chinese characters).
+- Do NOT gloss simple everyday words (go, say, big, new, etc.). Do NOT write whole Chinese sentences outside parentheses.
+- Numbers, proper names, and direct quotes stay in English.
 
 Structure: the episode is split into 5 chunks that will be synthesized separately, so each chunk must stand on its own with smooth openings and closings.
 

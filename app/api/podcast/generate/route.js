@@ -1,5 +1,5 @@
 import path from "node:path";
-import { access, mkdir } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import { fetchPodcastNews } from "@/app/lib/podcast/news";
 import { generatePodcastScript } from "@/app/lib/podcast/script";
 import { synthesizePodcast } from "@/app/lib/podcast/tts";
@@ -26,6 +26,24 @@ function jsonResponse(body, status = 200) {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function renderScriptTxt(id, script) {
+  const lines = [
+    `LingDaily ${id}`,
+    `${script.episode_title}`,
+    ``,
+    script.episode_summary,
+    ``,
+    `${"─".repeat(60)}`,
+  ];
+  for (const chunk of script.chunks) {
+    lines.push(``, `[ ${chunk.name.toUpperCase()} ]`, ``);
+    for (const turn of chunk.turns) {
+      lines.push(`${turn.speaker}: ${turn.text}`, ``);
+    }
+  }
+  return lines.join("\n");
 }
 
 function checkSecret(req) {
@@ -83,6 +101,9 @@ export async function POST(req) {
 
     const news = await fetchPodcastNews();
     const script = await generatePodcastScript(news);
+
+    const txtPath = path.join(PODCAST_DIR, `${id}.txt`);
+    await writeFile(txtPath, renderScriptTxt(id, script), "utf8");
 
     const workDir = path.join(PODCAST_DIR, `.work-${id}`);
     const { size, duration } = await synthesizePodcast(script, {

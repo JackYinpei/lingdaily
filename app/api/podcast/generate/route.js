@@ -30,7 +30,7 @@ function jsonResponse(body, status = 200) {
 
 function renderScriptTxt(id, script) {
   const lines = [
-    `LingDaily ${id}`,
+    `成杨英语日刊 ${id}`,
     `${script.episode_title}`,
     ``,
     script.episode_summary,
@@ -55,11 +55,26 @@ function checkSecret(req) {
 }
 
 function todayId() {
-  const d = new Date();
-  const yyyy = d.getUTCFullYear();
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  const timeZone = process.env.PODCAST_TIMEZONE || "Asia/Shanghai";
+  const toDateId = (tz) => {
+    const parts = new Intl.DateTimeFormat("en", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const value = Object.fromEntries(parts.filter((p) => p.type !== "literal").map((p) => [p.type, p.value]));
+    return `${value.year}-${value.month}-${value.day}`;
+  };
+  try {
+    return toDateId(timeZone);
+  } catch (error) {
+    console.warn(
+      `[podcast/generate] Invalid PODCAST_TIMEZONE "${timeZone}", fallback to UTC date.`,
+      error
+    );
+    return toDateId("UTC");
+  }
 }
 
 async function fileExists(p) {

@@ -32,7 +32,8 @@ AUDIO PROFILE
 DIRECTOR'S NOTES
 - Style: friendly, enthusiastic, conversational — the "vocal smile" is audible. They react to each other, not read from a script.
 - Pacing: natural spoken pace; slight speed-ups on excitement words, gentle pauses at story transitions.
-- Language: primary language is English. Inline short Chinese translations (e.g. "hawkish 鹰派") are glosses for learners — read them naturally in Mandarin, then return to English without pausing awkwardly.
+- Language: bilingual with clear Chinese support. Keep a natural mix where English is the base and Chinese explanations are substantial (about 35-45% of spoken content).
+- Inline short Chinese translations (e.g. "hawkish 鹰派") are glosses for learners — read them naturally in Mandarin, then return to English without pausing awkwardly.
 - Accent: clear, neutral English; standard Mandarin for the Chinese glosses.
 - Do not read bracketed directions or speaker labels out loud.
 

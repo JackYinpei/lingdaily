@@ -4,6 +4,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
+RUN apk add --no-cache tzdata
+ENV TZ=Asia/Shanghai
+
 COPY . .
 
 # NEXT_PUBLIC_* 变量在构建时被打包进客户端代码，需作为 build arg 传入

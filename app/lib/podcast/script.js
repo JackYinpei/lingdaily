@@ -14,7 +14,7 @@ const ai = new GoogleGenAI({
 export const HOST_A = "LL";
 export const HOST_B = "DD";
 
-const SYSTEM_PROMPT = `You are a senior producer writing a daily news podcast called "LingDaily".
+const SYSTEM_PROMPT = `You are a senior producer writing a daily news podcast called "成杨英语日刊".
 
 The show is hosted by two friends:
 - ${HOST_A}: warm, thoughtful, explains context clearly.
@@ -23,7 +23,8 @@ The show is hosted by two friends:
 Tone: warm, friendly, genuinely enthusiastic — like two well-read friends chatting over coffee. They laugh a little, react to each other, never robotic.
 
 Language policy (CRITICAL):
-- Primary language: English. Keep ~80% of every line in natural, spoken English.
+- Primary language: bilingual delivery with heavier Chinese support for comprehension.
+- Target ratio: about 55-65% English + 35-45% Chinese across the whole episode.
 - Audience is Chinese learners of English at an upper-intermediate level.
 - MANDATORY: every uncommon/advanced word, idiom, or technical/financial/political term MUST be followed immediately by its Chinese translation. No exceptions for domain jargon.
   Format: English word/phrase + space + Chinese gloss (no brackets, no punctuation between them).
@@ -33,14 +34,15 @@ Language policy (CRITICAL):
   - "They filed a class-action lawsuit 集体诉讼 against the company, seeking punitive damages 惩罚性赔偿."
   - "The startup reached a valuation 估值 of ten billion, making it a unicorn 独角兽企业."
   - "Regulators imposed sanctions 制裁 citing antitrust 反垄断 violations."
-- For complex concepts or long clauses that are hard to follow, add a concise Chinese explanation in parentheses (≤20 Chinese characters).
-- Do NOT gloss simple everyday words (go, say, big, new, etc.). Do NOT write whole Chinese sentences outside parentheses.
+- For each story, include at least 1 full Chinese sentence that summarizes the key point for listeners.
+- For complex concepts or long clauses that are hard to follow, add a concise Chinese explanation in parentheses (≤24 Chinese characters).
+- Do NOT gloss simple everyday words (go, say, big, new, etc.). Prefer concise, useful Chinese explanations over excessive literal translation.
 - Numbers, proper names, and direct quotes stay in English.
 
 Structure: the episode is split into 5 chunks that will be synthesized separately, so each chunk must stand on its own with smooth openings and closings.
 
 INTRO chunk (MANDATORY structure):
-1. ${HOST_A} opens with a warm greeting and introduces themselves: "Hey everyone, welcome to LingDaily — I'm ${HOST_A},"
+1. ${HOST_A} opens with a warm greeting and introduces themselves: "Hey everyone, welcome to 成杨英语日刊 — I'm ${HOST_A},"
 2. ${HOST_B} immediately jumps in: "And I'm ${HOST_B}! Great to have you with us."
 3. Together they give a relaxed, conversational preview of today's top stories — NOT a dry list. React to one story that excited you, tease another with a hook. This preview should feel like two friends saying "oh you have to hear about this". (~3–4 turns, ~80 words)
 4. Transition naturally into the first block: "Alright, let's get into it — starting with world news."
@@ -63,8 +65,8 @@ Each block should cover all 3 stories for that category, in order, with a brief 
 Output ONLY a valid JSON object, no markdown fences, matching this schema exactly:
 
 {
-  "episode_title": "string, concise, English + optional Chinese tag, max 70 chars",
-  "episode_summary": "string, 2–3 sentences English summary of today's stories for the RSS description",
+  "episode_title": "string, concise Chinese title with optional English keyword, max 70 chars",
+  "episode_summary": "string, 2–3 sentence Chinese summary for RSS description (can include key English terms)",
   "chunks": [
     {
       "name": "intro" | "world" | "tech" | "business" | "outro",
@@ -125,6 +127,29 @@ function validateScript(obj) {
   }
 }
 
+function containsHan(text) {
+  return /[\u3400-\u9FFF]/.test(String(text || ""));
+}
+
+function normalizeEpisodeMetadata(script) {
+  const normalized = { ...script };
+  const originalTitle = String(normalized.episode_title || "").trim();
+  const originalSummary = String(normalized.episode_summary || "").trim();
+
+  if (!containsHan(originalTitle)) {
+    normalized.episode_title = originalTitle
+      ? `成杨英语日刊｜${originalTitle}`
+      : "成杨英语日刊｜今日热点双语导读";
+  }
+
+  if (!containsHan(originalSummary)) {
+    normalized.episode_summary =
+      "今日节目聚焦国际、科技与商业热点，LL 和 DD 用中英双语梳理关键信息，并补充高频表达与词汇要点。";
+  }
+
+  return normalized;
+}
+
 export async function generatePodcastScript(newsByCategory) {
   const result = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
@@ -146,5 +171,5 @@ export async function generatePodcastScript(newsByCategory) {
     throw new Error(`Script model returned invalid JSON: ${err.message}`);
   }
   validateScript(parsed);
-  return parsed;
+  return normalizeEpisodeMetadata(parsed);
 }

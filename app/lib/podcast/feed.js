@@ -4,14 +4,14 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const CHANNEL = {
-    title: "LingDaily",
-    subtitle: "每天十分钟，LL和DD带你精读世界新闻",
+    title: "成杨英语日刊",
+    subtitle: "每天十分钟，LL 和 DD 陪你精读全球热点",
     description:
-        "A daily bilingual English/Mandarin news podcast. Two friendly hosts cover the day's top stories in world, tech, and business — with Chinese glosses for advanced vocabulary to help learners pick up natural English.",
-    author: "LingDaily",
-    ownerName: "LingDaily",
+        "《成杨英语日刊》是一档面向中文学习者的双语英语新闻播客。节目每天聚焦国际、科技与商业热点，用自然英文表达搭配中文拆解，帮你同时提升听力、词汇与新闻理解力。",
+    author: "成杨英语日刊",
+    ownerName: "成杨英语日刊",
     ownerEmail: "slivery@linux.do",
-    language: "en-US",
+    language: "zh-CN",
     category: "News",
     subcategory: "Daily News",
     explicit: "no",

@@ -5,6 +5,9 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      - TZ=Asia/Shanghai
+      - PODCAST_TIMEZONE=Asia/Shanghai
     volumes:
       - ./podcasts:/app/public/podcasts
     restart: unless-stopped

@@ -1,8 +1,9 @@
 import path from "node:path";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { fetchPodcastNews } from "@/app/lib/podcast/news";
 import { generatePodcastScript } from "@/app/lib/podcast/script";
 import { synthesizePodcast } from "@/app/lib/podcast/tts";
+import { uploadPodcastToCos } from "@/app/lib/podcast/storage";
 import {
   loadManifest,
   upsertEpisode,
@@ -121,9 +122,15 @@ export async function POST(req) {
     await writeFile(txtPath, renderScriptTxt(id, script), "utf8");
 
     const workDir = path.join(PODCAST_DIR, `.work-${id}`);
-    const { size, duration } = await synthesizePodcast(script, {
+    const { size, duration, mp3Buffer } = await synthesizePodcast(script, {
       outputMp3Path: mp3Path,
       workDir,
+    });
+
+    const enclosureUrl = await uploadPodcastToCos({
+      filename: mp3Filename,
+      contentType: "audio/mpeg",
+      body: mp3Buffer || (await readFile(mp3Path)),
     });
 
     const pubDate = new Date().toISOString();
@@ -135,6 +142,7 @@ export async function POST(req) {
       filename: mp3Filename,
       size,
       duration,
+      enclosureUrl,
     };
 
     const manifest = await loadManifest(MANIFEST_PATH);
@@ -145,7 +153,7 @@ export async function POST(req) {
     return jsonResponse({
       ok: true,
       episode,
-      enclosureUrl: buildEpisodeEnclosureUrl(mp3Filename),
+      enclosureUrl: buildEpisodeEnclosureUrl(mp3Filename, enclosureUrl),
       totalEpisodes: updated.episodes.length,
     });
   } catch (error) {

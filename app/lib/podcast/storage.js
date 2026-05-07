@@ -1,12 +1,4 @@
-import { createHash, createHmac } from "node:crypto";
-
-function sha1Hex(input) {
-  return createHash("sha1").update(input).digest("hex");
-}
-
-function hmacSha1(key, input, encoding = "hex") {
-  return createHmac("sha1", key).update(input).digest(encoding);
-}
+import COS from "cos-nodejs-sdk-v5";
 
 function getCosConfig() {
   const {
@@ -24,7 +16,7 @@ function getCosConfig() {
     ["TENCENT_COS_BUCKET", TENCENT_COS_BUCKET],
     ["TENCENT_COS_REGION", TENCENT_COS_REGION],
     ["TENCENT_COS_PUBLIC_BASE_URL", TENCENT_COS_PUBLIC_BASE_URL],
-  ].filter(([, v]) => !v);
+  ].filter(([, value]) => !value);
 
   if (missing.length > 0) {
     throw new Error(`Missing COS env: ${missing.map(([k]) => k).join(", ")}`);
@@ -40,59 +32,31 @@ function getCosConfig() {
   };
 }
 
-function buildCosAuthorization({ secretId, secretKey, method, pathname, host }) {
-  const now = Math.floor(Date.now() / 1000);
-  const signTime = `${now - 60};${now + 600}`;
-  const keyTime = signTime;
-
-  const httpString = `${method.toLowerCase()}\n${pathname}\n\nhost=${host}\n`;
-  const sha1edHttpString = sha1Hex(httpString);
-  const stringToSign = `sha1\n${signTime}\n${sha1edHttpString}\n`;
-
-  const signKey = hmacSha1(secretKey, keyTime);
-  const signature = hmacSha1(Buffer.from(signKey, "hex"), stringToSign);
-
-  return [
-    "q-sign-algorithm=sha1",
-    `q-ak=${encodeURIComponent(secretId)}`,
-    `q-sign-time=${signTime}`,
-    `q-key-time=${keyTime}`,
-    "q-header-list=host",
-    "q-url-param-list=",
-    `q-signature=${signature}`,
-  ].join("&");
+function putObject(cos, options) {
+  return new Promise((resolve, reject) => {
+    cos.putObject(options, (err, data) => {
+      if (err) reject(err);
+      else resolve(data);
+    });
+  });
 }
 
 export async function uploadPodcastToCos({ filename, contentType, body }) {
   const cfg = getCosConfig();
   const key = `${cfg.prefix}/${filename}`;
-  const pathname = `/${key}`;
-  const host = `${cfg.bucket}.cos.${cfg.region}.myqcloud.com`;
-  const url = `https://${host}${pathname}`;
 
-  const authorization = buildCosAuthorization({
-    secretId: cfg.secretId,
-    secretKey: cfg.secretKey,
-    method: "PUT",
-    pathname,
-    host,
+  const cos = new COS({
+    SecretId: cfg.secretId,
+    SecretKey: cfg.secretKey,
   });
 
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: {
-      Host: host,
-      Authorization: authorization,
-      "Content-Type": contentType || "application/octet-stream",
-      "Content-Length": String(body.length),
-    },
-    body,
+  await putObject(cos, {
+    Bucket: cfg.bucket,
+    Region: cfg.region,
+    Key: key,
+    Body: body,
+    ContentType: contentType || "application/octet-stream",
   });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`COS upload failed: ${res.status} ${res.statusText} ${text}`);
-  }
 
   return `${cfg.publicBaseUrl}/${key}`;
 }

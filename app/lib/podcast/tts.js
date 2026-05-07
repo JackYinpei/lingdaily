@@ -123,5 +123,5 @@ export async function synthesizePodcast(script, { outputMp3Path, workDir }) {
 
   await rm(workDir, { recursive: true, force: true });
 
-  return { size: mp3Buffer.length, duration };
+  return { size: mp3Buffer.length, duration, mp3Buffer };
 }

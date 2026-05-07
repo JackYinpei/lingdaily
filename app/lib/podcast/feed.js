@@ -86,7 +86,7 @@ export function renderFeedXml(manifest) {
 
     const items = manifest.episodes
         .map((ep) => {
-            const enclosureUrl = `${baseUrl}/podcasts/${ep.filename}`;
+            const enclosureUrl = ep.enclosureUrl || `${baseUrl}/podcasts/${ep.filename}`;
             return `    <item>
       <title>${escapeXml(ep.title)}</title>
       <description>${cdata(ep.summary || "")}</description>
@@ -136,6 +136,6 @@ export async function writeFeed(feedPath, manifest) {
     await writeFile(feedPath, xml, "utf8");
 }
 
-export function buildEpisodeEnclosureUrl(filename) {
-    return `${getBaseUrl()}/podcasts/${filename}`;
+export function buildEpisodeEnclosureUrl(filename, fallbackUrl) {
+    return fallbackUrl || `${getBaseUrl()}/podcasts/${filename}`;
 }

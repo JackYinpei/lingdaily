@@ -20,8 +20,8 @@ const CHANNELS = 1;
 const SAMPLE_WIDTH = 2;
 const MP3_KBPS = 96;
 
-const VOICE_A = "Sulafat";    // Warm
-const VOICE_B = "Laomedeia";  // Upbeat
+const VOICE_A = "Zephyr";     // Warm
+const VOICE_B = "Orus";       // Upbeat
 
 const DIRECTOR_PREAMBLE = `You are synthesizing a daily bilingual English/Mandarin news podcast.
 

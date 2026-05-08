@@ -26,15 +26,11 @@ Language policy (CRITICAL):
 - Primary language: bilingual delivery with heavier Chinese support for comprehension.
 - Target ratio: about 55-65% English + 35-45% Chinese across the whole episode.
 - Audience is Chinese learners of English at an upper-intermediate level.
-- MANDATORY: every uncommon/advanced word, idiom, or technical/financial/political term MUST be followed immediately by its Chinese translation. No exceptions for domain jargon.
-  Format: English word/phrase + space + Chinese gloss (no brackets, no punctuation between them).
-  Examples:
-  - "The Fed is signalling a hawkish 鹰派 stance, which could trigger a recession 经济衰退 fear."
-  - "This move is unprecedented 前所未有的, and markets are jittery 紧张不安."
-  - "They filed a class-action lawsuit 集体诉讼 against the company, seeking punitive damages 惩罚性赔偿."
-  - "The startup reached a valuation 估值 of ten billion, making it a unicorn 独角兽企业."
-  - "Regulators imposed sanctions 制裁 citing antitrust 反垄断 violations."
-- For each story, include at least 1 full Chinese sentence that summarizes the key point for listeners.
+- Preferred bilingual pattern is sentence pairing: one English sentence, then one Chinese explanatory sentence that clarifies the same point naturally.
+- Do NOT rely on single-word Chinese insertions inside long English sentences as the primary style.
+- For world/tech/business blocks, at least 70% of informational turns must follow the English→Chinese paired style.
+- Each story must include at least 1 full Chinese sentence immediately after an English statement.
+- Advanced terms should be explained in Chinese, but prefer sentence-level explanation over inline gloss. Inline gloss is optional and sparse (max 1-2 per turn).
 - For complex concepts or long clauses that are hard to follow, add a concise Chinese explanation in parentheses (≤24 Chinese characters).
 - Do NOT gloss simple everyday words (go, say, big, new, etc.). Prefer concise, useful Chinese explanations over excessive literal translation.
 - Numbers, proper names, and direct quotes stay in English.
@@ -45,7 +41,11 @@ INTRO chunk (MANDATORY structure):
 1. ${HOST_A} opens with a warm greeting and introduces themselves: "Hey everyone, welcome to 成杨英语日刊 — I'm ${HOST_A},"
 2. ${HOST_B} immediately jumps in: "And I'm ${HOST_B}! Great to have you with us."
 3. Together they give a relaxed, conversational preview of today's top stories — NOT a dry list. React to one story that excited you, tease another with a hook. This preview should feel like two friends saying "oh you have to hear about this". (~3–4 turns, ~80 words)
-4. Transition naturally into the first block: "Alright, let's get into it — starting with world news."
+4. Before transitioning, include a quick "Key Phrases" mini-segment with exactly 7-8 entries relevant to today's stories.
+5. Key phrase format: English phrase — 中文释义 (optional very short example). Keep it conversational and concise, not textbook-like.
+6. INTRO must include at least 2 full Chinese sentences and should be naturally bilingual (about 45-60% English + 40-55% Chinese within INTRO).
+7. At least one INTRO turn must be primarily Chinese (≥70% Chinese characters).
+8. Keep the full INTRO concise (about ≤220 words total), then transition naturally into: "Alright, let's get into it — starting with world news."
 
 TRANSITIONS between blocks (CRITICAL):
 - Never start a new block cold. Always end the previous block with a 1–2 line natural handoff that bridges the topic change.

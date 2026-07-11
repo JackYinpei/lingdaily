@@ -80,17 +80,37 @@ npm start
 
 ## 数据库迁移
 
-迁移必须按文件名顺序执行：
+生产库是早期手工建表的 Supabase 库，当前没有
+`supabase_migrations.schema_migrations`。因此本次升级使用 SQL Editor 手工、
+逐文件执行；在为远端建立 migration baseline 前，不要再混用
+`supabase db push`，否则会无法判断哪些迁移已执行。
 
-1. `202607110001_create_user_preferences.sql`：语言偏好；兼容旧的 text `user_id`、缺列和重复行。
+生产执行顺序：
+
+1. 先做可恢复的数据库备份。
+2. 在 SQL Editor 选择 `No limit`，执行
+   [`scripts/preflight-production.sql`](scripts/preflight-production.sql)。只有所有
+   `BLOCKER` 都为零时才能继续；`REVIEW` 项需人工确认。
+3. 按文件名顺序逐个、整份执行下列七个迁移，每个文件成功后再进入下一个。
+   每个文件自带 `BEGIN`/`COMMIT`；不要去掉事务边界，也不要只执行其中一段。
+4. 执行 [`scripts/postflight-production.sql`](scripts/postflight-production.sql)，确认
+   所有非 `INFO` 项均为 `PASS`，并将各表行数与 preflight 结果对比。
+5. 再验证登录、生词、对话历史、场景与播客 cron。
+
+七个迁移为：
+
+1. `202607110001_create_user_preferences.sql`：语言偏好；兼容旧的 text `user_id` 和缺列，异常重复行会中止。
 2. `202607110002_create_unfamiliar_english.sql`：学习项事件表与 RLS。
 3. `202607110003_upgrade_podcast_pipeline.sql`：播客状态、生成租约、公开读取策略。
 4. `202607110004_upgrade_chat_history.sql`：历史修订号、并发保存 RPC、来源类型。
 5. `202607110005_multilingual_learning_items.sql`：学习项和偏好的多语言升级。
 6. `202607110006_multilingual_scenarios.sql`：兼容旧两表/新单表的多语言场景升级。
-7. `202607110007_seed_scenarios.sql`：幂等系统场景 seed；只合并相同语言对的重复场景。
+7. `202607110007_seed_scenarios.sql`：幂等系统场景 seed；发现相同语言对的重复场景时中止，不自动删除或合并。
 
-请通过目标 Supabase 项目现有的迁移工具，或在 Supabase SQL Editor 中按上述顺序执行。生产执行前先备份，并在 staging 验证。不要把这些 SQL 指向机器上其他项目正在使用的 PostgreSQL。
+迁移不会自动删除重复偏好、重复场景或非数组对话正文；发现这些
+异常时显式事务会使整个文件回滚并要求先人工处理。失败后不要单独执行该文件的
+`COMMIT`。不要把这些 SQL 指向机器上
+其他项目正在使用的 PostgreSQL。
 
 仓库提供完全隔离的迁移测试：
 
@@ -98,7 +118,7 @@ npm start
 ./scripts/test-migrations.sh
 ```
 
-脚本只会启动名称以 `lingdaily-pgsql-` 开头的临时 PostgreSQL 容器和数据库，不发布任何宿主端口，并在退出时删除自己的容器。它验证 fresh schema、旧 text 偏好表、旧场景两表结构、播客兼容升级、重复 seed、跨语言同名场景和整条迁移链重跑；不会连接、停止或复用宿主机已有的 PostgreSQL 进程。
+脚本只会启动名称以 `lingdaily-pgsql-` 开头的临时 PostgreSQL 容器和数据库，不发布任何宿主端口，并在退出时删除自己的容器。它验证 fresh schema、旧 text 偏好表、最早的标量播客图片/非唯一索引、旧场景两表结构、真实生产 catalog fixture、RLS/ACL、两个 RPC、重跑幂等性，以及异常聊天/重复场景必须回滚且不丢数据。它不会连接、停止或复用宿主机已有的 PostgreSQL 进程。
 
 ## 生产播客 cron 兼容
 

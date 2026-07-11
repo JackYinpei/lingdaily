@@ -1,6 +1,8 @@
 -- Upgrade every historical scenarios layout to the embedded, language-aware
 -- schema. This supports an empty database, the original category_id/two-table
 -- layout, and the current embedded-category layout.
+begin;
+
 create extension if not exists "pgcrypto";
 
 create or replace function public.set_updated_at()
@@ -80,18 +82,9 @@ alter table public.scenarios
   add column if not exists native_language_code text default 'zh-CN';
 
 drop trigger if exists scenarios_set_updated_at on public.scenarios;
-create trigger scenarios_set_updated_at
-  before update on public.scenarios
-  for each row execute function public.set_updated_at();
-
 drop trigger if exists scenarios_set_language_defaults on public.scenarios;
-create trigger scenarios_set_language_defaults
-  before insert or update of
-    title_target, description_target, target_language_code,
-    title_zh, title_en, title_ja,
-    description_zh, description_en, description_ja
-  on public.scenarios
-  for each row execute function public.set_scenario_language_defaults();
+-- Recreate both triggers after the one-time backfill so historical updated_at
+-- values are not replaced by the migration timestamp.
 
 -- Copy category metadata out of the original scenario_categories table when
 -- both that table and the legacy category_id column are present.
@@ -130,11 +123,6 @@ begin
         )
     $migration$;
 
-    -- The embedded fields are now authoritative. Sever the old relationship so
-    -- deleting or editing a legacy category can no longer delete/overwrite the
-    -- upgraded scenario on a later migration run.
-    execute 'update public.scenarios set category_id = null where category_id is not null';
-
     for legacy_constraint in
       select constraint_row.conname
       from pg_constraint as constraint_row
@@ -172,23 +160,32 @@ update public.scenarios
 set
   category_slug = coalesce(nullif(btrim(category_slug), ''), 'other'),
   category_sort = coalesce(category_sort, 0),
-  is_public = case when user_id is null then true else coalesce(is_public, false) end
+  is_public = coalesce(is_public, false)
 where category_slug is null
    or btrim(category_slug) = ''
    or category_sort is null
-   or is_public is null
-   or (user_id is null and is_public is distinct from true);
+   or is_public is null;
 
 update public.scenarios
-set title_target = title_en
+set title_target = case target_language_code
+  when 'ja' then coalesce(title_ja, title_en, title_zh)
+  else coalesce(title_en, title_ja, title_zh)
+end
 where title_target is null or btrim(title_target) = '';
 
 update public.scenarios
-set description_target = coalesce(
-  nullif(btrim(description_en), ''),
-  nullif(btrim(description_zh), ''),
-  nullif(btrim(description_ja), '')
-)
+set description_target = case target_language_code
+  when 'ja' then coalesce(
+    nullif(btrim(description_ja), ''),
+    nullif(btrim(description_en), ''),
+    nullif(btrim(description_zh), '')
+  )
+  else coalesce(
+    nullif(btrim(description_en), ''),
+    nullif(btrim(description_ja), ''),
+    nullif(btrim(description_zh), '')
+  )
+end
 where (description_target is null or btrim(description_target) = '')
   and coalesce(
     nullif(btrim(description_en), ''),
@@ -198,24 +195,33 @@ where (description_target is null or btrim(description_target) = '')
 
 update public.scenarios
 set
-  target_language_code = case
-    when target_language_code in ('en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
-      then target_language_code
-    else 'en'
-  end,
-  native_language_code = case
-    when native_language_code in ('zh-CN', 'en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
-      then native_language_code
-    else 'zh-CN'
-  end
+  target_language_code = coalesce(target_language_code, 'en'),
+  native_language_code = coalesce(native_language_code, 'zh-CN')
 where target_language_code is null
-   or target_language_code not in ('en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
-   or native_language_code is null
-   or native_language_code not in ('zh-CN', 'en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it');
+   or native_language_code is null;
 
-update public.scenarios
-set native_language_code = 'zh-CN'
-where target_language_code = native_language_code;
+do $$
+begin
+  if exists (
+    select 1
+    from public.scenarios
+    where target_language_code not in ('en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
+       or native_language_code not in ('zh-CN', 'en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
+  ) then
+    raise exception 'LINGDAILY_SCENARIOS_UNSUPPORTED_LANGUAGE'
+      using hint = 'Map unsupported scenario language codes explicitly before migrating.';
+  end if;
+
+  if exists (
+    select 1
+    from public.scenarios
+    where target_language_code = native_language_code
+  ) then
+    raise exception 'LINGDAILY_SCENARIOS_IDENTICAL_LANGUAGE_PAIR'
+      using hint = 'Repair identical native and target language pairs before migrating.';
+  end if;
+end
+$$;
 
 alter table public.scenarios
   alter column category_slug set default 'other',
@@ -285,6 +291,18 @@ create index if not exists scenarios_user_idx
 create index if not exists scenarios_target_language_idx
   on public.scenarios (target_language_code, category_slug, sort_order);
 
+create trigger scenarios_set_updated_at
+  before update on public.scenarios
+  for each row execute function public.set_updated_at();
+
+create trigger scenarios_set_language_defaults
+  before insert or update of
+    title_target, description_target, target_language_code,
+    title_zh, title_en, title_ja,
+    description_zh, description_en, description_ja
+  on public.scenarios
+  for each row execute function public.set_scenario_language_defaults();
+
 -- The application normally uses the service role, but direct REST access must
 -- still protect private user-created scenarios.
 alter table public.scenarios enable row level security;
@@ -317,6 +335,9 @@ create policy "Users can delete their scenarios"
   to authenticated
   using ((select auth.uid()) = user_id);
 
-revoke all on public.scenarios from anon;
+revoke all on public.scenarios from public, anon, authenticated;
 grant select on public.scenarios to anon;
 grant select, insert, update, delete on public.scenarios to authenticated;
+grant select, insert, update, delete on public.scenarios to service_role;
+
+commit;

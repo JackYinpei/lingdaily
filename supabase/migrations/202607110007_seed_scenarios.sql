@@ -1,111 +1,29 @@
--- Seed the built-in system scenarios. The final deduplication makes this safe
--- for installations that ran the historical unnumbered seed more than once.
+-- Seed the built-in system scenarios without overwriting existing prompts.
+-- Duplicate production rows are treated as a blocker instead of being deleted.
 -- Category info is embedded directly in each row; system rows have user_id NULL.
 
-drop table if exists pg_temp.lingdaily_scenario_dedup_map;
-create temporary table lingdaily_scenario_dedup_map as
-select
-  id as scenario_id,
-  first_value(id) over (
-    partition by category_slug, title_en, target_language_code, native_language_code
-    order by created_at asc, id asc
-  ) as canonical_id,
-  row_number() over (
-    partition by category_slug, title_en, target_language_code, native_language_code
-    order by created_at asc, id asc
-  ) as duplicate_rank,
-  count(*) over (
-    partition by category_slug, title_en, target_language_code, native_language_code
-  ) as duplicate_count
-from public.scenarios
-where user_id is null;
+begin;
 
--- When the historical seed created duplicate scenario ids, a user may have a
--- conversation under more than one id. Concatenate every transcript in time
--- order before removing duplicate rows so no recorded message is discarded.
-drop table if exists pg_temp.lingdaily_scenario_history_merge;
-create temporary table lingdaily_scenario_history_merge as
-with mapped_history as (
-  select
-    history.id as history_id,
-    history.user_id,
-    history.updated_at,
-    history.history,
-    history.revision,
-    mapping.canonical_id
-  from public.chat_history as history
-  join lingdaily_scenario_dedup_map as mapping
-    on history.news_key = 'scenario:' || mapping.scenario_id::text
-  where mapping.duplicate_count > 1
-), survivors as (
-  select
-    user_id,
-    canonical_id,
-    (array_agg(history_id order by updated_at desc, history_id desc))[1] as survivor_id,
-    array_agg(history_id order by updated_at desc, history_id desc) as history_ids,
-    max(coalesce(revision, 1)) + 1 as merged_revision
-  from mapped_history
-  group by user_id, canonical_id
-), merged_items as (
-  select
-    mapped.user_id,
-    mapped.canonical_id,
-    jsonb_agg(
-      item.value
-      order by mapped.updated_at, mapped.history_id, item.item_order
-    ) as merged_history
-  from mapped_history as mapped
-  cross join lateral jsonb_array_elements(
-    case
-      when jsonb_typeof(mapped.history) = 'array' then mapped.history
-      else '[]'::jsonb
-    end
-  ) with ordinality as item(value, item_order)
-  group by mapped.user_id, mapped.canonical_id
-)
-select
-  survivors.survivor_id,
-  survivors.history_ids,
-  survivors.canonical_id::text as canonical_scenario_id,
-  'scenario:' || survivors.canonical_id::text as canonical_news_key,
-  survivors.merged_revision,
-  coalesce(merged_items.merged_history, '[]'::jsonb) as merged_history
-from survivors
-left join merged_items
-  on merged_items.user_id = survivors.user_id
- and merged_items.canonical_id = survivors.canonical_id;
+-- Never choose a winner for duplicate production content automatically. A
+-- duplicate can have a different prompt or external references that are not
+-- visible to this migration. Abort atomically and repair it explicitly.
+do $$
+begin
+  if exists (
+    select 1
+    from public.scenarios
+    where user_id is null
+    group by category_slug, title_en, target_language_code, native_language_code
+    having count(*) > 1
+  ) then
+    raise exception 'LINGDAILY_DUPLICATE_SYSTEM_SCENARIOS'
+      using hint = 'Review duplicate prompts and references, then merge them in a dedicated data migration.';
+  end if;
+end
+$$;
 
-delete from public.chat_history as history
-using lingdaily_scenario_history_merge as merged
-where history.id = any(merged.history_ids)
-  and history.id <> merged.survivor_id;
-
-update public.chat_history as history
-set
-  news_key = canonical.canonical_news_key,
-  source_type = 'scenario',
-  history = canonical.merged_history,
-  revision = canonical.merged_revision,
-  news = case
-    when jsonb_typeof(history.news) = 'object' then
-      history.news || jsonb_build_object(
-        'id', canonical.canonical_scenario_id,
-        '_scenarioId', canonical.canonical_scenario_id
-      )
-    else history.news
-  end
-from lingdaily_scenario_history_merge as canonical
-where history.id = canonical.survivor_id;
-
-delete from public.scenarios as scenario
-using lingdaily_scenario_dedup_map as duplicate
-where scenario.id = duplicate.scenario_id
-  and duplicate.duplicate_rank > 1;
-
-drop table lingdaily_scenario_history_merge;
-drop table lingdaily_scenario_dedup_map;
-
-create unique index if not exists scenarios_system_category_title_language_uidx
+drop index if exists public.scenarios_system_category_title_language_uidx;
+create unique index scenarios_system_category_title_language_uidx
   on public.scenarios (
     category_slug,
     title_en,
@@ -595,3 +513,5 @@ Teach proper rental vocabulary naturally through conversation. Politely rephrase
   target_language_code,
   native_language_code
 ) where user_id is null do nothing;
+
+commit;

@@ -1,0 +1,48 @@
+insert into public.scenarios (
+  id,
+  category_slug,
+  title_zh,
+  title_en,
+  description_zh,
+  description_en,
+  difficulty,
+  system_prompt,
+  sort_order,
+  is_active,
+  user_id,
+  is_public,
+  target_language_code,
+  native_language_code
+) values
+  (
+    '82000000-0000-0000-0000-000000000001',
+    'negative_test',
+    '重复场景',
+    'Duplicate Migration Sentinel',
+    '第一条不应被删除',
+    'First row must not be deleted',
+    'intermediate',
+    'FIRST_DUPLICATE_PROMPT',
+    1,
+    true,
+    null,
+    true,
+    'en',
+    'zh-CN'
+  ),
+  (
+    '82000000-0000-0000-0000-000000000002',
+    'negative_test',
+    '重复场景',
+    'Duplicate Migration Sentinel',
+    '第二条不应被删除',
+    'Second row must not be deleted',
+    'intermediate',
+    'SECOND_DUPLICATE_PROMPT',
+    2,
+    true,
+    null,
+    true,
+    'en',
+    'zh-CN'
+  );

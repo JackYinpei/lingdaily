@@ -1,78 +1,80 @@
 -- Add language identity to the historical unfamiliar_english event store. The
 -- table name remains unchanged so deployed clients and saved data stay intact.
+begin;
+
 alter table public.unfamiliar_english
   add column if not exists learning_language_code text,
   add column if not exists learning_language_label text,
   add column if not exists native_language_code text,
   add column if not exists native_language_label text;
 
--- Normalize codes first, then derive canonical labels from the final code. This
--- also repairs partially applied upgrades such as `ja` paired with `English`.
+-- NULL values come from the historical table that had no language columns and
+-- therefore have an unambiguous default. Never overwrite non-NULL user choices.
 update public.unfamiliar_english
 set
-  learning_language_code = case
-    when learning_language_code in ('en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
-      then learning_language_code
-    else 'en'
-  end,
-  native_language_code = case
-    when native_language_code in ('zh-CN', 'en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
-      then native_language_code
-    else 'zh-CN'
-  end
+  learning_language_code = coalesce(learning_language_code, 'en'),
+  native_language_code = coalesce(native_language_code, 'zh-CN')
 where learning_language_code is null
-   or native_language_code is null
-   or learning_language_code not in ('en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
-   or native_language_code not in ('zh-CN', 'en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it');
+   or native_language_code is null;
 
-update public.unfamiliar_english
-set native_language_code = 'zh-CN'
-where learning_language_code = native_language_code;
+do $$
+begin
+  if exists (
+    select 1
+    from public.unfamiliar_english
+    where learning_language_code not in ('en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
+       or native_language_code not in ('zh-CN', 'en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
+  ) then
+    raise exception 'LINGDAILY_LEARNING_ITEMS_UNSUPPORTED_LANGUAGE'
+      using hint = 'Map unsupported learning-item language codes explicitly before migrating.';
+  end if;
+
+  if exists (
+    select 1
+    from public.unfamiliar_english
+    where learning_language_code = native_language_code
+  ) then
+    raise exception 'LINGDAILY_LEARNING_ITEMS_IDENTICAL_LANGUAGE_PAIR'
+      using hint = 'Repair identical native and learning language pairs before migrating.';
+  end if;
+end
+$$;
 
 update public.unfamiliar_english
 set
-  learning_language_label = case learning_language_code
-    when 'en' then 'English'
-    when 'ja' then '日本語'
-    when 'es' then 'Español'
-    when 'fr' then 'Français'
-    when 'de' then 'Deutsch'
-    when 'ko' then '한국어'
-    when 'pt' then 'Português'
-    when 'it' then 'Italiano'
+  learning_language_label = case
+    when learning_language_label is null or btrim(learning_language_label) = '' then
+      case learning_language_code
+        when 'en' then 'English'
+        when 'ja' then '日本語'
+        when 'es' then 'Español'
+        when 'fr' then 'Français'
+        when 'de' then 'Deutsch'
+        when 'ko' then '한국어'
+        when 'pt' then 'Português'
+        when 'it' then 'Italiano'
+      end
+    else learning_language_label
   end,
-  native_language_label = case native_language_code
-    when 'zh-CN' then '中文'
-    when 'en' then 'English'
-    when 'ja' then '日本語'
-    when 'es' then 'Español'
-    when 'fr' then 'Français'
-    when 'de' then 'Deutsch'
-    when 'ko' then '한국어'
-    when 'pt' then 'Português'
-    when 'it' then 'Italiano'
+  native_language_label = case
+    when native_language_label is null or btrim(native_language_label) = '' then
+      case native_language_code
+        when 'zh-CN' then '中文'
+        when 'en' then 'English'
+        when 'ja' then '日本語'
+        when 'es' then 'Español'
+        when 'fr' then 'Français'
+        when 'de' then 'Deutsch'
+        when 'ko' then '한국어'
+        when 'pt' then 'Português'
+        when 'it' then 'Italiano'
+      end
+    else native_language_label
   end
-where learning_language_label is distinct from case learning_language_code
-    when 'en' then 'English'
-    when 'ja' then '日本語'
-    when 'es' then 'Español'
-    when 'fr' then 'Français'
-    when 'de' then 'Deutsch'
-    when 'ko' then '한국어'
-    when 'pt' then 'Português'
-    when 'it' then 'Italiano'
-  end
-   or native_language_label is distinct from case native_language_code
-    when 'zh-CN' then '中文'
-    when 'en' then 'English'
-    when 'ja' then '日本語'
-    when 'es' then 'Español'
-    when 'fr' then 'Français'
-    when 'de' then 'Deutsch'
-    when 'ko' then '한국어'
-    when 'pt' then 'Português'
-    when 'it' then 'Italiano'
-  end;
+where learning_language_label is null
+   or btrim(learning_language_label) = ''
+   or native_language_label is null
+   or btrim(native_language_label) = '';
 
 alter table public.unfamiliar_english
   alter column learning_language_code set default 'en',
@@ -137,48 +139,26 @@ begin
   -- Migration 001 normally creates preferences first; keep this upgrade safe
   -- for installations that only used the historical vocabulary table.
   if to_regclass('public.user_preferences') is not null then
-    update public.user_preferences
-    set
-      learning_language_code = case
-        when learning_language_code in ('en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
-          then learning_language_code
-        else 'en'
-      end,
-      native_language_code = case
-        when native_language_code in ('zh-CN', 'en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
-          then native_language_code
-        else 'zh-CN'
-      end
-    where learning_language_code is null
-       or learning_language_code not in ('en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
-       or native_language_code is null
-       or native_language_code not in ('zh-CN', 'en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it');
+    if exists (
+      select 1
+      from public.user_preferences
+      where learning_language_code is null
+         or learning_language_code not in ('en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
+         or native_language_code is null
+         or native_language_code not in ('zh-CN', 'en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
+    ) then
+      raise exception 'LINGDAILY_PREFS_UNSUPPORTED_LANGUAGE'
+        using hint = 'Map unsupported preference language codes explicitly before migrating.';
+    end if;
 
-    update public.user_preferences
-    set native_language_code = 'zh-CN'
-    where learning_language_code = native_language_code;
-
-    update public.user_preferences as preference
-    set
-      learning_language_label = learning.label,
-      native_language_label = native.label
-    from (
-      values
-        ('en', 'English'), ('ja', '日本語'), ('es', 'Español'),
-        ('fr', 'Français'), ('de', 'Deutsch'), ('ko', '한국어'),
-        ('pt', 'Português'), ('it', 'Italiano')
-    ) as learning(code, label), (
-      values
-        ('zh-CN', '中文'), ('en', 'English'), ('ja', '日本語'),
-        ('es', 'Español'), ('fr', 'Français'), ('de', 'Deutsch'),
-        ('ko', '한국어'), ('pt', 'Português'), ('it', 'Italiano')
-    ) as native(code, label)
-    where preference.learning_language_code = learning.code
-      and preference.native_language_code = native.code
-      and (
-        preference.learning_language_label is distinct from learning.label
-        or preference.native_language_label is distinct from native.label
-      );
+    if exists (
+      select 1
+      from public.user_preferences
+      where learning_language_code = native_language_code
+    ) then
+      raise exception 'LINGDAILY_PREFS_IDENTICAL_LANGUAGE_PAIR'
+        using hint = 'Choose distinct native and learning languages before migrating.';
+    end if;
 
     if not exists (
       select 1 from pg_constraint
@@ -226,6 +206,8 @@ create index if not exists unfamiliar_english_user_language_timestamp_idx
 
 alter table public.unfamiliar_english enable row level security;
 
+drop policy if exists "select own unfamiliar_english" on public.unfamiliar_english;
+drop policy if exists "insert own unfamiliar_english" on public.unfamiliar_english;
 drop policy if exists "Users can read their learning items" on public.unfamiliar_english;
 create policy "Users can read their learning items"
   on public.unfamiliar_english for select
@@ -238,5 +220,8 @@ create policy "Users can create their learning items"
   to authenticated
   with check ((select auth.uid()) = user_id);
 
-revoke all on public.unfamiliar_english from anon;
+revoke all on public.unfamiliar_english from public, anon, authenticated;
 grant select, insert on public.unfamiliar_english to authenticated;
+grant select, insert on public.unfamiliar_english to service_role;
+
+commit;

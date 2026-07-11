@@ -4,6 +4,8 @@
 -- language columns. Keep the user_id type in place so existing OAuth ids are
 -- never rewritten or discarded.
 
+begin;
+
 create or replace function public.set_updated_at()
 returns trigger as $$
 begin
@@ -33,66 +35,66 @@ alter table public.user_preferences
   add column if not exists created_at timestamptz default now(),
   add column if not exists updated_at timestamptz default now();
 
--- Rows without an owner cannot be read by the application. Remove them before
--- enforcing ownership, then retain the newest row if an old table did not have
--- a unique user_id constraint.
-delete from public.user_preferences
-where user_id is null;
-
-with ranked_preferences as (
-  select
-    ctid,
-    row_number() over (
-      partition by user_id
-      order by updated_at desc nulls last, created_at desc nulls last, ctid desc
-    ) as duplicate_rank
-  from public.user_preferences
-)
-delete from public.user_preferences as preference
-using ranked_preferences as ranked
-where preference.ctid = ranked.ctid
-  and ranked.duplicate_rank > 1;
-
+-- Timestamp backfills are deterministic and do not change user-owned values.
 update public.user_preferences
 set
-  learning_language_code = case
-    when learning_language_code in ('en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
-      then learning_language_code
-    else 'en'
-  end,
-  native_language_code = case
-    when native_language_code in ('zh-CN', 'en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
-      then native_language_code
-    else 'zh-CN'
-  end,
   created_at = coalesce(created_at, now()),
-  updated_at = coalesce(updated_at, created_at, now());
+  updated_at = coalesce(updated_at, created_at, now())
+where created_at is null or updated_at is null;
 
-update public.user_preferences
-set native_language_code = 'zh-CN'
-where learning_language_code = native_language_code;
+-- Never guess how to repair ownership, duplicate rows, or language choices.
+-- Production must resolve these explicitly before the migration is retried.
+do $$
+begin
+  if exists (select 1 from public.user_preferences where user_id is null) then
+    raise exception 'LINGDAILY_PREFS_NULL_OWNER'
+      using hint = 'Resolve ownerless user_preferences rows before migrating.';
+  end if;
 
-update public.user_preferences as preference
-set
-  learning_language_label = learning.label,
-  native_language_label = native.label
-from (
-  values
-    ('en', 'English'), ('ja', '日本語'), ('es', 'Español'),
-    ('fr', 'Français'), ('de', 'Deutsch'), ('ko', '한국어'),
-    ('pt', 'Português'), ('it', 'Italiano')
-) as learning(code, label), (
-  values
-    ('zh-CN', '中文'), ('en', 'English'), ('ja', '日本語'),
-    ('es', 'Español'), ('fr', 'Français'), ('de', 'Deutsch'),
-    ('ko', '한국어'), ('pt', 'Português'), ('it', 'Italiano')
-) as native(code, label)
-where preference.learning_language_code = learning.code
-  and preference.native_language_code = native.code
-  and (
-    preference.learning_language_label is distinct from learning.label
-    or preference.native_language_label is distinct from native.label
-  );
+  if exists (
+    select 1
+    from public.user_preferences
+    group by user_id
+    having count(*) > 1
+  ) then
+    raise exception 'LINGDAILY_PREFS_DUPLICATE_OWNER'
+      using hint = 'Merge duplicate preference rows explicitly before migrating.';
+  end if;
+
+  if exists (
+    select 1
+    from public.user_preferences
+    where learning_language_code is null
+       or learning_language_code not in ('en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
+       or native_language_code is null
+       or native_language_code not in ('zh-CN', 'en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
+  ) then
+    raise exception 'LINGDAILY_PREFS_UNSUPPORTED_LANGUAGE'
+      using hint = 'Map unsupported language codes explicitly before migrating.';
+  end if;
+
+  if exists (
+    select 1
+    from public.user_preferences
+    where learning_language_code = native_language_code
+  ) then
+    raise exception 'LINGDAILY_PREFS_IDENTICAL_LANGUAGE_PAIR'
+      using hint = 'Choose distinct native and learning languages before migrating.';
+  end if;
+
+  if exists (
+    select 1
+    from public.user_preferences
+    where learning_language_label is null
+       or btrim(learning_language_label) = ''
+       or native_language_label is null
+       or btrim(native_language_label) = ''
+  ) then
+    raise exception 'LINGDAILY_PREFS_BLANK_LANGUAGE_LABEL'
+      using hint = 'Fill blank language labels before migrating.';
+  end if;
+end
+$$;
 
 alter table public.user_preferences
   alter column user_id set not null,
@@ -195,5 +197,8 @@ create policy "Users can update their preferences"
   using ((select auth.uid())::text = user_id::text)
   with check ((select auth.uid())::text = user_id::text);
 
-revoke all on public.user_preferences from anon;
+revoke all on public.user_preferences from public, anon, authenticated;
 grant select, insert, update on public.user_preferences to authenticated;
+grant select, insert, update on public.user_preferences to service_role;
+
+commit;

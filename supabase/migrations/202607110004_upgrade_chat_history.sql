@@ -1,4 +1,6 @@
 -- Self-contained upgrade: this file is safe whether chat_history already exists or not.
+begin;
+
 create extension if not exists "pgcrypto";
 
 create or replace function public.set_updated_at()
@@ -29,16 +31,48 @@ alter table public.chat_history
   add column if not exists source_type text default 'news',
   add column if not exists revision integer default 1;
 
-update public.chat_history
-set history = '[]'::jsonb
-where history is null or jsonb_typeof(history) <> 'array';
+-- The production table already has this trigger. Disable it during one-time
+-- classification/backfill so historical updated_at values remain unchanged.
+drop trigger if exists chat_history_set_updated_at on public.chat_history;
+
+do $$
+begin
+  if exists (
+    select 1
+    from public.chat_history
+    where history is null or jsonb_typeof(history) <> 'array'
+  ) then
+    raise exception 'LINGDAILY_CHAT_HISTORY_INVALID_PAYLOAD'
+      using hint = 'Repair or archive non-array chat history payloads before migrating.';
+  end if;
+
+  if exists (
+    select 1
+    from public.chat_history
+    where source_type is not null
+      and source_type not in ('news', 'scenario')
+  ) then
+    raise exception 'LINGDAILY_CHAT_HISTORY_INVALID_SOURCE'
+      using hint = 'Map unsupported chat history source_type values before migrating.';
+  end if;
+
+  if exists (
+    select 1
+    from public.chat_history
+    where revision is not null and revision < 1
+  ) then
+    raise exception 'LINGDAILY_CHAT_HISTORY_INVALID_REVISION'
+      using hint = 'Repair non-positive chat history revisions before migrating.';
+  end if;
+end
+$$;
 
 update public.chat_history
 set source_type = case
   when news_key like 'scenario:%' then 'scenario'
   else 'news'
 end
-where source_type is null or source_type not in ('news', 'scenario');
+where source_type is null;
 -- Adding source_type with its default fills legacy rows as "news" before this
 -- migration can infer their original type, so repair scenario-prefixed keys.
 update public.chat_history
@@ -95,7 +129,22 @@ alter table public.chat_history validate constraint chat_history_history_array_c
 alter table public.chat_history validate constraint chat_history_source_type_check;
 alter table public.chat_history validate constraint chat_history_revision_positive_check;
 
-create unique index if not exists chat_history_user_news_key_idx
+do $$
+begin
+  if exists (
+    select 1
+    from public.chat_history
+    group by user_id, news_key
+    having count(*) > 1
+  ) then
+    raise exception 'LINGDAILY_CHAT_HISTORY_DUPLICATE_KEY'
+      using hint = 'Merge duplicate user/news_key histories explicitly before migrating.';
+  end if;
+end
+$$;
+
+drop index if exists public.chat_history_user_news_key_idx;
+create unique index chat_history_user_news_key_idx
   on public.chat_history (user_id, news_key);
 
 create index if not exists chat_history_user_updated_id_idx
@@ -120,7 +169,6 @@ begin
 end;
 $$;
 
-drop trigger if exists chat_history_set_updated_at on public.chat_history;
 create trigger chat_history_set_updated_at
   before update on public.chat_history
   for each row execute function public.set_updated_at();
@@ -152,7 +200,7 @@ create policy "Users can delete their chat history"
   to authenticated
   using ((select auth.uid()) = user_id);
 
-revoke all on public.chat_history from anon;
+revoke all on public.chat_history from public, anon, authenticated;
 grant select, insert, update, delete on public.chat_history to authenticated;
 grant select, insert, update, delete on public.chat_history to service_role;
 
@@ -251,3 +299,5 @@ revoke all on function public.save_chat_history(uuid, text, text, jsonb, jsonb, 
   from public, anon, authenticated;
 grant execute on function public.save_chat_history(uuid, text, text, jsonb, jsonb, text, text, integer)
   to service_role;
+
+commit;

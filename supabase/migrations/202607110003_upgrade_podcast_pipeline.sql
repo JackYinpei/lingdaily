@@ -1,3 +1,5 @@
+begin;
+
 create extension if not exists "pgcrypto";
 
 create or replace function public.set_updated_at()
@@ -28,6 +30,9 @@ create table if not exists public.podcasts (
 );
 
 alter table public.podcasts
+  add column if not exists content jsonb,
+  add column if not exists image_url text[],
+  add column if not exists audio_url text,
   add column if not exists updated_at timestamptz not null default now(),
   -- Add status as nullable first. Existing legacy episodes must be classified
   -- from audio_url before the default is installed below.
@@ -35,7 +40,40 @@ alter table public.podcasts
   add column if not exists error_message text,
   add column if not exists audio_bytes bigint,
   add column if not exists audio_duration_seconds numeric,
-  add column if not exists generation_id uuid not null default gen_random_uuid();
+  add column if not exists generation_id uuid;
+
+drop trigger if exists podcasts_set_updated_at on public.podcasts;
+
+update public.podcasts
+set generation_id = gen_random_uuid()
+where generation_id is null;
+
+alter table public.podcasts
+  alter column generation_id set default gen_random_uuid(),
+  alter column generation_id set not null;
+
+-- The first production layout used a scalar image URL. Preserve it as the
+-- first array element instead of discarding it when converging on text[].
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'podcasts'
+      and column_name = 'image_url'
+      and udt_name = 'text'
+  ) then
+    alter table public.podcasts alter column image_url drop default;
+    alter table public.podcasts
+      alter column image_url type text[]
+      using case
+        when nullif(btrim(image_url), '') is null then null
+        else array[image_url]
+      end;
+  end if;
+end
+$$;
 
 -- The legacy table stored Beijing wall-clock values in timestamp columns
 -- without a timezone. Interpret those existing values explicitly before the
@@ -88,6 +126,7 @@ alter table public.podcasts
   alter column title drop not null,
   alter column summary drop not null,
   alter column script drop not null,
+  alter column audio_url drop not null,
   alter column category set default 'daily';
 
 update public.podcasts
@@ -103,24 +142,42 @@ alter table public.podcasts
 
 do $$
 begin
-  if not exists (
-    select 1 from pg_constraint
-    where conrelid = 'public.podcasts'::regclass
-      and conname = 'podcasts_status_check'
+  if exists (
+    select 1
+    from public.podcasts
+    where status not in ('in_progress', 'script_generated', 'completed', 'failed')
   ) then
-    alter table public.podcasts
-      add constraint podcasts_status_check
-      check (status in ('in_progress', 'script_generated', 'completed', 'failed'));
+    raise exception 'LINGDAILY_PODCAST_INVALID_STATUS'
+      using hint = 'Map unsupported podcast status values explicitly before migrating.';
+  end if;
+
+  if exists (
+    select 1
+    from public.podcasts
+    group by date_folder, category
+    having count(*) > 1
+  ) then
+    raise exception 'LINGDAILY_PODCAST_DUPLICATE_DATE_CATEGORY'
+      using hint = 'Merge duplicate podcast date/category rows explicitly before migrating.';
   end if;
 end;
 $$;
 
-create unique index if not exists podcasts_date_category_idx
+alter table public.podcasts
+  drop constraint if exists podcasts_status_check;
+alter table public.podcasts
+  add constraint podcasts_status_check
+  check (status in ('in_progress', 'script_generated', 'completed', 'failed')) not valid;
+alter table public.podcasts validate constraint podcasts_status_check;
+
+-- A historical schema used the same name for a non-unique index. Recreate it
+-- so ON CONFLICT(date_folder, category) is guaranteed to have an arbiter.
+drop index if exists public.podcasts_date_category_idx;
+create unique index podcasts_date_category_idx
   on public.podcasts (date_folder, category);
 create index if not exists podcasts_status_date_idx
   on public.podcasts (status, date_folder desc);
 
-drop trigger if exists podcasts_set_updated_at on public.podcasts;
 create trigger podcasts_set_updated_at
   before update on public.podcasts
   for each row execute function public.set_updated_at();
@@ -132,7 +189,9 @@ create policy "Public can read completed podcasts"
   on public.podcasts for select
   to anon, authenticated
   using (status = 'completed');
+revoke all on public.podcasts from public, anon, authenticated;
 grant select on public.podcasts to anon, authenticated;
+grant select, insert, update on public.podcasts to service_role;
 
 drop function if exists public.claim_podcast_generation(text, boolean);
 
@@ -144,7 +203,7 @@ create or replace function public.claim_podcast_generation(
 returns setof public.podcasts
 language plpgsql
 security definer
-set search_path = public
+set search_path = pg_catalog, public
 as $$
 begin
   return query
@@ -171,5 +230,8 @@ begin
 end;
 $$;
 
-revoke all on function public.claim_podcast_generation(text, boolean, uuid) from public;
+revoke all on function public.claim_podcast_generation(text, boolean, uuid)
+  from public, anon, authenticated;
 grant execute on function public.claim_podcast_generation(text, boolean, uuid) to service_role;
+
+commit;

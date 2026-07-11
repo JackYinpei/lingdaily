@@ -1,7 +1,6 @@
 -- A compact representation of layouts that existed before the numbered
 -- migration chain. It intentionally includes a text preference owner, missing
--- columns, duplicate preferences, a podcast without status, the old scenario
--- category table, and duplicate seeded scenarios with separate histories.
+-- columns, a podcast without status, and the old scenario category table.
 
 create table public.user_preferences (
   user_id text,
@@ -12,9 +11,14 @@ create table public.user_preferences (
   updated_at timestamp without time zone
 );
 
-insert into public.user_preferences values
-  ('00000000-0000-0000-0000-000000000001', 'en', 'wrong', 'en', 'wrong', '2026-07-09 08:00:00'),
-  ('00000000-0000-0000-0000-000000000001', 'ja', 'wrong', 'ja', 'wrong', '2026-07-10 08:00:00');
+insert into public.user_preferences values (
+  '00000000-0000-0000-0000-000000000001',
+  'zh-CN',
+  'Chinese Custom',
+  'ja',
+  'Japanese Custom',
+  '2026-07-10 08:00:00'
+);
 
 create table public.unfamiliar_english (
   id uuid primary key default gen_random_uuid(),
@@ -41,10 +45,12 @@ create table public.podcasts (
   title text not null,
   summary text not null,
   script text not null,
-  content jsonb,
-  image_url text[],
-  audio_url text
+  image_url text,
+  audio_url text not null
 );
+
+create index podcasts_date_category_idx
+  on public.podcasts (date_folder, category);
 
 insert into public.podcasts (
   date_folder,
@@ -52,6 +58,7 @@ insert into public.podcasts (
   title,
   summary,
   script,
+  image_url,
   audio_url
 ) values (
   '2026-07-10',
@@ -59,6 +66,7 @@ insert into public.podcasts (
   'Legacy episode',
   'Legacy summary',
   'Legacy script',
+  'https://cdn.example.com/podcasts/legacy.jpg',
   'https://cdn.example.com/podcasts/legacy.mp3'
 );
 
@@ -158,21 +166,6 @@ insert into public.scenarios (
     '2026-07-09 08:00:00+00'
   ),
   (
-    '20000000-0000-0000-0000-000000000002',
-    '10000000-0000-0000-0000-000000000001',
-    '在餐厅点餐',
-    'Ordering at a Restaurant',
-    'レストランでの注文',
-    '重复场景',
-    'Duplicate scenario',
-    'en',
-    'zh-CN',
-    'beginner',
-    'Legacy prompt two',
-    1,
-    '2026-07-10 08:00:00+00'
-  ),
-  (
     '20000000-0000-0000-0000-000000000003',
     '10000000-0000-0000-0000-000000000001',
     '在餐厅点餐',
@@ -205,13 +198,4 @@ insert into public.chat_history (
     '{"id":"20000000-0000-0000-0000-000000000001","_isScenario":true,"_scenarioId":"20000000-0000-0000-0000-000000000001"}'::jsonb,
     '[{"itemId":"older-message","role":"user","content":[{"type":"input_text","text":"older transcript"}],"metadata":{"isFinal":true}}]'::jsonb,
     '2026-07-09 08:00:00+00'
-  ),
-  (
-    '30000000-0000-0000-0000-000000000002',
-    '00000000-0000-0000-0000-000000000001',
-    'scenario:20000000-0000-0000-0000-000000000002',
-    'Newest duplicate history',
-    '{"id":"20000000-0000-0000-0000-000000000002","_isScenario":true,"_scenarioId":"20000000-0000-0000-0000-000000000002"}'::jsonb,
-    '[{"itemId":"newer-message","role":"assistant","content":[{"type":"output_text","text":"newer transcript"}],"metadata":{"isFinal":true}}]'::jsonb,
-    '2026-07-10 08:00:00+00'
   );

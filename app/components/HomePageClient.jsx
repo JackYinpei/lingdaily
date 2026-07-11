@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Button } from '@/app/components/ui/button'
 import { Card, CardContent } from '@/app/components/ui/card'
 import { Badge } from '@/app/components/ui/badge'
-import { MessageCircle, Users, Globe, CheckCircle, Star } from 'lucide-react'
+import { MessageCircle, Users, Globe, CheckCircle, Star, Headphones } from 'lucide-react'
 import StartLearningWithLanguage from '@/app/components/StartLearningWithLanguage'
 import ThemeToggle from '@/app/components/ThemeToggle'
 import HeroVideoDemo from '@/app/components/HeroVideoDemo'
@@ -67,6 +67,9 @@ export default function HomePageClient({ signedIn, signOutAction, locale = DEFAU
                   <Link href="/talk" className="text-muted-foreground hover:text-foreground transition-colors">
                     {t.nav.talk}
                   </Link>
+                  <Link href="/podcasts" className="text-muted-foreground hover:text-foreground transition-colors">
+                    {t.nav.podcasts}
+                  </Link>
                   <ThemeToggle />
                   <form action={signOutAction}>
                     <Button variant="outline" className="font-semibold">
@@ -84,6 +87,9 @@ export default function HomePageClient({ signedIn, signOutAction, locale = DEFAU
                   </Link>
                   <Link href="#testimonials" className="text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
                     {t.nav.reviews}
+                  </Link>
+                  <Link href="/podcasts" className="text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
+                    {t.nav.podcasts}
                   </Link>
                   <StartLearningWithLanguage startLabel={t.nav.startLearning} learningLabel={t.start.learningLabel} nativeLabel={t.start.nativeLabel} />
                   <ThemeToggle />
@@ -120,6 +126,26 @@ export default function HomePageClient({ signedIn, signOutAction, locale = DEFAU
               </Link>
               <HeroVideoDemo buttonLabel={t.hero.secondaryBtn} />
             </div>
+          </div>
+        </section>
+
+        <section id="podcasts" className="bg-muted py-16" aria-labelledby="podcasts-heading">
+          <div className="container mx-auto px-4">
+            <Card className="max-w-4xl mx-auto">
+              <CardContent className="p-8 md:p-10 flex flex-col md:flex-row items-start md:items-center gap-7">
+                <div className="rounded-full border border-border bg-background p-4">
+                  <Headphones className="size-9" aria-hidden />
+                </div>
+                <div className="flex-1">
+                  <h2 id="podcasts-heading" className="text-3xl font-bold mb-2">{t.podcasts.title}</h2>
+                  <p className="text-muted-foreground mb-4">{t.podcasts.subtitle}</p>
+                  <div className="flex flex-wrap gap-2 mb-5">
+                    {t.podcasts.features.map((feature) => <Badge key={feature} variant="secondary">{feature}</Badge>)}
+                  </div>
+                  <Link href="/podcasts"><Button>{t.podcasts.btn}</Button></Link>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </section>
 

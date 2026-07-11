@@ -1,1 +1,9 @@
-
+# Intentionally disabled.
+#
+# Production podcast generation is scheduled by the server crontab, which
+# invokes /root/lingdaily/cron_generate.sh at 05:00 every day. Keep this file
+# as documentation only so GitHub Actions never triggers a second generation.
+#
+# If scheduling is moved back to GitHub Actions later, restore a workflow that
+# calls POST /api/podcast/generate with the x-podcast-secret header. The API
+# intentionally keeps that contract compatible with the server-side script.

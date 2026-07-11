@@ -1,39 +1,90 @@
--- Create table for podcasts
--- Combined structure including status, metrics, and updated fields
-drop table if exists public.podcasts;
+create extension if not exists "pgcrypto";
 
-create table public.podcasts (
-  id uuid default gen_random_uuid() primary key,
-  -- Created at Beijing Time
-  created_at timestamp without time zone default timezone('Asia/Shanghai'::text, now()) not null,
-  category text not null,
-  title text not null,
-  summary text not null,
-  script text not null,
-  content jsonb, -- Stores the full JSON structure (items with specific images, order, etc.)
-  image_url text[], -- Kept for backward compatibility or flattened access
-  audio_url text, -- Supabase storage URL (nullable as it might be generating)
-  date_folder text not null, -- e.g. '2026-01-01' to easily query 'today'
-  
-  updated_at timestamp without time zone default timezone('Asia/Shanghai'::text, now()),
-  -- New fields
-  status text check (status in ('in_progress', 'script_generated', 'completed', 'failed')) default 'in_progress', -- 运行中, 脚本已生成, 完成, 失败
-  error_message text, -- To store why it failed
+create or replace function public.set_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+create table if not exists public.podcasts (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  date_folder text not null,
+  category text not null default 'daily',
+  title text,
+  summary text,
+  script text,
+  content jsonb,
+  image_url text[],
+  audio_url text,
+  generation_id uuid not null default gen_random_uuid(),
+  status text not null default 'in_progress'
+    check (status in ('in_progress', 'script_generated', 'completed', 'failed')),
+  error_message text,
   audio_bytes bigint,
   audio_duration_seconds numeric
 );
 
--- Add unique index for upsert support
-create unique index if not exists podcasts_date_category_idx on public.podcasts (date_folder, category);
+create unique index if not exists podcasts_date_category_idx
+  on public.podcasts (date_folder, category);
+create index if not exists podcasts_status_date_idx
+  on public.podcasts (status, date_folder desc);
 
--- Enable RLS
+drop trigger if exists podcasts_set_updated_at on public.podcasts;
+create trigger podcasts_set_updated_at
+  before update on public.podcasts
+  for each row execute function public.set_updated_at();
+
 alter table public.podcasts enable row level security;
 
--- Allow public read access
-create policy "Allow public read access"
-on public.podcasts for select
-to public
-using (true);
+drop policy if exists "Allow public read access" on public.podcasts;
+drop policy if exists "Public can read completed podcasts" on public.podcasts;
+create policy "Public can read completed podcasts"
+  on public.podcasts for select
+  to anon, authenticated
+  using (status = 'completed');
 
--- Allow backend (service role) to insert/update
--- (Service role bypasses RLS by default, but creating policies ensures clarity)
+grant select on public.podcasts to anon, authenticated;
+
+drop function if exists public.claim_podcast_generation(text, boolean);
+
+create or replace function public.claim_podcast_generation(
+  p_date_folder text,
+  p_force boolean,
+  p_generation_id uuid
+)
+returns setof public.podcasts
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return query
+  insert into public.podcasts (
+    date_folder,
+    category,
+    status,
+    error_message,
+    generation_id
+  )
+  values (p_date_folder, 'daily', 'in_progress', null, p_generation_id)
+  on conflict (date_folder, category) do update
+    set status = 'in_progress',
+        error_message = null,
+        generation_id = excluded.generation_id,
+        updated_at = now()
+    where public.podcasts.status = 'failed'
+       or (public.podcasts.status = 'completed' and p_force)
+       or (
+         public.podcasts.status in ('in_progress', 'script_generated')
+         and public.podcasts.updated_at < now() - interval '30 minutes'
+       )
+  returning public.podcasts.*;
+end;
+$$;
+
+revoke all on function public.claim_podcast_generation(text, boolean, uuid) from public;
+grant execute on function public.claim_podcast_generation(text, boolean, uuid) to service_role;

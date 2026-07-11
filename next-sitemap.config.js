@@ -52,6 +52,8 @@ async function fetchPodcastRoutes() {
 
   const params = new URLSearchParams();
   params.set('select', 'date_folder,created_at');
+  params.set('status', 'eq.completed');
+  params.set('category', 'eq.daily');
   params.set('limit', '10000');
 
   try {
@@ -96,7 +98,7 @@ async function fetchPodcastRoutes() {
 module.exports = {
   siteUrl,
   generateRobotsTxt: true,
-  exclude: ['/api/*', '/sign-in', '/sign-up', '/history', '/history/*', '/podcasts'],
+  exclude: ['/api/*', '/sign-in', '/sign-up', '/history', '/history/*'],
   additionalPaths: async (config) => {
     const staticRoutes = ['/', '/talk', '/longtail'];
     const staticEntries = await Promise.all(

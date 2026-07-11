@@ -35,6 +35,13 @@ export default function MobileNav({ t, signedIn, signOutAction }) {
                 >
                   {t.nav.talk}
                 </Link>
+                <Link
+                  href="/podcasts"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setOpen(false)}
+                >
+                  {t.nav.podcasts}
+                </Link>
                 <ThemeToggle />
                 <form action={signOutAction}>
                   <Button variant="outline" className="w-full font-semibold">
@@ -64,6 +71,13 @@ export default function MobileNav({ t, signedIn, signOutAction }) {
                   onClick={() => setOpen(false)}
                 >
                   {t.nav.reviews}
+                </Link>
+                <Link
+                  href="/podcasts"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setOpen(false)}
+                >
+                  {t.nav.podcasts}
                 </Link>
                 <ThemeToggle />
                 <Link href="/sign-in" onClick={() => setOpen(false)}>

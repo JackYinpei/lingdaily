@@ -30,7 +30,7 @@ function cdata(s) {
     return `<![CDATA[${String(s).replace(/\]\]>/g, "]]]]><![CDATA[>")}]]>`;
 }
 
-function formatDuration(seconds) {
+export function formatDuration(seconds) {
     const s = Math.max(0, Math.floor(seconds || 0));
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
@@ -79,7 +79,7 @@ export function renderFeedXml(manifest) {
     const feedUrl = `${baseUrl}/podcasts/feed.xml`;
     const siteUrl = baseUrl;
     const imageUrl =
-        process.env.PODCAST_IMAGE_URL || `${baseUrl}/podcasts/icon.png`;
+        process.env.PODCAST_IMAGE_URL?.trim() || `${baseUrl}/podcast-cover.png`;
     const lastBuildDate = rfc2822(
         manifest.episodes[0]?.pubDate || new Date().toISOString(),
     );

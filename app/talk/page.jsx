@@ -520,7 +520,8 @@ export default function Home() {
                     setError(err);
                     setIsConnected(false);
                     setIsConnecting(false);
-                }
+                },
+                onPlaybackError: (err) => setError(err),
             };
 
             serviceRef.current = new GeminiLiveServiceImpl(config);

@@ -93,6 +93,7 @@ export class GeminiLiveServiceImpl {
         this.outputGainNode = null;
         this.outputAudioReadyPromise = null;
         this.audioPlaybackChain = Promise.resolve();
+        this.playbackEpoch = 0;
 
         this.config = config;
     }
@@ -132,6 +133,15 @@ export class GeminiLiveServiceImpl {
         }
     }
 
+    invalidatePlayback() {
+        this.playbackEpoch += 1;
+        this.sources.forEach((source) => { try { source.stop(); } catch (_) { } });
+        this.sources.clear();
+        this.nextStartTime = this.outputAudioContext?.currentTime || 0;
+        // Pending work retains its old epoch and exits before scheduling.
+        this.audioPlaybackChain = Promise.resolve();
+    }
+
     /**
      * Call this synchronously in the button click handler BEFORE any await.
      * It creates and resumes the outputAudioContext while the browser still
@@ -165,6 +175,7 @@ export class GeminiLiveServiceImpl {
 
     async connect(systemInstruction, token) {
         this.systemInstruction = systemInstruction;
+        this.invalidatePlayback();
 
         if (!token) {
             this.config.onError("No ephemeral token provided");
@@ -324,6 +335,13 @@ export class GeminiLiveServiceImpl {
     async handleServerMessage(message) {
         const serverContent = message.serverContent;
 
+        // Gemini explicitly asks clients to stop and empty playback on an
+        // interruption. Invalidate queued async work before reading new parts.
+        if (serverContent?.interrupted) {
+            this.invalidatePlayback();
+            this.config.onMessage("", true, 'model');
+        }
+
         // Audio Output
         const audioParts = (serverContent?.modelTurn?.parts || [])
             .map((part) => part?.inlineData)
@@ -332,13 +350,14 @@ export class GeminiLiveServiceImpl {
                 return !inlineData.mimeType || inlineData.mimeType.startsWith('audio/');
             });
         if (audioParts.length > 0) {
+            const playbackEpoch = this.playbackEpoch;
             // Chain playback work so async AudioContext resumes cannot reorder
             // rapidly arriving Gemini chunks.
             this.audioPlaybackChain = this.audioPlaybackChain
-                .then(() => this.playAudioParts(audioParts))
+                .then(() => this.playAudioParts(audioParts, playbackEpoch))
                 .catch((error) => {
                     console.error("Audio playback error:", error);
-                    this.config.onError("Could not play model audio.");
+                    this.config.onPlaybackError?.("Audio playback was blocked. Reconnect to resume sound.");
                 });
             await this.audioPlaybackChain;
         }
@@ -357,14 +376,6 @@ export class GeminiLiveServiceImpl {
         if (serverContent?.turnComplete) {
             this.config.onMessage("", true, 'model');
             this.config.onMessage("", true, 'user');
-        }
-
-        // Interrupted
-        if (serverContent?.interrupted) {
-            this.sources.forEach(s => { try { s.stop(); } catch (_) { } });
-            this.sources.clear();
-            this.nextStartTime = this.outputAudioContext?.currentTime || 0;
-            this.config.onMessage("", true, 'model');
         }
 
         // Tool Call Handling
@@ -461,10 +472,8 @@ export class GeminiLiveServiceImpl {
             this.mediaStream.getTracks().forEach(t => t.stop());
             this.mediaStream = null;
         }
-        this.sources.forEach(s => { try { s.stop(); } catch (_) { } });
-        this.sources.clear();
+        this.invalidatePlayback();
         this.nextStartTime = 0;
-        this.audioPlaybackChain = Promise.resolve();
         if (this.inputAudioContext && this.inputAudioContext.state !== 'closed') {
             this.inputAudioContext.close();
         }
@@ -486,20 +495,24 @@ export class GeminiLiveServiceImpl {
 
     // ─── Audio helpers ─────────────────────────────────────────────────
 
-    async playAudioParts(audioParts) {
+    async playAudioParts(audioParts, playbackEpoch = this.playbackEpoch) {
+        if (playbackEpoch !== this.playbackEpoch) return;
         if (!this.outputAudioContext || this.outputAudioContext.state === 'closed') {
             this.createOutputAudioContext();
         }
 
-        await this.outputAudioReadyPromise;
-        await this.resumeOutputAudio();
-
         const context = this.outputAudioContext;
+        await this.outputAudioReadyPromise;
+        if (playbackEpoch !== this.playbackEpoch || context !== this.outputAudioContext) return;
+        await this.resumeOutputAudio();
+        if (playbackEpoch !== this.playbackEpoch || context !== this.outputAudioContext) return;
+
         if (!context || context.state !== 'running') {
             throw new Error(`Output AudioContext is ${context?.state || 'unavailable'}`);
         }
 
         for (const inlineData of audioParts) {
+            if (playbackEpoch !== this.playbackEpoch || context !== this.outputAudioContext) return;
             const audioBuffer = this.decodeAudioFromBase64(inlineData.data);
             if (!audioBuffer) continue;
 
@@ -509,6 +522,7 @@ export class GeminiLiveServiceImpl {
 
             const earliestStart = context.currentTime + PLAYBACK_LEAD_TIME_SECONDS;
             this.nextStartTime = Math.max(this.nextStartTime, earliestStart);
+            if (playbackEpoch !== this.playbackEpoch || context !== this.outputAudioContext) return;
             source.start(this.nextStartTime);
             this.nextStartTime += audioBuffer.duration;
             source.addEventListener('ended', () => this.sources.delete(source));

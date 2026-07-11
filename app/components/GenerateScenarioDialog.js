@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/app/lib/utils";
+import {
+  DEFAULT_LEARNING_LANGUAGE,
+  DEFAULT_NATIVE_LANGUAGE,
+} from "@/app/lib/languages";
 
 const difficultyConfig = {
   beginner: { label_zh: "入门", label_en: "Beginner", label_ja: "初級", color: "bg-green-600" },
@@ -69,7 +73,14 @@ const i18n = {
   },
 };
 
-export default function GenerateScenarioDialog({ lang = "zh", onClose, onScenarioReady, onSaved }) {
+export default function GenerateScenarioDialog({
+  lang = "zh",
+  learningLanguage = DEFAULT_LEARNING_LANGUAGE,
+  nativeLanguage = DEFAULT_NATIVE_LANGUAGE,
+  onClose,
+  onScenarioReady,
+  onSaved,
+}) {
   const t = i18n[lang] || i18n.en;
   const [idea, setIdea] = useState("");
   const [generated, setGenerated] = useState(null);
@@ -77,6 +88,18 @@ export default function GenerateScenarioDialog({ lang = "zh", onClose, onScenari
   const [saving, setSaving] = useState(false);
   const [saveState, setSaveState] = useState(null); // null | "saved"
   const [error, setError] = useState(null);
+  const generationAbortRef = useRef(null);
+  const pairKey = `${learningLanguage?.code}:${nativeLanguage?.code}`;
+
+  useEffect(() => {
+    generationAbortRef.current?.abort();
+    generationAbortRef.current = null;
+    setGenerated(null);
+    setLoading(false);
+    setSaveState(null);
+    setError(null);
+    return () => generationAbortRef.current?.abort();
+  }, [pairKey]);
 
   async function handleGenerate() {
     if (!idea.trim() || loading) return;
@@ -84,19 +107,26 @@ export default function GenerateScenarioDialog({ lang = "zh", onClose, onScenari
     setError(null);
     setGenerated(null);
     setSaveState(null);
+    generationAbortRef.current?.abort();
+    const controller = new AbortController();
+    generationAbortRef.current = controller;
     try {
       const res = await fetch("/api/scenarios/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea, lang }),
+        body: JSON.stringify({ idea, lang, learningLanguage, nativeLanguage }),
+        signal: controller.signal,
       });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || "Unknown error");
       setGenerated(json.data);
     } catch (e) {
-      setError(e.message);
+      if (e.name !== "AbortError") setError(e.message);
     } finally {
-      setLoading(false);
+      if (generationAbortRef.current === controller) {
+        generationAbortRef.current = null;
+        setLoading(false);
+      }
     }
   }
 
@@ -125,15 +155,26 @@ export default function GenerateScenarioDialog({ lang = "zh", onClose, onScenari
     if (!generated) return;
     const titleKey = `title_${lang}`;
     const descKey = `description_${lang}`;
+    const matchesTarget = generated.target_language_code === learningLanguage?.code;
+    const title = (matchesTarget ? generated.title_target : null)
+      || generated[titleKey]
+      || generated.title_en;
     onScenarioReady?.({
       id: `generated-${Date.now()}`,
-      title: generated[titleKey] || generated.title_en,
-      description: generated[descKey] || generated.description_en || "",
+      title,
+      description: (matchesTarget ? generated.description_target : null)
+        || generated[descKey]
+        || generated.description_en
+        || "",
       originalTitle: generated.title_en,
+      translatedTitle: title,
       category: lang === "zh" ? "AI 生成" : lang === "ja" ? "AI生成" : "AI Generated",
       _isScenario: true,
       _scenarioId: `generated-${Date.now()}`,
       _systemPrompt: generated.system_prompt,
+      _targetLanguageCode: generated.target_language_code,
+      _nativeLanguageCode: generated.native_language_code,
+      _isUserGenerated: true,
       difficulty: generated.difficulty || "intermediate",
     });
     onClose?.();
@@ -209,14 +250,18 @@ export default function GenerateScenarioDialog({ lang = "zh", onClose, onScenari
                     </span>
                   )}
                   <span className="text-xs text-muted-foreground">
-                    {generated.title_en}
+                    {learningLanguage.label} · {nativeLanguage.label}
                   </span>
                 </div>
                 <h3 className="font-semibold text-sm text-foreground">
-                  {generated[`title_${lang}`] || generated.title_en}
+                  {generated.target_language_code === learningLanguage?.code
+                    ? generated.title_target
+                    : generated[`title_${lang}`] || generated.title_en}
                 </h3>
                 <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-line">
-                  {generated[`description_${lang}`] || generated.description_en}
+                  {generated.target_language_code === learningLanguage?.code
+                    ? generated.description_target
+                    : generated[`description_${lang}`] || generated.description_en}
                 </p>
               </div>
 

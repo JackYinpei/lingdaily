@@ -2,18 +2,14 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
-
-// Supported languages and self-names
-const LANGUAGE_OPTIONS = [
-  { code: 'en', label: 'English' },
-  { code: 'ja', label: '日本語' },
-  { code: 'es', label: 'Español' },
-  { code: 'fr', label: 'Français' },
-  { code: 'de', label: 'Deutsch' },
-]
-
-const DEFAULT_LEARNING = { code: 'en', label: 'English' }
-const DEFAULT_NATIVE = { code: 'zh-CN', label: '中文' }
+import {
+  DEFAULT_LEARNING_LANGUAGE,
+  DEFAULT_NATIVE_LANGUAGE,
+  getLanguage,
+  LEARNING_LANGUAGE_OPTIONS,
+  NATIVE_LANGUAGE_OPTIONS,
+  resolveDistinctLanguagePair,
+} from '@/app/lib/languages'
 
 function parseAcceptLanguageHeader(header) {
   if (!header || typeof header !== 'string') return []
@@ -24,27 +20,21 @@ function parseAcceptLanguageHeader(header) {
 }
 
 function mapToSupportedNative(acceptLangs) {
-  // Try to map accept-language codes to our supported set for native.
   const langs = Array.isArray(acceptLangs) ? acceptLangs : []
   for (const raw of langs) {
-    const lower = raw.toLowerCase()
-    if (lower.startsWith('zh')) return { code: 'zh-CN', label: '中文' }
-    if (lower.startsWith('ja')) return { code: 'ja', label: '日本語' }
-    if (lower.startsWith('es')) return { code: 'es', label: 'Español' }
-    if (lower.startsWith('fr')) return { code: 'fr', label: 'Français' }
-    if (lower.startsWith('de')) return { code: 'de', label: 'Deutsch' }
-    if (lower.startsWith('en')) return { code: 'en', label: 'English' }
+    const language = getLanguage(raw)
+    if (language) return language
   }
-  return DEFAULT_NATIVE
+  return DEFAULT_NATIVE_LANGUAGE
 }
 
 const LanguageContext = createContext(null)
 
 export function LanguageProvider({ children, initialAcceptLanguage = '' }) {
-  const { data: session } = useSession()
+  const { data: session, status: sessionStatus } = useSession()
 
-  const [learningLanguage, setLearningLanguage] = useState(DEFAULT_LEARNING)
-  const [nativeLanguage, setNativeLanguage] = useState(DEFAULT_NATIVE)
+  const [learningLanguage, setLearningLanguage] = useState(DEFAULT_LEARNING_LANGUAGE)
+  const [nativeLanguage, setNativeLanguage] = useState(DEFAULT_NATIVE_LANGUAGE)
   const [loading, setLoading] = useState(true)
 
   const hasHydratedRef = useRef(false)
@@ -78,7 +68,9 @@ export function LanguageProvider({ children, initialAcceptLanguage = '' }) {
 
   // Initial hydrate: prefer DB (if logged in), else localStorage, else Accept-Language, else defaults
   useEffect(() => {
+    if (sessionStatus === 'loading') return undefined
     let cancelled = false
+    setLoading(true)
     const init = async () => {
       try {
         // If logged-in, try server first
@@ -89,14 +81,12 @@ export function LanguageProvider({ children, initialAcceptLanguage = '' }) {
               const data = await res.json().catch(() => ({}))
               const pref = data?.data || null
               if (!cancelled && pref) {
-                setNativeLanguage({
-                  code: pref.native_language_code || DEFAULT_NATIVE.code,
-                  label: pref.native_language_label || DEFAULT_NATIVE.label,
-                })
-                setLearningLanguage({
-                  code: pref.learning_language_code || DEFAULT_LEARNING.code,
-                  label: pref.learning_language_label || DEFAULT_LEARNING.label,
-                })
+                const pair = resolveDistinctLanguagePair(
+                  pref.learning_language_code,
+                  pref.native_language_code,
+                )
+                setNativeLanguage(pair.nativeLanguage)
+                setLearningLanguage(pair.learningLanguage)
                 setLoading(false)
                 hasHydratedRef.current = true
                 return
@@ -109,8 +99,9 @@ export function LanguageProvider({ children, initialAcceptLanguage = '' }) {
         const localNative = loadLocal('nativeLanguage')
         const localLearning = loadLocal('learningLanguage')
         if (!cancelled && (localNative || localLearning)) {
-          if (localNative) setNativeLanguage(localNative)
-          if (localLearning) setLearningLanguage(localLearning)
+          const pair = resolveDistinctLanguagePair(localLearning, localNative)
+          setNativeLanguage(pair.nativeLanguage)
+          setLearningLanguage(pair.learningLanguage)
           setLoading(false)
           hasHydratedRef.current = true
           return
@@ -119,18 +110,19 @@ export function LanguageProvider({ children, initialAcceptLanguage = '' }) {
         // Fallback to Accept-Language header from server
         const fromHeader = mapToSupportedNative(parseAcceptLanguageHeader(initialAcceptLanguage))
         if (!cancelled) {
-          setNativeLanguage(fromHeader || DEFAULT_NATIVE)
-          setLearningLanguage(DEFAULT_LEARNING)
+          const pair = resolveDistinctLanguagePair(DEFAULT_LEARNING_LANGUAGE, fromHeader)
+          setNativeLanguage(pair.nativeLanguage)
+          setLearningLanguage(pair.learningLanguage)
           setLoading(false)
           hasHydratedRef.current = true
         }
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
     init()
     return () => { cancelled = true }
-  }, [initialAcceptLanguage, loadLocal, session?.user?.id])
+  }, [initialAcceptLanguage, loadLocal, session?.user?.id, sessionStatus])
 
   // Do not auto-persist. Persist only on explicit commit (e.g., Start Learning click).
 
@@ -146,19 +138,14 @@ export function LanguageProvider({ children, initialAcceptLanguage = '' }) {
 
   // Helper setters that also persist when logged in
   const updateLearningLanguage = useCallback((nextCode) => {
-    const found = LANGUAGE_OPTIONS.find((l) => l.code === nextCode) || DEFAULT_LEARNING
-    setLearningLanguage(found)
-  }, [])
+    const language = getLanguage(nextCode, { allowChinese: false })
+    if (language && language.code !== nativeLanguage.code) setLearningLanguage(language)
+  }, [nativeLanguage.code])
 
   const updateNativeLanguage = useCallback((nextCode) => {
-    // Allow setting supported ones; if not found, default to zh-CN
-    if (nextCode === 'zh' || nextCode === 'zh-CN' || nextCode === 'zh-TW') {
-      setNativeLanguage({ code: 'zh-CN', label: '中文' })
-      return
-    }
-    const found = LANGUAGE_OPTIONS.find((l) => l.code === nextCode)
-    if (found) setNativeLanguage(found)
-  }, [])
+    const language = getLanguage(nextCode)
+    if (language && language.code !== learningLanguage.code) setNativeLanguage(language)
+  }, [learningLanguage.code])
 
   const value = useMemo(() => ({
     loading,
@@ -166,7 +153,11 @@ export function LanguageProvider({ children, initialAcceptLanguage = '' }) {
     nativeLanguage,
     setLearningLanguage: updateLearningLanguage,
     setNativeLanguage: updateNativeLanguage,
-    options: LANGUAGE_OPTIONS,
+    // `options` is retained for older consumers; new code should use the
+    // purpose-specific collections below.
+    options: LEARNING_LANGUAGE_OPTIONS,
+    learningOptions: LEARNING_LANGUAGE_OPTIONS,
+    nativeOptions: NATIVE_LANGUAGE_OPTIONS,
     commitPreferences,
   }), [commitPreferences, learningLanguage, loading, nativeLanguage, updateLearningLanguage, updateNativeLanguage])
 

@@ -6,12 +6,15 @@ const supabaseSchema = process.env.SUPABASE_SCHEMA || 'public'
 const tableUrl = supabaseUrl ? `${supabaseUrl}/rest/v1/scenarios` : null
 
 const DIFFICULTIES = new Set(['beginner', 'intermediate', 'advanced'])
+const LEARNING_LANGUAGE_CODES = new Set(['en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it'])
+const NATIVE_LANGUAGE_CODES = new Set(['zh-CN', ...LEARNING_LANGUAGE_CODES])
 const SLUG_PATTERN = /^[a-z0-9]+(?:[_-][a-z0-9]+)*$/
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const WRITABLE_FIELDS = new Set([
   'category_slug', 'category_name_zh', 'category_name_en', 'category_name_ja',
   'category_icon', 'category_sort', 'title_zh', 'title_en', 'title_ja',
-  'description_zh', 'description_en', 'description_ja', 'difficulty',
+  'description_zh', 'description_en', 'description_ja',
+  'title_target', 'description_target', 'target_language_code', 'native_language_code', 'difficulty',
   'system_prompt', 'sort_order', 'is_active',
 ])
 
@@ -76,12 +79,23 @@ function buildScenarioRow(body, { partial = false } = {}) {
   if (Object.prototype.hasOwnProperty.call(row, 'difficulty') && !DIFFICULTIES.has(row.difficulty)) {
     throw new Error('Invalid difficulty')
   }
+  if (Object.prototype.hasOwnProperty.call(row, 'target_language_code')
+      && !LEARNING_LANGUAGE_CODES.has(row.target_language_code)) {
+    throw new Error('Invalid target_language_code')
+  }
+  if (Object.prototype.hasOwnProperty.call(row, 'native_language_code')
+      && !NATIVE_LANGUAGE_CODES.has(row.native_language_code)) {
+    throw new Error('Invalid native_language_code')
+  }
+  if (row.target_language_code && row.target_language_code === row.native_language_code) {
+    throw new Error('Target and native languages must be different')
+  }
 
   if (Object.prototype.hasOwnProperty.call(row, 'category_sort')) row.category_sort = toInteger(row.category_sort)
   if (Object.prototype.hasOwnProperty.call(row, 'sort_order')) row.sort_order = toInteger(row.sort_order)
   if (Object.prototype.hasOwnProperty.call(row, 'is_active')) row.is_active = row.is_active !== false
 
-  for (const field of ['category_name_zh', 'category_name_en', 'category_name_ja', 'category_icon', 'title_ja', 'description_zh', 'description_en', 'description_ja']) {
+  for (const field of ['category_name_zh', 'category_name_en', 'category_name_ja', 'category_icon', 'title_ja', 'description_zh', 'description_en', 'description_ja', 'title_target', 'description_target']) {
     if (Object.prototype.hasOwnProperty.call(row, field)) {
       row[field] = typeof row[field] === 'string' && row[field].trim() ? row[field].trim() : null
     }
@@ -158,6 +172,10 @@ export async function POST(req) {
     row.difficulty = row.difficulty || 'intermediate'
     row.category_sort = toInteger(row.category_sort)
     row.sort_order = toInteger(row.sort_order)
+    row.target_language_code = row.target_language_code || 'en'
+    row.native_language_code = row.native_language_code || 'zh-CN'
+    row.title_target = row.title_target || row.title_en
+    row.description_target = row.description_target || row.description_en || row.description_zh || null
 
     const response = await fetch(tableUrl, {
       method: 'POST',

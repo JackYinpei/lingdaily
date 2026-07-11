@@ -4,6 +4,10 @@ import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { ScenarioCard } from "./ScenarioCard";
 import GenerateScenarioDialog from "./GenerateScenarioDialog";
+import {
+  DEFAULT_LEARNING_LANGUAGE,
+  DEFAULT_NATIVE_LANGUAGE,
+} from "@/app/lib/languages";
 
 const MY_CATEGORY_ID = "__mine__";
 const PUBLIC_CATEGORY_ID = "__public__";
@@ -47,6 +51,9 @@ export default function ScenarioFeed({
   selectedNews = null,
   isMobile = false,
   lang = "en",
+  learningLanguage = DEFAULT_LEARNING_LANGUAGE,
+  nativeLanguage = DEFAULT_NATIVE_LANGUAGE,
+  languageReady = true,
 }) {
   const { data: session } = useSession();
   const [categories, setCategories] = useState([]);
@@ -60,14 +67,38 @@ export default function ScenarioFeed({
   const nameKey = `name_${lang}`;
   const titleKey = `title_${lang}`;
   const descKey = `description_${lang}`;
+  const targetLanguageCode = learningLanguage?.code || DEFAULT_LEARNING_LANGUAGE.code;
+
+  useEffect(() => {
+    if (!languageReady) setShowGenerateDialog(false);
+  }, [languageReady]);
+
+  const getScenarioTitle = useCallback((scenario) => {
+    const matchesTarget = scenario.target_language_code === targetLanguageCode;
+    return (matchesTarget ? scenario.title_target : null)
+      || scenario[titleKey]
+      || scenario.title_en
+      || scenario.title_target;
+  }, [targetLanguageCode, titleKey]);
+
+  const getScenarioDescription = useCallback((scenario) => {
+    const matchesTarget = scenario.target_language_code === targetLanguageCode;
+    return (matchesTarget ? scenario.description_target : null)
+      || scenario[descKey]
+      || scenario.description_en
+      || scenario.description_target
+      || "";
+  }, [targetLanguageCode, descKey]);
 
   // Fetch categories on mount
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        setError(null);
         const res = await fetch("/api/scenarios?categories=true", { cache: "no-store" });
-        const json = await res.json();
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json?.error || "Failed to fetch scenario categories");
         if (cancelled) return;
         const cats = Array.isArray(json?.data) ? json.data : [];
         setCategories(cats);
@@ -86,9 +117,16 @@ export default function ScenarioFeed({
   // Fetch scenarios when category changes
   useEffect(() => {
     if (!selectedCategory) return;
+    if (selectedCategory.id === MY_CATEGORY_ID && !session?.user?.id) {
+      setScenarios([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setScenarios([]);
+    setError(null);
 
     (async () => {
       try {
@@ -101,7 +139,8 @@ export default function ScenarioFeed({
           url = `/api/scenarios?categorySlug=${selectedCategory.slug}`;
         }
         const res = await fetch(url, { cache: "no-store" });
-        const json = await res.json();
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json?.error || "Failed to fetch scenarios");
         if (!cancelled) setScenarios(Array.isArray(json?.data) ? json.data : []);
       } catch (err) {
         if (!cancelled) setError(err.message);
@@ -110,7 +149,7 @@ export default function ScenarioFeed({
       }
     })();
     return () => { cancelled = true; };
-  }, [selectedCategory]);
+  }, [selectedCategory, session?.user?.id]);
 
   const handleCategoryClick = useCallback(
     (cat) => {
@@ -130,19 +169,24 @@ export default function ScenarioFeed({
         return;
       }
       const categoryName = selectedCategory?.[nameKey] || selectedCategory?.name_en || "";
+      const title = getScenarioTitle(scenario);
       onArticleSelect?.({
         id: scenario.id,
-        title: scenario[titleKey] || scenario.title_en,
-        description: scenario[descKey] || scenario.description_en || "",
+        title,
+        description: getScenarioDescription(scenario),
         originalTitle: scenario.title_en,
+        translatedTitle: title,
         category: categoryName,
         _isScenario: true,
         _scenarioId: scenario.id,
         _systemPrompt: scenario.system_prompt,
+        _targetLanguageCode: scenario.target_language_code,
+        _nativeLanguageCode: scenario.native_language_code,
+        _isUserGenerated: Boolean(scenario.user_id),
         difficulty: scenario.difficulty,
       });
     },
-    [selectedNews, selectedCategory, onArticleSelect, nameKey, titleKey, descKey]
+    [selectedNews, selectedCategory, onArticleSelect, nameKey, getScenarioTitle, getScenarioDescription]
   );
 
   const handleDelete = useCallback(
@@ -150,12 +194,17 @@ export default function ScenarioFeed({
       e.stopPropagation();
       if (!confirm(t.deleteConfirm)) return;
       try {
-        await fetch(`/api/scenarios?id=${scenario.id}`, { method: "DELETE" });
+        setError(null);
+        const response = await fetch(`/api/scenarios?id=${scenario.id}`, { method: "DELETE" });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data?.error || "Delete failed");
         setScenarios((prev) => prev.filter((s) => s.id !== scenario.id));
         if (selectedNews?._scenarioId === scenario.id) {
           onArticleSelect?.(null);
         }
-      } catch {}
+      } catch (deleteError) {
+        setError(deleteError.message || "Delete failed");
+      }
     },
     [selectedNews, onArticleSelect, t.deleteConfirm]
   );
@@ -219,12 +268,12 @@ export default function ScenarioFeed({
         {/* AI Create button */}
         <button
           onClick={() => {
-            if (!session?.user) return;
+            if (!session?.user || !languageReady) return;
             setShowGenerateDialog(true);
           }}
-          title={!session?.user ? t.loginToCreate : undefined}
+          title={!session?.user ? t.loginToCreate : !languageReady ? "Loading languages…" : undefined}
           className={`flex-shrink-0 ml-1 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all border ${
-            session?.user
+            session?.user && languageReady
               ? "border-primary/40 text-primary hover:bg-primary/10 active:scale-95"
               : "border-border text-muted-foreground cursor-not-allowed opacity-60"
           }`}
@@ -294,8 +343,8 @@ export default function ScenarioFeed({
                 <ScenarioCard
                   scenario={{
                     ...scenario,
-                    title: scenario[titleKey] || scenario.title_en,
-                    description: scenario[descKey] || scenario.description_en,
+                    title: getScenarioTitle(scenario),
+                    description: getScenarioDescription(scenario),
                     category: selectedCategory?.[nameKey] || selectedCategory?.name_en || "",
                   }}
                   isSelected={isSelected}
@@ -329,7 +378,8 @@ export default function ScenarioFeed({
             {selectedCategory?.id === MY_CATEGORY_ID && session?.user && (
               <div className="mt-3">
                 <button
-                  onClick={() => setShowGenerateDialog(true)}
+                  onClick={() => languageReady && setShowGenerateDialog(true)}
+                  disabled={!languageReady}
                   className="px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
                 >
                   {t.createBtn}
@@ -340,9 +390,11 @@ export default function ScenarioFeed({
         )}
       </div>
 
-      {showGenerateDialog && (
+      {showGenerateDialog && languageReady && (
         <GenerateScenarioDialog
           lang={lang}
+          learningLanguage={learningLanguage}
+          nativeLanguage={nativeLanguage}
           onClose={() => setShowGenerateDialog(false)}
           onScenarioReady={handleScenarioReady}
           onSaved={handleSaved}

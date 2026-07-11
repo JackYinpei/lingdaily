@@ -27,6 +27,7 @@ export function History({
         en: {
             connect: 'Connect',
             connecting: 'Connecting...',
+            cancel: 'Cancel',
             disconnect: 'Disconnect',
             mute: 'Mute',
             unmute: 'Unmute',
@@ -36,6 +37,7 @@ export function History({
         zh: {
             connect: '连接',
             connecting: '连接中...',
+            cancel: '取消',
             disconnect: '断开',
             mute: '静音',
             unmute: '取消静音',
@@ -45,6 +47,7 @@ export function History({
         ja: {
             connect: '接続',
             connecting: '接続中...',
+            cancel: 'キャンセル',
             disconnect: '切断',
             mute: 'ミュート',
             unmute: 'ミュート解除',
@@ -123,21 +126,20 @@ export function History({
             <div className="flex gap-1 mt-2 items-center">
                 <button
                     data-tour="connect-btn"
-                    onClick={() => !isConnecting && connect()}
-                    disabled={isConnecting}
+                    onClick={connect}
                     className={`${isInputFocused ? 'hidden sm:flex' : 'flex'} w-10 h-10 lg:w-auto lg:px-4 rounded-full lg:rounded-lg font-medium transition-colors items-center justify-center text-lg flex-shrink-0 ${isConnected
                         ? 'bg-destructive text-white hover:bg-destructive/90'
                         : isConnecting
-                            ? 'bg-primary/50 text-primary-foreground cursor-wait'
+                            ? 'bg-primary/70 text-primary-foreground hover:bg-primary/60'
                             : 'bg-primary text-primary-foreground hover:bg-primary/90'
                         }`}
-                    title={isConnected ? t.disconnect : isConnecting ? t.connecting : t.connect}
+                    title={isConnected ? t.disconnect : isConnecting ? t.cancel : t.connect}
                 >
                     <span className={`lg:hidden ${isConnecting ? 'opacity-50 grayscale' : ''}`}>
                         {isConnected ? "🌐" : "📶"}
                     </span>
                     <span className="hidden lg:inline">
-                        {isConnected ? t.disconnect : isConnecting ? t.connecting : t.connect}
+                        {isConnected ? t.disconnect : isConnecting ? t.cancel : t.connect}
                     </span>
                 </button>
 
@@ -158,7 +160,7 @@ export function History({
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
                     onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.nativeEvent.isComposing && inputMessage.trim()) {
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing && inputMessage.trim() && !isConnecting) {
                             e.preventDefault();
                             sendTextMessage(inputMessage.trim());
                             setInputMessage('');
@@ -179,12 +181,12 @@ export function History({
 
                 <button
                     onClick={() => {
-                        if (inputMessage.trim()) {
+                        if (inputMessage.trim() && !isConnecting) {
                             sendTextMessage(inputMessage.trim());
                             setInputMessage('');
                         }
                     }}
-                    disabled={!inputMessage.trim()}
+                    disabled={!inputMessage.trim() || isConnecting}
                     className="px-4 py-2 rounded-lg font-medium transition-colors flex-shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {t.send}

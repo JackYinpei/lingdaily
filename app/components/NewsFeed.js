@@ -34,7 +34,7 @@ const categories = [
   { categoryId: 'cryptocurrency', categoryName: 'Cryptocurrency', sourceLanguage: 'en' },
   { categoryId: 'cybersecurity', categoryName: 'Cybersecurity', sourceLanguage: 'en' },
   { categoryId: 'czech_republic', categoryName: 'Czech Republic', sourceLanguage: 'cs' },
-  { categoryId: 'denmark', categoryName: 'Denmark', sourceLanguage: 'dk' },
+  { categoryId: 'denmark', categoryName: 'Denmark', sourceLanguage: 'da' },
   { categoryId: 'economy', categoryName: 'Economy', sourceLanguage: 'en' },
   { categoryId: 'estonia', categoryName: 'Estonia', sourceLanguage: 'et' },
   { categoryId: 'europe', categoryName: 'Europe', sourceLanguage: 'en' },
@@ -46,7 +46,7 @@ const categories = [
   { categoryId: 'germany_|_baden-württemberg', categoryName: 'Germany | Baden-Württemberg', sourceLanguage: 'de' },
   { categoryId: 'germany_|_hesse', categoryName: 'Germany | Hesse', sourceLanguage: 'de' },
   { categoryId: 'google', categoryName: 'Google', sourceLanguage: 'en' },
-  { categoryId: 'greece', categoryName: 'Greece', sourceLanguage: 'gr' },
+  { categoryId: 'greece', categoryName: 'Greece', sourceLanguage: 'el' },
   { categoryId: 'healthcare_|_usa', categoryName: 'Healthcare | USA', sourceLanguage: 'en' },
   { categoryId: 'hong_kong', categoryName: 'Hong Kong', sourceLanguage: 'en' },
   { categoryId: 'hungary', categoryName: 'Hungary', sourceLanguage: 'hu' },
@@ -171,7 +171,14 @@ function requestTitleTranslation(text, targetLang) {
 }
 
 
-export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNews = null, nativeLanguage = 'zh-CN', isMobile = false }) {
+export default function NewsFeed({
+  onArticleSelect,
+  onArticleUpdate,
+  onCategoryChange,
+  selectedNews = null,
+  nativeLanguage = 'zh-CN',
+  isMobile = false,
+}) {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -181,6 +188,14 @@ export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNe
   const listContainerRef = useRef(null);
   const previousScrollLeftRef = useRef(null);
   const requestVersionRef = useRef(0);
+  const onArticleUpdateRef = useRef(onArticleUpdate);
+  const nativeLanguageCode = typeof nativeLanguage === 'string'
+    ? nativeLanguage
+    : nativeLanguage?.code || 'zh-CN';
+
+  useEffect(() => {
+    onArticleUpdateRef.current = onArticleUpdate;
+  }, [onArticleUpdate]);
 
   useEffect(() => () => {
     // Ignore translations that settle after this responsive feed unmounts.
@@ -190,21 +205,32 @@ export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNe
   const translateArticleTitles = useCallback((newArticles, requestVersion) => {
     newArticles.forEach((article) => {
       if (!article.title) return;
-      requestTitleTranslation(article.title, nativeLanguage)
+      requestTitleTranslation(article.title, nativeLanguageCode)
         .then((translation) => {
           if (requestVersionRef.current !== requestVersion) return;
           setArticles((currentArticles) => currentArticles.map((currentArticle) =>
             currentArticle.link === article.link
-              ? { ...currentArticle, translatedTitle: translation }
+              ? {
+                  ...currentArticle,
+                  translatedTitle: translation,
+                  translatedLanguageCode: nativeLanguageCode,
+                }
               : currentArticle
           ));
+          onArticleUpdateRef.current?.({
+            id: article.id,
+            link: article.link,
+            translatedTitle: translation,
+            translatedLanguageCode: nativeLanguageCode,
+            title: translation,
+          });
         })
         .catch((error) => {
           // Translation is an enhancement: keep the source headline on failure.
           console.warn(`Failed to translate article title: "${article.title}"`, error);
         });
     });
-  }, [nativeLanguage]);
+  }, [nativeLanguageCode]);
 
   const fetchNews = useCallback(async (category) => {
     const requestVersion = ++requestVersionRef.current;
@@ -221,6 +247,7 @@ export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNe
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(rssText, 'application/xml');
       const items = xmlDoc.querySelectorAll('item');
+      const categoryData = categories.find(cat => cat.categoryId === category);
 
       const newArticles = Array.from(items).map((item, index) => {
         let description = item.querySelector('description')?.textContent || '';
@@ -267,7 +294,8 @@ export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNe
           link: item.querySelector('link')?.textContent || '',
           description: description || 'No description available',
           urlToImage: urlToImage,
-          category: categories.find(cat => cat.categoryId === category)?.categoryName || 'News',
+          category: categoryData?.categoryName || 'News',
+          sourceLanguage: categoryData?.sourceLanguage || 'en',
           date: item.querySelector('pubDate')?.textContent || new Date().toISOString(),
         };
       });
@@ -461,6 +489,9 @@ export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNe
             category: article.category,
             date: article.date,
             originalTitle: article.title,
+            translatedTitle: article.translatedTitle || null,
+            translatedLanguageCode: article.translatedLanguageCode || null,
+            sourceLanguage: article.sourceLanguage || 'en',
             link: article.link,
             urlToImage: article.urlToImage
           };

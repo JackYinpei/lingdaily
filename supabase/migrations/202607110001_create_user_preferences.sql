@@ -12,6 +12,15 @@ create table if not exists public.user_preferences (
   native_language_label text not null default '中文',
   learning_language_code text not null default 'en',
   learning_language_label text not null default 'English',
+  constraint user_preferences_native_language_check check (
+    native_language_code in ('zh-CN', 'en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
+  ),
+  constraint user_preferences_learning_language_check check (
+    learning_language_code in ('en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it')
+  ),
+  constraint user_preferences_language_pair_check check (
+    learning_language_code <> native_language_code
+  ),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

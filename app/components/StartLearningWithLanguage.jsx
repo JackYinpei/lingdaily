@@ -8,7 +8,7 @@ import { useLanguage } from '@/app/contexts/LanguageContext'
 
 export default function StartLearningWithLanguage({ startLabel = 'Start Learning', learningLabel, nativeLabel }) {
   const router = useRouter()
-  const { commitPreferences, nativeLanguage } = useLanguage()
+  const { commitPreferences, loading } = useLanguage()
   const [submitting, setSubmitting] = useState(false)
 
   const deviceLocale = useMemo(() => {
@@ -21,7 +21,7 @@ export default function StartLearningWithLanguage({ startLabel = 'Start Learning
   }, [])
 
   const onStart = async () => {
-    if (submitting) return
+    if (loading || submitting) return
     setSubmitting(true)
     try {
       // Persist preferences only when user confirms by starting
@@ -42,7 +42,7 @@ export default function StartLearningWithLanguage({ startLabel = 'Start Learning
         variant="outline"
         onClick={onStart}
         className="bg-white text-black border-zinc-700 hover:bg-zinc-800 hover:text-white font-semibold"
-        disabled={submitting}
+        disabled={loading || submitting}
       >
         {startLabel}
       </Button>

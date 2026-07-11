@@ -1,18 +1,10 @@
 import { auth } from "@/app/auth"
+import { getLanguageFromPreference, resolveDistinctLanguagePair } from '@/app/lib/languages'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const supabaseSchema = process.env.SUPABASE_SCHEMA || 'public'
-
-const LANGUAGES = new Map([
-  ['zh-CN', '中文'],
-  ['en', 'English'],
-  ['ja', '日本語'],
-  ['es', 'Español'],
-  ['fr', 'Français'],
-  ['de', 'Deutsch'],
-])
 
 function jsonResponse(body, status = 200) {
   return Response.json(body, { status })
@@ -29,20 +21,13 @@ function parseJson(text, fallback) {
   try { return text ? JSON.parse(text) : fallback } catch { return fallback }
 }
 
-function normalizeLanguage(value, { allowChinese = false } = {}) {
-  const rawCode = typeof value?.code === 'string' ? value.code.trim() : ''
-  const code = rawCode === 'zh' || rawCode === 'zh-TW' ? 'zh-CN' : rawCode
-  if (!LANGUAGES.has(code) || (!allowChinese && code === 'zh-CN')) return null
-  return { code, label: LANGUAGES.get(code) }
-}
-
 export async function GET() {
   try {
     const session = await auth()
     if (!session?.user?.id) return jsonResponse({ error: 'Unauthorized' }, 401)
 
     const credentials = getSupabaseCredentials(session)
-    if (!credentials) return jsonResponse({ error: 'Missing authenticated Supabase configuration' }, 500)
+    if (!credentials) return jsonResponse({ error: 'Language preferences storage is not configured' }, 500)
 
     const url = new URL(`${supabaseUrl}/rest/v1/user_preferences`)
     url.searchParams.set('user_id', `eq.${session.user.id}`)
@@ -63,15 +48,32 @@ export async function GET() {
     const text = await res.text()
     const data = parseJson(text, [])
     if (!res.ok) {
-      return jsonResponse({
-        error: data?.message || data?.hint || data?.raw || 'Failed to fetch preferences',
-        status: res.status,
-      }, res.status || 400)
+      console.error('Failed to fetch language preferences:', res.status, data)
+      return jsonResponse({ error: 'Failed to fetch language preferences' }, 502)
     }
 
-    return jsonResponse({ ok: true, data: Array.isArray(data) ? data[0] || null : null })
+    const stored = Array.isArray(data) ? data[0] || null : null
+    if (!stored) return jsonResponse({ ok: true, data: null })
+
+    const pair = resolveDistinctLanguagePair(
+      stored.learning_language_code,
+      stored.native_language_code,
+    )
+    const { nativeLanguage: native, learningLanguage: learning } = pair
+
+    return jsonResponse({
+      ok: true,
+      data: {
+        ...stored,
+        native_language_code: native.code,
+        native_language_label: native.label,
+        learning_language_code: learning.code,
+        learning_language_label: learning.label,
+      },
+    })
   } catch (error) {
-    return jsonResponse({ error: error?.message || 'Unexpected error' }, 500)
+    console.error('Language preferences GET error:', error)
+    return jsonResponse({ error: 'Unable to load language preferences' }, 500)
   }
 }
 
@@ -81,12 +83,12 @@ export async function POST(req) {
     if (!session?.user?.id) return jsonResponse({ error: 'Unauthorized' }, 401)
 
     const credentials = getSupabaseCredentials(session)
-    if (!credentials) return jsonResponse({ error: 'Missing authenticated Supabase configuration' }, 500)
+    if (!credentials) return jsonResponse({ error: 'Language preferences storage is not configured' }, 500)
 
     const body = await req.json().catch(() => ({}))
-    const native = normalizeLanguage(body?.native, { allowChinese: true })
-    const learning = normalizeLanguage(body?.learning)
-    if (!native || !learning) {
+    const native = getLanguageFromPreference(body?.native)
+    const learning = getLanguageFromPreference(body?.learning, { allowChinese: false })
+    if (!native || !learning || native.code === learning.code) {
       return jsonResponse({ error: 'Unsupported native or learning language' }, 400)
     }
 
@@ -116,15 +118,13 @@ export async function POST(req) {
     const text = await res.text()
     const data = parseJson(text, { raw: text })
     if (!res.ok) {
-      return jsonResponse({
-        error: data?.message || data?.hint || data?.raw || data?.error || 'Failed to save preferences',
-        status: res.status,
-        details: data,
-      }, res.status || 400)
+      console.error('Failed to save language preferences:', res.status, data)
+      return jsonResponse({ error: 'Failed to save language preferences' }, 502)
     }
 
     return jsonResponse({ ok: true, data: Array.isArray(data) ? data[0] : data })
   } catch (error) {
-    return jsonResponse({ error: error?.message || 'Unexpected error' }, 500)
+    console.error('Language preferences POST error:', error)
+    return jsonResponse({ error: 'Unable to save language preferences' }, 500)
   }
 }

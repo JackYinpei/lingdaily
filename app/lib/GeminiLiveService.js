@@ -4,6 +4,7 @@
  * https://github.com/google-gemini/gemini-live-api-examples/tree/main/gemini-live-ephemeral-tokens-websocket
  */
 import confetti from 'canvas-confetti';
+import { DEFAULT_LEARNING_LANGUAGE, DEFAULT_NATIVE_LANGUAGE } from '@/app/lib/languages';
 
 const OUTPUT_SAMPLE_RATE = 24000;
 const PLAYBACK_LEAD_TIME_SECONDS = 0.03;
@@ -24,56 +25,87 @@ function fireTinyConfetti() {
     } catch (_) { /* ignore */ }
 }
 
-// Tool declaration for extracting unfamiliar English
-export const extractUnfamiliarEnglishToolDecl = {
-    name: "extract_unfamiliar_english",
-    description: `Call this tool after a user message to record English the user genuinely does NOT know yet.
+const DEFAULT_LANGUAGE_PAIR = {
+    learningLanguage: DEFAULT_LEARNING_LANGUAGE,
+    nativeLanguage: DEFAULT_NATIVE_LANGUAGE,
+};
 
-ONLY include an item if it meets at least one of these criteria:
-1. The user expressed the concept in their native language (e.g. Chinese/Japanese) instead of English — they wanted to say something but lacked the English word.
-2. The user attempted an English word/phrase but clearly struggled: hesitated (\"uh\", \"um\", repeated words), used broken/incorrect grammar, substituted a wrong word, or mixed in their native language mid-phrase.
-3. The user explicitly asked what a word or phrase means.
-4. The user mispronounced a word badly enough to suggest they don't really know it (e.g. read "manslaughter" as "must leather").
-
-DO NOT include:
-- Common everyday English that any intermediate learner knows (e.g. "look at", "that's enough", "what do you think", "powerful tool", "bad man").
-- Any word or phrase the user said fluently and correctly without hesitation.
-- Full sentences the user said correctly — only extract the specific word/phrase they struggled with.
-
-If the user's message contains no evidence of the above, call this tool with an empty items array.`,
-    parameters: {
-        type: "OBJECT",
-        properties: {
-            userMessage: {
-                type: "STRING",
-                description: "The user's original message that was analyzed"
-            },
-            items: {
-                type: "ARRAY",
-                description: "Words or phrases the user genuinely does not know, based strictly on the criteria above. Empty array if none qualify.",
-                items: {
-                    type: "OBJECT",
-                    properties: {
-                        text: {
-                            type: "STRING",
-                            description: "The English word or phrase the user does not know. If they expressed it in their native language, write the correct English equivalent here."
-                        },
-                        type: {
-                            type: "STRING",
-                            enum: ["word", "phrase", "grammar", "other"],
-                            description: "Category of the item"
-                        }
-                    },
-                    required: ["text", "type"]
-                }
-            },
-            context: {
-                type: "STRING",
-                description: "Brief note on why this item was flagged (e.g. 'user said in Chinese', 'user hesitated and repeated', 'user used wrong word')"
-            }
+function normalizeLanguagePair(pair = {}) {
+    const learningLanguage = pair.learningLanguage || pair.targetLanguage || {};
+    const nativeLanguage = pair.nativeLanguage || {};
+    return {
+        learningLanguage: {
+            code: learningLanguage.code || DEFAULT_LANGUAGE_PAIR.learningLanguage.code,
+            label: learningLanguage.label || DEFAULT_LANGUAGE_PAIR.learningLanguage.label,
         },
-        required: ["userMessage", "items"]
-    }
+        nativeLanguage: {
+            code: nativeLanguage.code || DEFAULT_LANGUAGE_PAIR.nativeLanguage.code,
+            label: nativeLanguage.label || DEFAULT_LANGUAGE_PAIR.nativeLanguage.label,
+        },
+    };
+}
+
+// Build the declaration from the actual language pair selected by the user.
+// Language codes are still validated by the backend; the model never chooses
+// which vocabulary collection receives an item.
+export function createLearningItemsToolDecl(pair) {
+    const { learningLanguage, nativeLanguage } = normalizeLanguagePair(pair);
+    const target = learningLanguage.label;
+    const native = nativeLanguage.label;
+    return {
+        name: 'record_unfamiliar_learning_items',
+        description: `Call this tool after a user message to record ${target} that the user genuinely does not know yet.
+
+Only include an item when the user used ${native} instead of the needed ${target} expression, struggled or made an error while attempting it, explicitly asked what it means, or clearly mispronounced it. Do not record expressions the user used fluently and correctly. If no item qualifies, call the tool with an empty items array.`,
+        parameters: {
+            type: 'OBJECT',
+            properties: {
+                userMessage: {
+                    type: 'STRING',
+                    description: "The user's original message that was analyzed",
+                },
+                items: {
+                    type: 'ARRAY',
+                    description: `Specific ${target} learning items the user demonstrably struggled with. Empty when none qualify.`,
+                    items: {
+                        type: 'OBJECT',
+                        properties: {
+                            text: {
+                                type: 'STRING',
+                                description: `The correct ${target} word, phrase, or grammar form.`,
+                            },
+                            type: {
+                                type: 'STRING',
+                                enum: ['word', 'phrase', 'grammar', 'other'],
+                                description: 'Category of the learning item',
+                            },
+                            meaning: {
+                                type: 'STRING',
+                                description: `A concise meaning or explanation in ${native}.`,
+                            },
+                            original: {
+                                type: 'STRING',
+                                description: `The user's original ${native} expression or incorrect attempt, when useful.`,
+                            },
+                        },
+                        required: ['text', 'type'],
+                    },
+                },
+                context: {
+                    type: 'STRING',
+                    description: `A brief ${native} note explaining why the item was flagged.`,
+                },
+            },
+            required: ['userMessage', 'items'],
+        },
+    };
+}
+
+export const learningItemsToolDecl = createLearningItemsToolDecl(DEFAULT_LANGUAGE_PAIR);
+// Keep the old export available for code/tests that imported it directly.
+export const extractUnfamiliarEnglishToolDecl = {
+    ...learningItemsToolDecl,
+    name: 'extract_unfamiliar_english',
 };
 
 export class GeminiLiveServiceImpl {
@@ -94,6 +126,8 @@ export class GeminiLiveServiceImpl {
         this.outputAudioReadyPromise = null;
         this.audioPlaybackChain = Promise.resolve();
         this.playbackEpoch = 0;
+        this.connectionEpoch = 0;
+        this.languagePair = normalizeLanguagePair();
 
         this.config = config;
     }
@@ -173,13 +207,75 @@ export class GeminiLiveServiceImpl {
 
     // ─── Connection ────────────────────────────────────────────────────
 
-    async connect(systemInstruction, token) {
+    isCurrentConnection(epoch, socket = null) {
+        return epoch === this.connectionEpoch && (!socket || socket === this.webSocket);
+    }
+
+    stopInputAudio() {
+        if (this.scriptProcessor) {
+            try { this.scriptProcessor.disconnect(); } catch (_) { /* ignore */ }
+            this.scriptProcessor = null;
+        }
+        if (this.mediaSource) {
+            try { this.mediaSource.disconnect(); } catch (_) { /* ignore */ }
+            this.mediaSource = null;
+        }
+        if (this.mediaStream) {
+            this.mediaStream.getTracks().forEach((track) => track.stop());
+            this.mediaStream = null;
+        }
+        if (this.inputAudioContext && this.inputAudioContext.state !== 'closed') {
+            try {
+                Promise.resolve(this.inputAudioContext.close()).catch(() => undefined);
+            } catch (_) { /* ignore */ }
+        }
+        this.inputAudioContext = null;
+    }
+
+    async waitForConnectionStep(promise, deadlineAt) {
+        const remaining = deadlineAt - Date.now();
+        if (remaining <= 0) throw new Error("Gemini Live setup timed out");
+        let timeoutId;
+        try {
+            return await Promise.race([
+                Promise.resolve(promise),
+                new Promise((_, reject) => {
+                    timeoutId = setTimeout(
+                        () => reject(new Error("Gemini Live setup timed out")),
+                        remaining,
+                    );
+                }),
+            ]);
+        } finally {
+            if (timeoutId) clearTimeout(timeoutId);
+        }
+    }
+
+    async connect(systemInstruction, token, languagePair = DEFAULT_LANGUAGE_PAIR) {
         this.systemInstruction = systemInstruction;
+        const connectionPair = normalizeLanguagePair(languagePair);
+        this.languagePair = connectionPair;
         this.invalidatePlayback();
 
         if (!token) {
             this.config.onError("No ephemeral token provided");
-            return;
+            return false;
+        }
+
+        // A reconnect must not orphan the previous microphone graph while the
+        // output context remains primed by the current user gesture.
+        this.stopInputAudio();
+
+        // Supersede any socket that is still opening. Its event handlers retain
+        // the previous epoch and therefore cannot mutate this new connection.
+        const connectionEpoch = ++this.connectionEpoch;
+        const connectionDeadline = Date.now() + 20000;
+        const previousSocket = this.webSocket;
+        this.webSocket = null;
+        if (previousSocket && (previousSocket.readyState === 0 || previousSocket.readyState === 1)) {
+            this.connected = false;
+            this.session = null;
+            try { previousSocket.close(); } catch (_) { /* ignore */ }
         }
 
         // Build WebSocket URL — use proxy base URL if configured
@@ -195,27 +291,83 @@ export class GeminiLiveServiceImpl {
 
         // Prepare AudioContexts — reuse outputAudioContext if already primed
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        this.inputAudioContext = new AudioContextClass({ sampleRate: 16000 });
-        if (this.inputAudioContext.state === 'suspended') await this.inputAudioContext.resume();
+        const inputAudioContext = new AudioContextClass({ sampleRate: 16000 });
+        this.inputAudioContext = inputAudioContext;
+        try {
+            if (inputAudioContext.state === 'suspended') {
+                await this.waitForConnectionStep(inputAudioContext.resume(), connectionDeadline);
+            }
+        } catch (connectionError) {
+            if (this.isCurrentConnection(connectionEpoch)) {
+                this.config.onError(connectionError.message);
+                this.disconnect();
+            }
+            throw connectionError;
+        }
+        if (!this.isCurrentConnection(connectionEpoch)) {
+            if (inputAudioContext.state !== 'closed') {
+                try { inputAudioContext.close(); } catch (_) { /* ignore */ }
+            }
+            return false;
+        }
         // outputAudioContext was already created & resumed by primeOutputAudio()
         // but create it now if not pre-primed (e.g. reconnect flow)
         if (!this.outputAudioContext || this.outputAudioContext.state === 'closed') {
             this.createOutputAudioContext();
         }
-        await this.outputAudioReadyPromise;
-        await this.resumeOutputAudio();
+        try {
+            await this.waitForConnectionStep(this.outputAudioReadyPromise, connectionDeadline);
+            await this.waitForConnectionStep(this.resumeOutputAudio(), connectionDeadline);
+        } catch (connectionError) {
+            if (this.isCurrentConnection(connectionEpoch)) {
+                this.config.onError(connectionError.message);
+                this.disconnect();
+            }
+            throw connectionError;
+        }
+        if (!this.isCurrentConnection(connectionEpoch)) return false;
 
         // Open WebSocket
         return new Promise((resolve, reject) => {
-            this.webSocket = new WebSocket(wsUrl);
+            const socket = new WebSocket(wsUrl);
+            this.webSocket = socket;
+            let settled = false;
+            let setupTimeout = null;
+            const settleResolve = (value) => {
+                if (settled) return;
+                settled = true;
+                if (setupTimeout) clearTimeout(setupTimeout);
+                resolve(value);
+            };
+            const settleReject = (error) => {
+                if (settled) return;
+                settled = true;
+                if (setupTimeout) clearTimeout(setupTimeout);
+                reject(error);
+            };
+            setupTimeout = setTimeout(() => {
+                if (!this.isCurrentConnection(connectionEpoch, socket)) {
+                    settleResolve(false);
+                    return;
+                }
+                const timeoutError = new Error("Gemini Live setup timed out");
+                this.config.onError(timeoutError.message);
+                settleReject(timeoutError);
+                this.disconnect();
+            }, Math.max(1, connectionDeadline - Date.now()));
 
-            this.webSocket.onopen = () => {
+            socket.onopen = () => {
+                if (!this.isCurrentConnection(connectionEpoch, socket)) {
+                    try { socket.close(); } catch (_) { /* ignore */ }
+                    settleResolve(false);
+                    return;
+                }
                 console.log("WebSocket open");
                 this.connected = true;
                 this.session = true; // compatibility flag
 
                 // Send setup message (official reference pattern)
-                const toolDecls = [extractUnfamiliarEnglishToolDecl];
+                const toolDecls = [createLearningItemsToolDecl(connectionPair)];
                 const setupMessage = {
                     setup: {
                         model: `models/${MODEL}`,
@@ -245,68 +397,101 @@ export class GeminiLiveServiceImpl {
                     },
                 };
                 console.log("Sending setup:", JSON.stringify(setupMessage).slice(0, 500));
-                this.webSocket.send(JSON.stringify(setupMessage));
+                socket.send(JSON.stringify(setupMessage));
             };
 
-            this.webSocket.onmessage = async (event) => {
+            socket.onmessage = async (event) => {
+                if (!this.isCurrentConnection(connectionEpoch, socket)) return;
                 let jsonData;
                 if (event.data instanceof Blob) {
                     jsonData = await event.data.text();
                 } else {
                     jsonData = event.data;
                 }
+                if (!this.isCurrentConnection(connectionEpoch, socket)) return;
 
                 try {
                     const msg = JSON.parse(jsonData);
-                    await this.handleServerMessage(msg);
+                    await this.handleServerMessage(msg, connectionEpoch, socket);
+                    if (!this.isCurrentConnection(connectionEpoch, socket)) {
+                        settleResolve(false);
+                        return;
+                    }
 
                     // After setup complete, start mic & signal connected
                     if (msg.setupComplete) {
                         console.log("Setup complete — starting mic");
+                        const micStarted = await this.startMic(connectionEpoch, socket);
+                        if (!micStarted || !this.isCurrentConnection(connectionEpoch, socket)) {
+                            settleResolve(false);
+                            return;
+                        }
                         this.config.onConnectionUpdate(true);
-                        await this.startMic();
-                        resolve();
+                        settleResolve(true);
                     }
                 } catch (err) {
                     console.error("Error parsing server message:", err, jsonData);
                 }
             };
 
-            this.webSocket.onclose = (event) => {
+            socket.onclose = (event) => {
+                if (!this.isCurrentConnection(connectionEpoch, socket)) {
+                    settleResolve(false);
+                    return;
+                }
                 console.log("WebSocket closed", "code:", event.code, "reason:", event.reason, "wasClean:", event.wasClean);
                 this.connected = false;
                 this.session = null;
                 this.disconnect();
+                settleReject(new Error(event.reason || "WebSocket closed before setup completed"));
             };
 
-            this.webSocket.onerror = (event) => {
+            socket.onerror = (event) => {
+                if (!this.isCurrentConnection(connectionEpoch, socket)) {
+                    settleResolve(false);
+                    return;
+                }
                 console.error("WebSocket error:", event);
                 this.config.onError("WebSocket connection error");
                 this.connected = false;
                 this.session = null;
-                reject(new Error("WebSocket error"));
+                this.disconnect();
+                settleReject(new Error("WebSocket error"));
             };
         });
     }
 
     // ─── Microphone ────────────────────────────────────────────────────
 
-    async startMic() {
-        if (!this.inputAudioContext) return;
+    async startMic(connectionEpoch = this.connectionEpoch, socket = this.webSocket) {
+        const inputAudioContext = this.inputAudioContext;
+        if (!inputAudioContext || !this.isCurrentConnection(connectionEpoch, socket)) return false;
         try {
-            this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            if (this.inputAudioContext.state === 'closed') return;
+            const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            if (
+                !this.isCurrentConnection(connectionEpoch, socket)
+                || inputAudioContext !== this.inputAudioContext
+                || inputAudioContext.state === 'closed'
+            ) {
+                mediaStream.getTracks().forEach((track) => track.stop());
+                return false;
+            }
+            this.mediaStream = mediaStream;
 
-            this.mediaSource = this.inputAudioContext.createMediaStreamSource(this.mediaStream);
-            this.scriptProcessor = this.inputAudioContext.createScriptProcessor(4096, 1, 1);
+            this.mediaSource = inputAudioContext.createMediaStreamSource(mediaStream);
+            this.scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
 
             this.scriptProcessor.onaudioprocess = (e) => {
-                if (this.isMuted || !this.connected) return;
+                if (
+                    this.isMuted
+                    || !this.connected
+                    || !this.isCurrentConnection(connectionEpoch, socket)
+                ) return;
                 const inputData = e.inputBuffer.getChannelData(0);
                 const pcm16 = this.float32ToPcm16Base64(inputData);
 
                 try {
-                    if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
+                    if (socket.readyState === WebSocket.OPEN) {
                         const message = {
                             realtimeInput: {
                                 audio: {
@@ -315,7 +500,7 @@ export class GeminiLiveServiceImpl {
                                 },
                             },
                         };
-                        this.webSocket.send(JSON.stringify(message));
+                        socket.send(JSON.stringify(message));
                     }
                 } catch (err) {
                     // Ignore send errors during shutdown
@@ -323,16 +508,21 @@ export class GeminiLiveServiceImpl {
             };
 
             this.mediaSource.connect(this.scriptProcessor);
-            this.scriptProcessor.connect(this.inputAudioContext.destination);
+            this.scriptProcessor.connect(inputAudioContext.destination);
+            return true;
         } catch (e) {
+            if (!this.isCurrentConnection(connectionEpoch, socket)) return false;
             console.error("Mic Error", e);
             this.config.onError("Could not access microphone.");
+            this.disconnect();
+            return false;
         }
     }
 
     // ─── Server message handling ───────────────────────────────────────
 
-    async handleServerMessage(message) {
+    async handleServerMessage(message, connectionEpoch = this.connectionEpoch, socket = this.webSocket) {
+        if (!this.isCurrentConnection(connectionEpoch, socket)) return;
         const serverContent = message.serverContent;
 
         // Gemini explicitly asks clients to stop and empty playback on an
@@ -360,6 +550,7 @@ export class GeminiLiveServiceImpl {
                     this.config.onPlaybackError?.("Audio playback was blocked. Reconnect to resume sound.");
                 });
             await this.audioPlaybackChain;
+            if (!this.isCurrentConnection(connectionEpoch, socket)) return;
         }
 
         // Output Transcription (AI Text)
@@ -384,25 +575,31 @@ export class GeminiLiveServiceImpl {
             const toolCalls = message.toolCall?.functionCalls;
             if (toolCalls && toolCalls.length > 0) {
                 for (const call of toolCalls) {
-                    if (call.name === 'extract_unfamiliar_english') {
-                        await this.handleExtractUnfamiliarEnglish(call.args, call.id);
+                    if (
+                        call.name === 'record_unfamiliar_learning_items'
+                        || call.name === 'extract_unfamiliar_english'
+                    ) {
+                        await this.handleLearningItems(call.args, call.id, call.name);
                     }
                 }
             }
         }
     }
 
-    async handleExtractUnfamiliarEnglish(args, callId) {
-        console.log('Tool: extract_unfamiliar_english', args);
+    async handleLearningItems(args = {}, callId, callName = 'record_unfamiliar_learning_items') {
+        const payload = args && typeof args === 'object' ? args : {};
+        console.log(`Tool: ${callName}`, payload);
 
-        // Respond to tool call immediately
+        // Acknowledge immediately so persistence latency never stalls the Live
+        // session. The acknowledgement deliberately says "accepted" rather
+        // than "saved" because the database write happens asynchronously.
         if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
             const toolResponse = {
                 toolResponse: {
                     functionResponses: [{
-                        name: 'extract_unfamiliar_english',
+                        name: callName,
                         id: callId,
-                        response: { result: "saved" }
+                        response: { result: "accepted" }
                     }]
                 }
             };
@@ -411,27 +608,41 @@ export class GeminiLiveServiceImpl {
 
         // Fire-and-forget: save to backend. Only celebrate when the server
         // actually persisted new items (skip empty-items no-ops).
-        const hasItems = Array.isArray(args.items) && args.items.length > 0;
-        fetch('/api/learning/unfamiliar-english', {
+        const hasItems = Array.isArray(payload.items) && payload.items.length > 0;
+        fetch('/api/learning/items', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                items: args.items,
-                context: args.context,
+                items: Array.isArray(payload.items) ? payload.items : [],
+                context: payload.context ?? null,
                 timestamp: new Date().toISOString(),
-                userMessage: args.userMessage ?? null,
+                userMessage: payload.userMessage ?? null,
+                learningLanguage: this.languagePair.learningLanguage.code,
+                nativeLanguage: this.languagePair.nativeLanguage.code,
             }),
         })
-            .then(res => {
-                if (res.ok && hasItems) fireTinyConfetti();
+            .then(async (res) => {
+                const result = await res.json().catch(() => ({}));
+                if (res.ok && result?.ok && !result?.skipped && hasItems) {
+                    fireTinyConfetti();
+                } else if (!res.ok) {
+                    console.error('Learning items were not saved:', res.status);
+                }
             })
-            .catch(e => console.error('Error saving unfamiliar english:', e));
+            .catch(e => console.error('Error saving learning items:', e));
+    }
+
+    // Backward-compatible method for callers/tests that still use the old
+    // English-specific name. New Live tool calls use handleLearningItems.
+    async handleExtractUnfamiliarEnglish(args, callId) {
+        return this.handleLearningItems(args, callId, 'extract_unfamiliar_english');
     }
 
     // ─── Send text ─────────────────────────────────────────────────────
 
     async sendText(text) {
-        if (!this.connected || !this.webSocket) return;
+        const socket = this.webSocket;
+        if (!this.connected || !socket || socket.readyState !== WebSocket.OPEN) return;
 
         // Optimistically update UI
         this.config.onMessage(text, true, 'user');
@@ -442,11 +653,12 @@ export class GeminiLiveServiceImpl {
                 text: text,
             },
         };
-        this.webSocket.send(JSON.stringify(message));
+        socket.send(JSON.stringify(message));
     }
 
     async sendContextMessage(text) {
-        if (!this.connected || !this.webSocket) return;
+        const socket = this.webSocket;
+        if (!this.connected || !socket || socket.readyState !== WebSocket.OPEN) return;
 
         // Use realtimeInput.text — same as official reference
         const message = {
@@ -454,40 +666,31 @@ export class GeminiLiveServiceImpl {
                 text: text,
             },
         };
-        this.webSocket.send(JSON.stringify(message));
+        socket.send(JSON.stringify(message));
     }
 
     // ─── Disconnect ────────────────────────────────────────────────────
 
     disconnect() {
-        if (this.scriptProcessor) {
-            this.scriptProcessor.disconnect();
-            this.scriptProcessor = null;
+        // Invalidate handlers before closing so a late event from this socket
+        // cannot tear down a subsequent connection.
+        this.connectionEpoch += 1;
+        const socket = this.webSocket;
+        this.webSocket = null;
+        if (socket && (socket.readyState === 0 || socket.readyState === 1)) {
+            try { socket.close(); } catch (_) { /* ignore */ }
         }
-        if (this.mediaSource) {
-            this.mediaSource.disconnect();
-            this.mediaSource = null;
-        }
-        if (this.mediaStream) {
-            this.mediaStream.getTracks().forEach(t => t.stop());
-            this.mediaStream = null;
-        }
+        this.stopInputAudio();
         this.invalidatePlayback();
         this.nextStartTime = 0;
-        if (this.inputAudioContext && this.inputAudioContext.state !== 'closed') {
-            this.inputAudioContext.close();
-        }
         if (this.outputAudioContext && this.outputAudioContext.state !== 'closed') {
-            this.outputAudioContext.close();
+            try {
+                Promise.resolve(this.outputAudioContext.close()).catch(() => undefined);
+            } catch (_) { /* ignore */ }
         }
-        this.inputAudioContext = null;
         this.outputAudioContext = null;
         this.outputGainNode = null;
         this.outputAudioReadyPromise = null;
-        if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
-            this.webSocket.close();
-        }
-        this.webSocket = null;
         this.connected = false;
         this.session = null;
         this.config.onConnectionUpdate(false);

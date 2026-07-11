@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { useLanguage } from '@/app/contexts/LanguageContext'
+import LanguageSelector from '@/app/components/LanguageSelector'
 
 const TYPE_COLORS = {
     word: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
@@ -12,16 +13,9 @@ const TYPE_COLORS = {
     other: 'bg-gray-500/10 text-gray-400 border-gray-500/30',
 }
 
-const TYPE_LABEL = {
-    word: '单词',
-    phrase: '短语',
-    grammar: '语法',
-    other: '其他',
-}
-
 export default function VocabularyPage() {
     const { data: session, status } = useSession()
-    const { nativeLanguage } = useLanguage()
+    const { learningLanguage, nativeLanguage } = useLanguage()
 
     const [records, setRecords] = useState([])
     const [loading, setLoading] = useState(true)
@@ -29,33 +23,57 @@ export default function VocabularyPage() {
     const [before, setBefore] = useState(null)
     const [hasMore, setHasMore] = useState(false)
     const [filter, setFilter] = useState('all')
+    const activeRequestRef = useRef(null)
 
     const LIMIT = 50
+    const targetLanguage = learningLanguage?.code || 'en'
+    const userId = session?.user?.id
 
     const fetchRecords = useCallback(async (cursorBefore = null, replace = true) => {
+        activeRequestRef.current?.abort()
+        const controller = new AbortController()
+        activeRequestRef.current = controller
         setLoading(true)
         setError(null)
         try {
-            const params = new URLSearchParams({ limit: String(LIMIT) })
+            const params = new URLSearchParams({
+                limit: String(LIMIT),
+                targetLanguage,
+            })
             if (cursorBefore) params.set('before', cursorBefore)
-            const res = await fetch(`/api/learning/unfamiliar-english?${params}`)
+            const res = await fetch(`/api/learning/items?${params}`, {
+                signal: controller.signal,
+                cache: 'no-store',
+            })
             const json = await res.json()
             if (!res.ok) throw new Error(json.error || 'Failed to fetch')
             const data = Array.isArray(json.data) ? json.data : []
             setRecords(prev => replace ? data : [...prev, ...data])
-            setHasMore(data.length === LIMIT)
+            setHasMore(Boolean(json.nextCursor))
             setBefore(json.nextCursor || null)
         } catch (e) {
-            setError(e.message)
+            if (e.name !== 'AbortError') setError(e.message)
         } finally {
-            setLoading(false)
+            if (activeRequestRef.current === controller) {
+                activeRequestRef.current = null
+                setLoading(false)
+            }
         }
-    }, [])
+    }, [targetLanguage])
 
     useEffect(() => {
-        if (status === 'authenticated' && session) fetchRecords()
-        if (status === 'unauthenticated') setLoading(false)
-    }, [status, session, fetchRecords])
+        if (status === 'authenticated' && userId) {
+            setRecords([])
+            setBefore(null)
+            setHasMore(false)
+            fetchRecords()
+        }
+        if (status === 'unauthenticated') {
+            setLoading(false)
+        }
+
+        return () => activeRequestRef.current?.abort()
+    }, [status, userId, fetchRecords])
 
     // Flatten all items from all records
     const allItems = records.flatMap(record =>
@@ -65,14 +83,18 @@ export default function VocabularyPage() {
             userMessage: record.user_message,
             timestamp: record.timestamp,
             recordId: record.id,
+            learningLanguageCode: record.learning_language_code || 'en',
+            learningLanguageLabel: record.learning_language_label || 'English',
         }))
     )
 
-    // Deduplicate by text (case-insensitive), keep most recent
+    // Dedupe only within the same language. NFKC folds equivalent full-width
+    // forms while preserving the newest occurrence returned by the API.
     const seen = new Set()
     const uniqueItems = []
     for (const item of allItems) {
-        const key = item.text.toLowerCase().trim()
+        const normalizedText = String(item.text || '').normalize('NFKC').toLowerCase().trim()
+        const key = `${item.learningLanguageCode}\u0000${normalizedText}`
         if (!seen.has(key)) {
             seen.add(key)
             uniqueItems.push(item)
@@ -83,8 +105,8 @@ export default function VocabularyPage() {
 
     const uiLang = (nativeLanguage?.code || 'zh').toLowerCase().startsWith('zh') ? 'zh' : 'en'
     const t = uiLang === 'zh'
-        ? { title: '生词本', back: '返回', total: '共', words: '个词', loadMore: '加载更多', noWords: '暂无生词', noWordsDesc: '开始和AI对话，系统会自动提取你不熟悉的单词', all: '全部', context: '语境', from: '来自', signIn: '登录后查看生词本', signInAction: '去登录' }
-        : { title: 'Vocabulary', back: 'Back', total: 'Total', words: 'words', loadMore: 'Load more', noWords: 'No words yet', noWordsDesc: 'Start chatting with AI and unfamiliar words will be saved automatically', all: 'All', context: 'Context', from: 'From', signIn: 'Sign in to view your vocabulary', signInAction: 'Sign in' }
+        ? { title: '生词本', back: '返回', total: '共', words: '个词', loadMore: '加载更多', noWords: '暂无生词', noWordsDesc: '开始和 AI 对话，系统会自动保存你不熟悉的学习项', all: '全部', context: '语境', from: '来自', meaning: '释义', original: '原文', language: '学习语言', signIn: '登录后查看生词本', signInAction: '去登录', loading: '加载中…', typeLabels: { word: '单词', phrase: '短语', grammar: '语法', other: '其他' } }
+        : { title: 'Vocabulary', back: 'Back', total: 'Total', words: 'items', loadMore: 'Load more', noWords: 'No learning items yet', noWordsDesc: 'Start chatting with AI and unfamiliar learning items will be saved automatically', all: 'All', context: 'Context', from: 'From', meaning: 'Meaning', original: 'Original', language: 'Learning language', signIn: 'Sign in to view your vocabulary', signInAction: 'Sign in', loading: 'Loading…', typeLabels: { word: 'Word', phrase: 'Phrase', grammar: 'Grammar', other: 'Other' } }
 
     if (status === 'unauthenticated') {
         return (
@@ -104,7 +126,7 @@ export default function VocabularyPage() {
         <div className="min-h-screen bg-background">
             <header className="border-b border-border bg-card">
                 <div className="container mx-auto px-4 py-4">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-4">
                             <Link
                                 href="/talk"
@@ -114,9 +136,12 @@ export default function VocabularyPage() {
                             </Link>
                             <h1 className="text-xl font-bold text-card-foreground">{t.title}</h1>
                         </div>
-                        <span className="text-muted-foreground text-sm">
-                            {t.total} {uniqueItems.length} {t.words}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-4">
+                            <LanguageSelector kind="learning" label={t.language} />
+                            <span className="text-muted-foreground text-sm">
+                                {t.total} {uniqueItems.length} {t.words}
+                            </span>
+                        </div>
                     </div>
                 </div>
             </header>
@@ -134,7 +159,7 @@ export default function VocabularyPage() {
                                     : 'bg-transparent text-muted-foreground border-border hover:border-foreground/50'
                             }`}
                         >
-                            {type === 'all' ? t.all : TYPE_LABEL[type] || type}
+                            {type === 'all' ? t.all : t.typeLabels[type] || type}
                             {type === 'all'
                                 ? ` (${uniqueItems.length})`
                                 : ` (${uniqueItems.filter(i => i.type === type).length})`
@@ -151,7 +176,7 @@ export default function VocabularyPage() {
 
                 {loading && records.length === 0 ? (
                     <div className="flex items-center justify-center py-20">
-                        <div className="text-muted-foreground text-sm">Loading...</div>
+                        <div className="text-muted-foreground text-sm">{t.loading}</div>
                     </div>
                 ) : filtered.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -161,6 +186,15 @@ export default function VocabularyPage() {
                         <Link href="/talk" className="mt-6 px-4 py-2 border border-red-500 text-red-500 rounded hover:bg-red-500 hover:text-white transition-colors text-sm">
                             {uiLang === 'zh' ? '去对话' : 'Start chatting'}
                         </Link>
+                        {hasMore && (
+                            <button
+                                onClick={() => fetchRecords(before, false)}
+                                disabled={loading}
+                                className="mt-3 px-6 py-2 border border-border text-muted-foreground rounded hover:border-foreground/50 hover:text-foreground transition-colors text-sm disabled:opacity-50"
+                            >
+                                {loading ? t.loading : t.loadMore}
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <>
@@ -173,9 +207,21 @@ export default function VocabularyPage() {
                                     <div className="flex items-start justify-between gap-2 mb-2">
                                         <span className="text-foreground font-semibold text-base break-all">{item.text}</span>
                                         <span className={`text-xs px-2 py-0.5 rounded-full border flex-shrink-0 ${TYPE_COLORS[item.type] || TYPE_COLORS.other}`}>
-                                            {TYPE_LABEL[item.type] || item.type}
+                                            {t.typeLabels[item.type] || item.type}
                                         </span>
                                     </div>
+                                    {item.meaning && (
+                                        <p className="text-foreground/80 text-sm mt-1">
+                                            <span className="text-muted-foreground text-xs">{t.meaning}: </span>
+                                            {item.meaning}
+                                        </p>
+                                    )}
+                                    {item.original && item.original !== item.text && (
+                                        <p className="text-muted-foreground text-xs mt-1 line-clamp-2">
+                                            <span className="text-muted-foreground/60">{t.original}: </span>
+                                            {item.original}
+                                        </p>
+                                    )}
                                     {item.userMessage && (
                                         <p className="text-muted-foreground text-xs mt-1 line-clamp-2">
                                             <span className="text-muted-foreground/60">{t.from}: </span>
@@ -202,7 +248,7 @@ export default function VocabularyPage() {
                                     disabled={loading}
                                     className="px-6 py-2 border border-border text-muted-foreground rounded hover:border-foreground/50 hover:text-foreground transition-colors text-sm disabled:opacity-50"
                                 >
-                                    {loading ? 'Loading...' : t.loadMore}
+                                    {loading ? t.loading : t.loadMore}
                                 </button>
                             </div>
                         )}

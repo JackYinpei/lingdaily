@@ -44,7 +44,7 @@ export default function VocabularyPage() {
             const data = Array.isArray(json.data) ? json.data : []
             setRecords(prev => replace ? data : [...prev, ...data])
             setHasMore(data.length === LIMIT)
-            if (data.length > 0) setBefore(data[data.length - 1].timestamp)
+            setBefore(json.nextCursor || null)
         } catch (e) {
             setError(e.message)
         } finally {

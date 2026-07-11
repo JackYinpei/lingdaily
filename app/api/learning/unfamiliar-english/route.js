@@ -10,6 +10,7 @@ const MAX_ITEMS_PER_EVENT = 20
 const MAX_ITEM_LENGTH = 200
 const MAX_CONTEXT_LENGTH = 1000
 const MAX_USER_MESSAGE_LENGTH = 2000
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function jsonResponse(body, status = 200) {
   return Response.json(body, { status })
@@ -40,6 +41,19 @@ function normalizeItems(items) {
     const type = ALLOWED_ITEM_TYPES.has(item?.type) ? item.type : 'other'
     return { text, type }
   }).filter((item) => item.text)
+}
+
+function parseCursor(value) {
+  if (!value) return null
+  const separatorIndex = value.lastIndexOf('|')
+  const timestamp = separatorIndex >= 0 ? value.slice(0, separatorIndex) : value
+  const id = separatorIndex >= 0 ? value.slice(separatorIndex + 1) : null
+  if (Number.isNaN(Date.parse(timestamp)) || (id && !UUID_PATTERN.test(id))) return null
+  return { timestamp: new Date(timestamp).toISOString(), id }
+}
+
+function createCursor(record) {
+  return record?.timestamp && record?.id ? `${record.timestamp}|${record.id}` : null
 }
 
 export async function POST(req) {
@@ -111,9 +125,8 @@ export async function GET(req) {
     const limit = Math.min(parsedLimit, 200)
 
     const before = searchParams.get('before')
-    if (before && Number.isNaN(Date.parse(before))) {
-      return jsonResponse({ error: "'before' must be a valid ISO timestamp" }, 400)
-    }
+    const cursor = parseCursor(before)
+    if (before && !cursor) return jsonResponse({ error: "'before' must be a valid cursor" }, 400)
 
     const params = new URLSearchParams({
       user_id: `eq.${session.user.id}`,
@@ -121,7 +134,12 @@ export async function GET(req) {
       order: 'timestamp.desc,id.desc',
       limit: String(limit),
     })
-    if (before) params.set('timestamp', `lt.${new Date(before).toISOString()}`)
+    if (cursor?.id) {
+      params.set('or', `(timestamp.lt.${cursor.timestamp},and(timestamp.eq.${cursor.timestamp},id.lt.${cursor.id}))`)
+    } else if (cursor) {
+      // Backward compatibility for clients that still send a timestamp only.
+      params.set('timestamp', `lt.${cursor.timestamp}`)
+    }
 
     const res = await fetch(`${supabaseUrl}/rest/v1/unfamiliar_english?${params.toString()}`, {
       headers: {
@@ -144,7 +162,12 @@ export async function GET(req) {
       }, res.status || 400)
     }
 
-    return jsonResponse({ ok: true, data: Array.isArray(data) ? data : [] })
+    const records = Array.isArray(data) ? data : []
+    return jsonResponse({
+      ok: true,
+      data: records,
+      nextCursor: records.length === limit ? createCursor(records[records.length - 1]) : null,
+    })
   } catch (error) {
     return jsonResponse({ error: error?.message || 'Unexpected error' }, 500)
   }

@@ -1,19 +1,8 @@
-import { GoogleGenAI } from '@google/genai'
 import { auth } from '@/app/auth'
 import { DEFAULT_NATIVE_LANGUAGE, getLanguage } from '@/app/lib/languages'
+import { createServerGeminiClient } from '@/app/lib/server/geminiConfig'
 
 const MAX_TEXT_LENGTH = 1000
-
-function createGeminiClient() {
-  const apiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim()
-  if (!apiKey) return null
-
-  const baseUrl = process.env.GOOGLE_GEMINI_BASE_URL || process.env.NEXT_PUBLIC_GEMINI_BASE_URL
-  return new GoogleGenAI({
-    apiKey,
-    ...(baseUrl ? { httpOptions: { baseUrl } } : {}),
-  })
-}
 
 export async function POST(request) {
   try {
@@ -34,7 +23,7 @@ export async function POST(request) {
       return Response.json({ error: 'Unsupported target language' }, { status: 400 })
     }
 
-    const ai = createGeminiClient()
+    const ai = createServerGeminiClient()
     if (!ai) return Response.json({ error: 'Gemini API key is not configured' }, { status: 500 })
 
     const result = await ai.models.generateContent({

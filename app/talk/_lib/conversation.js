@@ -12,11 +12,17 @@ export const getNewsKey = (news) => {
 export const ensureContextMessage = (historyItems, contextMessage) => {
     const list = Array.isArray(historyItems) ? historyItems : [];
     if (!contextMessage) return list;
-    const hasContext = list.some((item) => item?.itemId === contextMessage.itemId);
+    const currentTopicItems = list.filter((item) => (
+        item?.itemId === contextMessage.itemId
+        || item?.metadata?.kind !== 'news_context'
+    ));
+    const hasContext = currentTopicItems.some((item) => item?.itemId === contextMessage.itemId);
     if (hasContext) {
-        return list.map((item) => item?.itemId === contextMessage.itemId ? contextMessage : item);
+        return currentTopicItems.map(
+            (item) => item?.itemId === contextMessage.itemId ? contextMessage : item,
+        );
     }
-    return [contextMessage, ...list];
+    return [contextMessage, ...currentTopicItems];
 };
 
 export const extractMessageText = (message) => {

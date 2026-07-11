@@ -1,52 +1,13 @@
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://lingdaily.yasobi.xyz';
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:8000';
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabaseSchema = process.env.SUPABASE_SCHEMA || 'public';
 
-async function fetchLongtailRoutes(limit = 10) {
-  if (!supabaseUrl || !supabaseServiceRoleKey) {
-    console.warn('next-sitemap: missing Supabase credentials, skipping longtail entries');
-    return [];
-  }
-
-  const params = new URLSearchParams();
-  params.set('select', 'news_key,user_id,updated_at');
-  params.set('order', 'updated_at.desc');
-  params.set('limit', String(limit));
-
-  try {
-    const response = await fetch(`${supabaseUrl}/rest/v1/chat_history?${params.toString()}`, {
-      headers: {
-        apikey: supabaseServiceRoleKey,
-        Authorization: `Bearer ${supabaseServiceRoleKey}`,
-        'Content-Profile': supabaseSchema,
-        Accept: 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      console.error('next-sitemap: failed to load longtail entries', response.status);
-      return [];
-    }
-
-    const rows = await response.json();
-    return Array.isArray(rows)
-      ? rows
-        .filter((row) => row?.news_key && row?.user_id)
-        .map((row) => ({
-          route: `/longtail/${encodeURIComponent(row.news_key)}/${encodeURIComponent(row.user_id)}`,
-          lastmod: row?.updated_at || new Date().toISOString(),
-        }))
-      : [];
-  } catch (error) {
-    console.error('next-sitemap: unexpected error while fetching longtail entries', error);
-    return [];
-  }
-}
-
+// Completed podcasts are publicly readable through RLS, so sitemap generation
+// never needs the service-role key and never reads user-owned tables.
 async function fetchPodcastRoutes() {
-  if (!supabaseUrl || !supabaseServiceRoleKey) {
-    console.warn('next-sitemap: missing Supabase credentials, skipping podcast entries');
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.warn('next-sitemap: missing public Supabase credentials, skipping podcast entries');
     return [];
   }
 
@@ -59,34 +20,34 @@ async function fetchPodcastRoutes() {
   try {
     const response = await fetch(`${supabaseUrl}/rest/v1/podcasts?${params.toString()}`, {
       headers: {
-        apikey: supabaseServiceRoleKey,
-        Authorization: `Bearer ${supabaseServiceRoleKey}`,
-        'Content-Profile': supabaseSchema,
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${supabaseAnonKey}`,
+        'Accept-Profile': supabaseSchema,
         Accept: 'application/json',
       },
     });
 
     if (!response.ok) {
-      console.error('next-sitemap: failed to load podcast entries', response.status);
+      console.error('next-sitemap: failed to load public podcast entries', response.status);
       return [];
     }
 
     const rows = await response.json();
-    const entries = {};
+    const entries = new Map();
 
     if (Array.isArray(rows)) {
-      rows.forEach((row) => {
-        if (row.date_folder) {
-          if (!entries[row.date_folder] || row.created_at > entries[row.date_folder]) {
-            entries[row.date_folder] = row.created_at;
-          }
+      for (const row of rows) {
+        if (!row?.date_folder) continue;
+        const previous = entries.get(row.date_folder);
+        if (!previous || row.created_at > previous) {
+          entries.set(row.date_folder, row.created_at);
         }
-      });
+      }
     }
 
-    return Object.entries(entries).map(([date, lastmod]) => ({
-      route: `/podcasts/${date}`,
-      lastmod: lastmod || new Date().toISOString(),
+    return [...entries].map(([date, lastmod]) => ({
+      route: `/podcasts/${encodeURIComponent(date)}`,
+      lastmod,
     }));
   } catch (error) {
     console.error('next-sitemap: unexpected error while fetching podcast entries', error);
@@ -98,37 +59,48 @@ async function fetchPodcastRoutes() {
 module.exports = {
   siteUrl,
   generateRobotsTxt: true,
-  exclude: ['/api/*', '/sign-in', '/sign-up', '/history', '/history/*'],
+  exclude: [
+    '/api/*',
+    '/admin',
+    '/admin/*',
+    '/sign-in',
+    '/sign-up',
+    '/talk',
+    '/history',
+    '/history/*',
+    '/progress',
+    '/vocabulary',
+  ],
   additionalPaths: async (config) => {
-    const staticRoutes = ['/', '/talk', '/longtail'];
+    const staticRoutes = ['/', '/podcasts'];
     const staticEntries = await Promise.all(
       staticRoutes.map((route) => config.transform(config, route)),
     );
-
-    const longtailEntries = await fetchLongtailRoutes();
     const podcastEntries = await fetchPodcastRoutes();
-
-    const longtailTransforms = await Promise.all(
-      longtailEntries.map(async ({ route, lastmod }) => {
-        const base = await config.transform(config, route);
-        return { ...base, lastmod };
-      }),
-    );
-
     const podcastTransforms = await Promise.all(
       podcastEntries.map(async ({ route, lastmod }) => {
         const base = await config.transform(config, route);
-        return { ...base, lastmod };
+        return { ...base, ...(lastmod ? { lastmod } : {}) };
       }),
     );
 
-    return [...staticEntries, ...longtailTransforms, ...podcastTransforms];
+    return [...staticEntries, ...podcastTransforms];
   },
   robotsTxtOptions: {
     policies: [
       {
         userAgent: '*',
         allow: '/',
+        disallow: [
+          '/api/',
+          '/admin/',
+          '/sign-in',
+          '/sign-up',
+          '/talk',
+          '/history',
+          '/progress',
+          '/vocabulary',
+        ],
       },
     ],
   },

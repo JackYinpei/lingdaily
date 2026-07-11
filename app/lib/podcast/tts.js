@@ -1,18 +1,11 @@
 // Synthesize each script chunk with Gemini multi-speaker TTS, then concat into one MP3.
 // Splitting per chunk keeps each TTS call under the "few minutes" drift threshold.
 
-import { GoogleGenAI } from "@google/genai";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import Mp3Encoder from "@breezystack/lamejs";
 import { HOST_A, HOST_B } from "./script.js";
-
-const ai = new GoogleGenAI({
-  apiKey: process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY,
-  httpOptions: process.env.GOOGLE_GEMINI_BASE_URL
-    ? { baseUrl: process.env.GOOGLE_GEMINI_BASE_URL }
-    : undefined,
-});
+import { createServerGeminiClient } from "@/app/lib/server/geminiConfig";
 
 const TTS_MODEL = "gemini-3.1-flash-tts-preview";
 const SAMPLE_RATE = 24000;
@@ -70,7 +63,7 @@ function pcmBuffersToMp3(pcmBuffers) {
   return Buffer.concat(mp3Parts);
 }
 
-async function synthesizeChunkWithRetry(chunk, attempts = 3) {
+async function synthesizeChunkWithRetry(ai, chunk, attempts = 3) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -109,11 +102,14 @@ function estimateMp3Duration(pcmBuffers) {
 
 // Synthesize every chunk, concat to single MP3, return { size, duration }.
 export async function synthesizePodcast(script, { outputMp3Path, workDir }) {
+  const ai = createServerGeminiClient();
+  if (!ai) throw new Error("Gemini API key is not configured");
+
   await mkdir(workDir, { recursive: true });
 
   const pcmBuffers = [];
   for (const chunk of script.chunks) {
-    const pcm = await synthesizeChunkWithRetry(chunk);
+    const pcm = await synthesizeChunkWithRetry(ai, chunk);
     pcmBuffers.push(pcm);
   }
 

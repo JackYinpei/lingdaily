@@ -1,4 +1,5 @@
 "use client"
+import Image from "next/image"
 import { Card } from "@/app/components/ui/card"
 import { Badge } from "@/app/components/ui/badge"
 import { cn } from "@/app/lib/utils"
@@ -44,12 +45,15 @@ export function NewsCard({
         {useMobileActiveLayout ? (
           <div className="flex items-center gap-3 mb-2">
             {news.urlToImage && (
-              <img
+              <Image
                 src={news.urlToImage}
                 alt={news.title}
+                width={64}
+                height={64}
+                unoptimized
                 className="w-16 h-16 rounded object-cover flex-shrink-0 transition-all duration-300"
                 onError={(e) => {
-                  e.target.style.display = "none"
+                  e.currentTarget.style.display = "none"
                 }}
               />
             )}
@@ -83,9 +87,12 @@ export function NewsCard({
           )}
         >
           {!useMobileActiveLayout && news.urlToImage && (
-            <img
+            <Image
               src={news.urlToImage}
               alt={news.title}
+              width={compact ? 64 : 80}
+              height={compact ? 64 : 80}
+              unoptimized
               className={cn(
                 "rounded object-cover transition-all duration-300",
                 compact
@@ -93,7 +100,7 @@ export function NewsCard({
                   : "float-left mr-3 mb-2 w-20 h-20"
               )}
               onError={(e) => {
-                e.target.style.display = 'none';
+                e.currentTarget.style.display = 'none';
               }}
             />
           )}

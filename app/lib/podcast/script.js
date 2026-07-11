@@ -2,14 +2,7 @@
 // Output is a structured JSON so we can TTS each chunk independently and
 // concat without the model drifting over a long single output.
 
-import { GoogleGenAI } from "@google/genai";
-
-const ai = new GoogleGenAI({
-  apiKey: process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY,
-  httpOptions: process.env.GOOGLE_GEMINI_BASE_URL
-    ? { baseUrl: process.env.GOOGLE_GEMINI_BASE_URL }
-    : undefined,
-});
+import { createServerGeminiClient } from "@/app/lib/server/geminiConfig";
 
 export const HOST_A = "LL";
 export const HOST_B = "DD";
@@ -151,6 +144,9 @@ function normalizeEpisodeMetadata(script) {
 }
 
 export async function generatePodcastScript(newsByCategory) {
+  const ai = createServerGeminiClient();
+  if (!ai) throw new Error("Gemini API key is not configured");
+
   const result = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     config: {

@@ -1,15 +1,10 @@
-import { GoogleGenAI } from "@google/genai";
 import { auth } from "@/app/auth";
+import { createServerGeminiClient } from "@/app/lib/server/geminiConfig";
 import {
   DEFAULT_LEARNING_LANGUAGE,
   DEFAULT_NATIVE_LANGUAGE,
   getLanguage,
 } from "@/app/lib/languages";
-
-const ai = new GoogleGenAI({
-  apiKey: process.env.GOOGLE_API_KEY,
-  httpOptions: { baseUrl: process.env.GOOGLE_GEMINI_BASE_URL },
-});
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -58,6 +53,11 @@ export async function POST(req) {
     }
     if (!pair) {
       return jsonResponse({ error: "Unsupported learning or native language code" }, 400);
+    }
+
+    const ai = createServerGeminiClient();
+    if (!ai) {
+      return jsonResponse({ error: "Gemini API key is not configured" }, 500);
     }
 
     const ideaTrimmed = idea.trim().slice(0, 500);

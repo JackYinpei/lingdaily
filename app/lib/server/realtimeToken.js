@@ -4,6 +4,10 @@ import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
 
 import { auth } from "@/app/auth";
+import {
+  getServerGeminiApiKey,
+  getServerGeminiBaseUrl,
+} from "@/app/lib/server/geminiConfig";
 
 const TOKEN_LIFETIME_MS = 30 * 60 * 1000;
 const NEW_SESSION_WINDOW_MS = 2 * 60 * 1000;
@@ -35,11 +39,7 @@ export async function createRealtimeTokenResponse({ deprecated = false } = {}) {
       );
     }
 
-    const rawApiKey =
-      process.env.GEMINI_API_KEY ||
-      process.env.GOOGLE_API_KEY ||
-      process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-    const apiKey = rawApiKey ? rawApiKey.trim() : "";
+    const apiKey = getServerGeminiApiKey();
 
     if (!apiKey) {
       return respond(
@@ -51,7 +51,7 @@ export async function createRealtimeTokenResponse({ deprecated = false } = {}) {
       );
     }
 
-    const geminiBaseUrl = process.env.NEXT_PUBLIC_GEMINI_BASE_URL;
+    const geminiBaseUrl = getServerGeminiBaseUrl();
     const client = new GoogleGenAI({
       apiKey,
       ...(geminiBaseUrl

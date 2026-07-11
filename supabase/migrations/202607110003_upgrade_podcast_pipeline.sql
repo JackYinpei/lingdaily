@@ -29,7 +29,9 @@ create table if not exists public.podcasts (
 
 alter table public.podcasts
   add column if not exists updated_at timestamptz not null default now(),
-  add column if not exists status text not null default 'in_progress',
+  -- Add status as nullable first. Existing legacy episodes must be classified
+  -- from audio_url before the default is installed below.
+  add column if not exists status text,
   add column if not exists error_message text,
   add column if not exists audio_bytes bigint,
   add column if not exists audio_duration_seconds numeric,
@@ -89,7 +91,10 @@ alter table public.podcasts
   alter column category set default 'daily';
 
 update public.podcasts
-set status = case when audio_url is not null then 'completed' else 'failed' end
+set status = case
+  when nullif(btrim(audio_url), '') is not null then 'completed'
+  else 'failed'
+end
 where status is null;
 
 alter table public.podcasts

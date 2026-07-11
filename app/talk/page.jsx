@@ -31,6 +31,7 @@ import {
     buildTopicContext,
     createNewsContextMessage,
 } from './_lib/prompts';
+import { fetchRealtimeTokenAfterPriming } from './_lib/liveConnection';
 
 export default function Home() {
     const { data: userSession, status: sessionStatus } = useSession()
@@ -816,21 +817,15 @@ export default function Home() {
             // the token fetch + WebSocket setup. Creating & resuming now ensures
             // the first audio chunk plays without requiring another interaction.
             initService();
-            serviceRef.current?.primeOutputAudio();
 
             // Fetch ephemeral token
             let token;
             const tokenTimeout = setTimeout(() => connectionController.abort(), 15000);
             try {
-                const res = await fetch('/api/realtime-token', {
-                    method: 'POST',
+                token = await fetchRealtimeTokenAfterPriming({
+                    service: serviceRef.current,
                     signal: connectionController.signal,
                 });
-                const data = await res.json();
-                if (!res.ok || !data.token) {
-                    throw new Error(data.error || "Failed to get access token");
-                }
-                token = data.token;
             } catch (e) {
                 if (isCurrentAttempt()) {
                     setError("Connection Failed: " + e.message);

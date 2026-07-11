@@ -20,7 +20,7 @@ const TYPE_LABEL = {
 }
 
 export default function VocabularyPage() {
-    const { data: session } = useSession()
+    const { data: session, status } = useSession()
     const { nativeLanguage } = useLanguage()
 
     const [records, setRecords] = useState([])
@@ -53,8 +53,9 @@ export default function VocabularyPage() {
     }, [])
 
     useEffect(() => {
-        if (session) fetchRecords()
-    }, [session, fetchRecords])
+        if (status === 'authenticated' && session) fetchRecords()
+        if (status === 'unauthenticated') setLoading(false)
+    }, [status, session, fetchRecords])
 
     // Flatten all items from all records
     const allItems = records.flatMap(record =>
@@ -82,8 +83,22 @@ export default function VocabularyPage() {
 
     const uiLang = (nativeLanguage?.code || 'zh').toLowerCase().startsWith('zh') ? 'zh' : 'en'
     const t = uiLang === 'zh'
-        ? { title: '生词本', back: '返回', total: '共', words: '个词', loadMore: '加载更多', noWords: '暂无生词', noWordsDesc: '开始和AI对话，系统会自动提取你不熟悉的单词', all: '全部', context: '语境', from: '来自' }
-        : { title: 'Vocabulary', back: 'Back', total: 'Total', words: 'words', loadMore: 'Load more', noWords: 'No words yet', noWordsDesc: 'Start chatting with AI and unfamiliar words will be saved automatically', all: 'All', context: 'Context', from: 'From' }
+        ? { title: '生词本', back: '返回', total: '共', words: '个词', loadMore: '加载更多', noWords: '暂无生词', noWordsDesc: '开始和AI对话，系统会自动提取你不熟悉的单词', all: '全部', context: '语境', from: '来自', signIn: '登录后查看生词本', signInAction: '去登录' }
+        : { title: 'Vocabulary', back: 'Back', total: 'Total', words: 'words', loadMore: 'Load more', noWords: 'No words yet', noWordsDesc: 'Start chatting with AI and unfamiliar words will be saved automatically', all: 'All', context: 'Context', from: 'From', signIn: 'Sign in to view your vocabulary', signInAction: 'Sign in' }
+
+    if (status === 'unauthenticated') {
+        return (
+            <div className="min-h-screen bg-background flex items-center justify-center px-4">
+                <div className="text-center rounded-lg border border-border bg-card p-8 max-w-sm">
+                    <div className="text-4xl mb-4">📚</div>
+                    <p className="text-foreground font-medium mb-5">{t.signIn}</p>
+                    <Link href="/sign-in" className="inline-flex px-4 py-2 rounded bg-primary text-primary-foreground">
+                        {t.signInAction}
+                    </Link>
+                </div>
+            </div>
+        )
+    }
 
     return (
         <div className="min-h-screen bg-background">

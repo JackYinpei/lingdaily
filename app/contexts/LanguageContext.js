@@ -65,18 +65,15 @@ export function LanguageProvider({ children, initialAcceptLanguage = '' }) {
   }, [])
 
   const persistToServer = useCallback(async (native, learning) => {
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          native,
-          learning,
-        }),
-      })
-      // Non-blocking; ignore failures here
-      await res.text().catch(() => {})
-    } catch {}
+    const res = await fetch('/api/user/preferences', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ native, learning }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data?.error || 'Failed to save language preferences')
+    }
   }, [])
 
   // Initial hydrate: prefer DB (if logged in), else localStorage, else Accept-Language, else defaults

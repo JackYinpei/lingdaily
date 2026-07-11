@@ -113,8 +113,65 @@ const categories = [
   { categoryId: 'onthisday', categoryName: 'On This Day', sourceLanguage: 'en' }
 ];
 
+const translationPromiseCache = new Map();
+const MAX_TRANSLATION_CACHE_ENTRIES = 500;
+const MAX_CONCURRENT_TRANSLATIONS = 4;
+const translationQueue = [];
+let activeTranslations = 0;
 
-export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNews = null, targetLanguage = 'zh-CN', nativeLanguage = 'zh-CN', isMobile = false }) {
+function drainTranslationQueue() {
+  while (activeTranslations < MAX_CONCURRENT_TRANSLATIONS && translationQueue.length > 0) {
+    const job = translationQueue.shift();
+    activeTranslations += 1;
+    job.task()
+      .then(job.resolve, job.reject)
+      .finally(() => {
+        activeTranslations -= 1;
+        drainTranslationQueue();
+      });
+  }
+}
+
+function scheduleTranslation(task) {
+  return new Promise((resolve, reject) => {
+    translationQueue.push({ task, resolve, reject });
+    drainTranslationQueue();
+  });
+}
+
+function requestTitleTranslation(text, targetLang) {
+  const key = `${targetLang}\u0000${text}`;
+  const cached = translationPromiseCache.get(key);
+  if (cached) return cached;
+
+  const promise = scheduleTranslation(() =>
+    fetch('/api/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, targetLang }),
+    }).then(async (response) => {
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.translation) {
+        throw new Error(data.error || 'Translation failed');
+      }
+      return data.translation;
+    })
+  )
+    .catch((error) => {
+      translationPromiseCache.delete(key);
+      throw error;
+    });
+
+  translationPromiseCache.set(key, promise);
+  if (translationPromiseCache.size > MAX_TRANSLATION_CACHE_ENTRIES) {
+    const oldestKey = translationPromiseCache.keys().next().value;
+    translationPromiseCache.delete(oldestKey);
+  }
+  return promise;
+}
+
+
+export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNews = null, nativeLanguage = 'zh-CN', isMobile = false }) {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -123,8 +180,34 @@ export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNe
   const cardRefs = useRef({});
   const listContainerRef = useRef(null);
   const previousScrollLeftRef = useRef(null);
+  const requestVersionRef = useRef(0);
+
+  useEffect(() => () => {
+    // Ignore translations that settle after this responsive feed unmounts.
+    requestVersionRef.current += 1;
+  }, []);
+
+  const translateArticleTitles = useCallback((newArticles, requestVersion) => {
+    newArticles.forEach((article) => {
+      if (!article.title) return;
+      requestTitleTranslation(article.title, nativeLanguage)
+        .then((translation) => {
+          if (requestVersionRef.current !== requestVersion) return;
+          setArticles((currentArticles) => currentArticles.map((currentArticle) =>
+            currentArticle.link === article.link
+              ? { ...currentArticle, translatedTitle: translation }
+              : currentArticle
+          ));
+        })
+        .catch((error) => {
+          // Translation is an enhancement: keep the source headline on failure.
+          console.warn(`Failed to translate article title: "${article.title}"`, error);
+        });
+    });
+  }, [nativeLanguage]);
 
   const fetchNews = useCallback(async (category) => {
+    const requestVersion = ++requestVersionRef.current;
     setLoading(true);
     setError(null);
     setArticles([]);
@@ -189,15 +272,18 @@ export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNe
         };
       });
 
+      if (requestVersionRef.current !== requestVersion) return;
       setArticles(newArticles);
+      translateArticleTitles(newArticles, requestVersion);
 
     } catch (err) {
+      if (requestVersionRef.current !== requestVersion) return;
       console.error('Failed to fetch news:', err);
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (requestVersionRef.current === requestVersion) setLoading(false);
     }
-  }, []);
+  }, [translateArticleTitles]);
 
   // On mount: restore saved category from localStorage, then mark ready.
   // Both setSelectedCategory and setIsReady are batched into the same re-render,
@@ -224,32 +310,6 @@ export default function NewsFeed({ onArticleSelect, onCategoryChange, selectedNe
     try { localStorage.setItem('lingdaily-category', categoryId); } catch (_) { /* ignore */ }
     onCategoryChange?.();
   }, [onCategoryChange]);
-
-  const translateArticleTitles = useCallback((newArticles) => {
-    newArticles.forEach((article) => {
-      if (!article.title) return;
-      fetch('/api/translate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: article.title, targetLang: nativeLanguage }),
-      })
-        .then(res => res.ok ? res.json() : null)
-        .then(transData => {
-          if (transData && transData.translation) {
-            setArticles(prevArticles =>
-              prevArticles.map(prevArticle =>
-                prevArticle.link === article.link
-                  ? { ...prevArticle, translatedTitle: transData.translation }
-                  : prevArticle
-              )
-            );
-          }
-        })
-        .catch(err => {
-          console.error(`Failed to translate article title: "${article.title}"`, err);
-        });
-    });
-  }, [nativeLanguage]);
 
   const mobileHasSelection = Boolean(isMobile && selectedNews);
 

@@ -251,6 +251,7 @@ export default function Home() {
     const [error, setError] = useState(null);
 
     const [mode, setMode] = useState('news'); // 'news' | 'scenario'
+    const [isDesktopLayout, setIsDesktopLayout] = useState(null)
     const [selectedNews, setSelectedNews] = useState(null)
     const selectedNewsRef = useRef(null)
     const newsContextMessageRef = useRef(null)
@@ -265,6 +266,20 @@ export default function Home() {
         setMode(newMode);
         setSelectedNews(null);
         try { localStorage.setItem('talk-mode', newMode); } catch (_) { /* ignore */ }
+    }, []);
+
+    // Only mount one content feed. Keeping both responsive variants mounted
+    // caused duplicate Kagi and Gemini translation requests.
+    useEffect(() => {
+        const mediaQuery = window.matchMedia('(min-width: 1024px)');
+        const syncLayout = () => setIsDesktopLayout(mediaQuery.matches);
+        syncLayout();
+        if (mediaQuery.addEventListener) mediaQuery.addEventListener('change', syncLayout);
+        else mediaQuery.addListener?.(syncLayout);
+        return () => {
+            if (mediaQuery.removeEventListener) mediaQuery.removeEventListener('change', syncLayout);
+            else mediaQuery.removeListener?.(syncLayout);
+        };
     }, []);
 
     // UI strings ...
@@ -646,7 +661,7 @@ export default function Home() {
             >
                 <div className="flex flex-col lg:flex-row lg:gap-6 flex-1 min-h-0 lg:h-[calc(100vh-140px)]">
                     {/* Mobile Cards - 在中等屏幕以下显示 */}
-                    <div className="lg:hidden flex-shrink-0">
+                    {isDesktopLayout === false && <div className="lg:hidden flex-shrink-0">
                         <div className="flex items-center justify-between mb-1">
                             <h2 className="text-xl font-semibold text-foreground">
                                 {mode === 'news' ? 'Latest News' : (uiLangCode === 'zh' ? '场景练习' : uiLangCode === 'ja' ? 'シナリオ' : 'Scenarios')}
@@ -659,7 +674,6 @@ export default function Home() {
                                     onArticleSelect={setSelectedNews}
                                     onCategoryChange={handleCategoryChange}
                                     selectedNews={selectedNews}
-                                    targetLanguage={learningLanguage?.code || 'en'}
                                     nativeLanguage={nativeLanguage?.code || 'zh-CN'}
                                     isMobile={true}
                                 />
@@ -673,10 +687,10 @@ export default function Home() {
                                 />
                             )}
                         </div>
-                    </div>
+                    </div>}
 
                     {/* Desktop Cards - 在大屏幕以上显示 */}
-                    <div className="hidden lg:flex lg:w-[40%] flex-col min-h-0 h-[calc(100vh-140px)]">
+                    {isDesktopLayout === true && <div className="hidden lg:flex lg:w-[40%] flex-col min-h-0 h-[calc(100vh-140px)]">
                         <div className="flex items-center justify-between mb-4">
                             <h2 className="text-xl font-semibold text-foreground">
                                 {mode === 'news' ? 'Latest News' : (uiLangCode === 'zh' ? '场景练习' : uiLangCode === 'ja' ? 'シナリオ' : 'Scenarios')}
@@ -692,7 +706,6 @@ export default function Home() {
                                     onArticleSelect={setSelectedNews}
                                     onCategoryChange={handleCategoryChange}
                                     selectedNews={selectedNews}
-                                    targetLanguage={learningLanguage?.code || 'en'}
                                     nativeLanguage={nativeLanguage?.code || 'zh-CN'}
                                 />
                             ) : (
@@ -704,7 +717,7 @@ export default function Home() {
                                 />
                             )}
                         </div>
-                    </div>
+                    </div>}
 
                     {/* Chat Interface - Full width on mobile, 70% on desktop */}
                     <div className="flex-1 lg:w-[70%] flex flex-col min-h-0 lg:h-[calc(100vh-140px)]">

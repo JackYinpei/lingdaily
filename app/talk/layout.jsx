@@ -3,9 +3,8 @@ import { redirect } from "next/navigation"
 
 export default async function TalkLayout({ children }) {
   const session = await auth()
-  if (!session) {
-    redirect("/sign-in")
+  if (!session?.user?.id) {
+    redirect("/sign-in?callbackUrl=/talk")
   }
   return children
 }
-

@@ -1,3 +1,4 @@
+-- Self-contained upgrade: this file is safe whether chat_history already exists or not.
 create extension if not exists "pgcrypto";
 
 create or replace function public.set_updated_at()

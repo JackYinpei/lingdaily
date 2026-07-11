@@ -42,6 +42,20 @@ export default function MobileNav({ t, signedIn, signOutAction }) {
                 >
                   {t.nav.podcasts}
                 </Link>
+                <Link
+                  href="/history"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setOpen(false)}
+                >
+                  {t.nav.history}
+                </Link>
+                <Link
+                  href="/progress"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setOpen(false)}
+                >
+                  {t.nav.progress}
+                </Link>
                 <ThemeToggle />
                 <form action={signOutAction}>
                   <Button variant="outline" className="w-full font-semibold">

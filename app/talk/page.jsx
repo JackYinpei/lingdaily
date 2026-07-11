@@ -17,8 +17,20 @@ import { useLanguage } from '@/app/contexts/LanguageContext';
 import { GeminiLiveServiceImpl } from '@/app/lib/GeminiLiveService';
 import OnboardingGuide from '@/app/components/OnboardingGuide';
 
-function buildInstructions(lang, nativeLabel, targetLabel, isScenario = false) {
-    const openingContent = isScenario
+function buildInstructions(lang, nativeLabel, targetLabel, isScenario = false, isResuming = false) {
+    const openingContent = isResuming
+        ? {
+            en: `- A previous conversation transcript will be provided after connection.
+- Continue from the user's latest turn instead of introducing the topic again.
+- Briefly acknowledge the continuation, then respond naturally in a mix of ${nativeLabel} and ${targetLabel}.`,
+            zh: `- 连接后会提供上一段对话记录；
+- 必须接着用户最后一轮继续，不要重新介绍新闻或场景；
+- 简短确认已接上对话，然后自然地混合使用${nativeLabel}和${targetLabel}回应。`,
+            ja: `- 接続後に以前の会話履歴が提供される；
+- トピックを再紹介せず、ユーザーの最後の発言から会話を続ける；
+- 続きから再開したことを短く示し、${nativeLabel}と${targetLabel}を自然に混ぜて応答する。`,
+        }
+        : isScenario
         ? {
             en: `- When the conversation starts and a scenario is provided, your VERY FIRST response must introduce the scenario and begin the role-play.\n- Use a natural MIX of ${nativeLabel} and ${targetLabel} for this opening — do NOT use only one language.\n- Keep the intro brief (2-4 sentences), set the scene, then start the role-play interaction.`,
             zh: `- 对话开始时，如果提供了场景，你的第一句话必须介绍这个场景并开始角色扮演；\n- 介绍时必须用${nativeLabel}和${targetLabel}夹杂的方式，不能只用一种语言；\n- 介绍要简洁（2~4句话），设定场景，然后开始角色扮演互动。`,
@@ -231,8 +243,154 @@ const dedupeManualMessages = (historyItems) => {
     });
 };
 
+const hasUserMessage = (historyItems) => (
+    Array.isArray(historyItems) && historyItems.some(
+        (item) => item?.role === 'user' && extractMessageText(item),
+    )
+);
+
+const conversationItemKey = (item) => item?.itemId || [
+    item?.role || '',
+    extractMessageText(item),
+    item?.metadata?.createdAt || item?.metadata?.createAt || '',
+].join(':');
+
+const preferMoreCompleteItem = (existing, incoming) => {
+    const existingFinal = Boolean(existing?.metadata?.isFinal);
+    const incomingFinal = Boolean(incoming?.metadata?.isFinal);
+    if (incomingFinal !== existingFinal) return incomingFinal ? incoming : existing;
+
+    const existingText = extractMessageText(existing);
+    const incomingText = extractMessageText(incoming);
+    if (incomingText.length !== existingText.length) {
+        return incomingText.length > existingText.length ? incoming : existing;
+    }
+    return incoming;
+};
+
+const mergeConversationHistory = (serverHistory, localHistory) => {
+    const merged = [];
+    const indexByKey = new Map();
+
+    for (const item of [...(serverHistory || []), ...(localHistory || [])]) {
+        const key = conversationItemKey(item);
+        const existingIndex = indexByKey.get(key);
+        if (existingIndex === undefined) {
+            indexByKey.set(key, merged.length);
+            merged.push(item);
+        } else {
+            merged[existingIndex] = preferMoreCompleteItem(merged[existingIndex], item);
+        }
+    }
+
+    return dedupeManualMessages(merged);
+};
+
+const compactHistoryForKeepalive = (historyItems, maxBytes = 40000) => {
+    const items = Array.isArray(historyItems) ? historyItems : [];
+    const selected = [];
+    let bytes = 0;
+    const byteLength = (value) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+    const shrinkItem = (item) => ({
+        ...item,
+        content: Array.isArray(item?.content)
+            ? item.content.map((part) => (
+                typeof part?.text === 'string' && part.text.length > 8000
+                    ? { ...part, text: part.text.slice(-8000) }
+                    : part
+            ))
+            : item?.content,
+    });
+
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+        let item = items[index];
+        if (item?.role === 'system') continue;
+        let itemBytes = byteLength(item);
+        if (selected.length === 0 && itemBytes > maxBytes) {
+            item = shrinkItem(item);
+            itemBytes = byteLength(item);
+        }
+        if (selected.length > 0 && bytes + itemBytes > maxBytes) break;
+        selected.unshift(item);
+        bytes += itemBytes;
+    }
+
+    const latestUserItem = [...items].reverse().find(
+        (item) => item?.role === 'user' && extractMessageText(item),
+    );
+    if (latestUserItem && !selected.some(
+        (item) => conversationItemKey(item) === conversationItemKey(latestUserItem),
+    )) {
+        let userItem = latestUserItem;
+        let userBytes = byteLength(userItem);
+        if (userBytes > maxBytes) {
+            userItem = shrinkItem(userItem);
+            userBytes = byteLength(userItem);
+        }
+        while (selected.length > 0 && bytes + userBytes > maxBytes) {
+            bytes -= byteLength(selected.shift());
+        }
+        selected.unshift(userItem);
+    }
+
+    return selected;
+};
+
+const compactNewsForKeepalive = (news) => {
+    if (!news || typeof news !== 'object') return null;
+    const shortText = (value, maxChars) => String(value || '').slice(0, maxChars);
+    const compact = {
+        id: shortText(news.id, 300),
+        title: shortText(news.title, 500),
+        originalTitle: shortText(news.originalTitle, 500),
+        link: shortText(news.link, 2000),
+    };
+    if (news._isScenario) {
+        return {
+            ...compact,
+            _isScenario: true,
+            _scenarioId: news._scenarioId,
+            description: shortText(news.description, 500),
+            _systemPrompt: shortText(news._systemPrompt, 2000),
+        };
+    }
+    return {
+        ...compact,
+        description: shortText(news.description, 500),
+        content: shortText(news.content || news.description, 2000),
+    };
+};
+
+const buildResumeTranscript = (historyItems) => {
+    const turns = (Array.isArray(historyItems) ? historyItems : [])
+        .filter((item) => item?.role === 'user' || item?.role === 'assistant')
+        .map((item) => ({ role: item.role, text: extractMessageText(item) }))
+        .filter((item) => item.text)
+        .slice(-24)
+        .map((item) => `${item.role === 'user' ? 'User' : 'Assistant'}: ${item.text}`);
+
+    let transcript = turns.join('\n');
+    if (transcript.length > 12000) transcript = transcript.slice(-12000);
+    return transcript;
+};
+
+const buildResumeContext = (news, historyItems) => {
+    const topicContext = news?._isScenario ? buildScenarioPrompt(news) : CombineInitPrompt(news);
+    const transcript = buildResumeTranscript(historyItems);
+    return `[System Resume]
+The user is continuing a saved conversation on another visit or device.
+Do not repeat the topic introduction and do not restart the role-play.
+Continue naturally from the user's latest turn, using the topic context and transcript below.
+
+TOPIC CONTEXT:
+${topicContext}
+
+RECENT TRANSCRIPT:
+${transcript}`;
+};
+
 export default function Home() {
-    const { data: userSession } = useSession()
+    const { data: userSession, status: sessionStatus } = useSession()
     const { learningLanguage, nativeLanguage } = useLanguage()
     const uiLangCode = useMemo(() => {
         const code = (nativeLanguage?.code || 'en').toLowerCase();
@@ -249,23 +407,49 @@ export default function Home() {
     const [isMuted, setIsMuted] = useState(false);
     const [history, setHistory] = useState([]);
     const [error, setError] = useState(null);
+    const [isRestoringConversation, setIsRestoringConversation] = useState(true);
+    const [isTopicHistoryLoading, setIsTopicHistoryLoading] = useState(false);
 
     const [mode, setMode] = useState('news'); // 'news' | 'scenario'
     const [isDesktopLayout, setIsDesktopLayout] = useState(null)
     const [selectedNews, setSelectedNews] = useState(null)
     const selectedNewsRef = useRef(null)
     const newsContextMessageRef = useRef(null)
+    const historyRef = useRef([])
+    const conversationMetaRef = useRef(new Map())
+    const conversationBaselineRef = useRef(new Map())
     const persistTimeoutRef = useRef(null)
+    const pendingPersistRef = useRef(null)
+    const persistQueueRef = useRef(Promise.resolve())
+    const flushPendingRef = useRef(() => Promise.resolve())
+    const skipNextNewsLoadRef = useRef(false)
+    const topicHistoryLoadingRef = useRef(false)
+    const lastUnloadFingerprintRef = useRef(null)
+    const topicGenerationRef = useRef(0)
 
     // When category changes, clear the selected news (which cascades to clearing chat history)
     const handleCategoryChange = useCallback(() => {
+        flushPendingRef.current();
+        topicGenerationRef.current += 1;
         setSelectedNews(null);
     }, []);
 
     const handleModeToggle = useCallback((newMode) => {
+        flushPendingRef.current();
+        topicGenerationRef.current += 1;
         setMode(newMode);
         setSelectedNews(null);
         try { localStorage.setItem('talk-mode', newMode); } catch (_) { /* ignore */ }
+    }, []);
+
+    const handleArticleSelect = useCallback((news) => {
+        if (selectedNewsRef.current
+            && getNewsKey(selectedNewsRef.current) === getNewsKey(news)) return;
+        flushPendingRef.current();
+        topicGenerationRef.current += 1;
+        topicHistoryLoadingRef.current = true;
+        setIsTopicHistoryLoading(true);
+        setSelectedNews(news);
     }, []);
 
     // Only mount one content feed. Keeping both responsive variants mounted
@@ -289,51 +473,181 @@ export default function Home() {
         ja: { history: '履歴', historyShort: '履歴', vocab: '単語帳' },
     }[uiLangCode]), [uiLangCode]);
 
-    // 将某条新闻下的完整对话历史节流保存到后端
-    const persistConversation = useCallback(async (news, conversationHistory) => {
-        if (!news || !Array.isArray(conversationHistory) || conversationHistory.length === 0) return;
-        if (!userSession?.user?.id) return;
-        const payload = {
-            newsKey: getNewsKey(news),
-            newsTitle: news.originalTitle || news.title || news.id || 'Untitled',
-            newsContent: news,
-            history: conversationHistory,
-            summary: null,
-            sourceType: news._isScenario ? 'scenario' : 'news',
-        };
+    // Persist sequentially so an older response cannot overwrite a newer
+    // snapshot. Revision conflicts merge messages by itemId and retry once.
+    const persistConversation = useCallback(async (
+        news,
+        conversationHistory,
+        { keepalive = false, mergeOnServer = false } = {},
+    ) => {
+        if (!news || !hasUserMessage(conversationHistory) || !userSession?.user?.id) return;
 
-        try {
-            const res = await fetch('/api/chat-history', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({}));
-                console.error('Failed to persist chat history:', err);
+        const newsKey = getNewsKey(news);
+        const baseline = conversationBaselineRef.current.get(newsKey) || [];
+        let historyToSave = mergeConversationHistory(baseline, conversationHistory);
+        if (keepalive) historyToSave = compactHistoryForKeepalive(historyToSave);
+        let expectedRevision = conversationMetaRef.current.get(newsKey)?.revision ?? 0;
+
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            const payload = {
+                newsKey,
+                newsTitle: news.originalTitle || news.title || news.id || 'Untitled',
+                history: historyToSave,
+                summary: null,
+                sourceType: news._isScenario ? 'scenario' : 'news',
+                revision: expectedRevision,
+                mergeOnServer,
+                newsContent: mergeOnServer ? compactNewsForKeepalive(news) : news,
+            };
+
+            try {
+                const res = await fetch('/api/chat-history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    keepalive,
+                });
+                const json = await res.json().catch(() => ({}));
+
+                if (res.status === 409) {
+                    const current = [json.current, json.conflict, json.data]
+                        .find((value) => value && typeof value === 'object');
+                    if (attempt === 0 && current && Array.isArray(current.history)) {
+                        historyToSave = mergeConversationHistory(current.history, historyToSave);
+                        expectedRevision = current.revision ?? null;
+                        conversationBaselineRef.current.set(newsKey, historyToSave);
+                        if (pendingPersistRef.current?.news
+                            && getNewsKey(pendingPersistRef.current.news) === newsKey) {
+                            pendingPersistRef.current = {
+                                ...pendingPersistRef.current,
+                                history: mergeConversationHistory(
+                                    historyToSave,
+                                    pendingPersistRef.current.history,
+                                ),
+                            };
+                        }
+                        conversationMetaRef.current.set(newsKey, {
+                            id: current.id,
+                            revision: current.revision,
+                        });
+                        continue;
+                    }
+                }
+
+                if (!res.ok) {
+                    console.error('Failed to persist chat history:', json?.error || res.status);
+                    return;
+                }
+                if (json?.skipped) return;
+
+                const saved = json?.data;
+                if (saved?.id) {
+                    const existingMeta = conversationMetaRef.current.get(newsKey);
+                    const savedRevision = saved.revision ?? expectedRevision;
+                    if (!existingMeta?.revision || !savedRevision || savedRevision >= existingMeta.revision) {
+                        conversationMetaRef.current.set(newsKey, {
+                            id: saved.id,
+                            revision: savedRevision,
+                        });
+                    }
+                }
+                const savedHistory = mergeConversationHistory(
+                    conversationBaselineRef.current.get(newsKey) || [],
+                    Array.isArray(saved?.history) ? saved.history : historyToSave,
+                );
+                conversationBaselineRef.current.set(newsKey, savedHistory);
+                if (getNewsKey(selectedNewsRef.current) === newsKey) {
+                    const visibleHistory = mergeConversationHistory(savedHistory, historyRef.current);
+                    historyRef.current = visibleHistory;
+                    if (attempt > 0) setHistory(visibleHistory);
+                }
+                return;
+            } catch (saveError) {
+                console.error('Error saving chat history:', saveError);
+                return;
             }
-        } catch (error) {
-            console.error('Error saving chat history:', error);
         }
     }, [userSession?.user?.id]);
 
-    // 在对话频繁更新时延迟触发保存，避免每条消息都打接口
-    const scheduleConversationPersist = useCallback((news, conversationHistory) => {
-        if (!news || !Array.isArray(conversationHistory) || conversationHistory.length === 0) return;
-        if (!userSession?.user?.id) return;
+    const enqueueConversationPersist = useCallback((snapshot) => {
+        persistQueueRef.current = persistQueueRef.current
+            .catch(() => undefined)
+            .then(() => persistConversation(snapshot.news, snapshot.history));
+        return persistQueueRef.current;
+    }, [persistConversation]);
+
+    const flushPendingConversation = useCallback(({
+        keepalive = false,
+        mergeOnServer = false,
+    } = {}) => {
         if (persistTimeoutRef.current) {
             clearTimeout(persistTimeoutRef.current);
+            persistTimeoutRef.current = null;
         }
+        const snapshot = pendingPersistRef.current || (
+            selectedNewsRef.current && hasUserMessage(historyRef.current)
+                ? { news: selectedNewsRef.current, history: historyRef.current }
+                : null
+        );
+        pendingPersistRef.current = null;
+        if (!snapshot) return Promise.resolve();
+        if (keepalive) {
+            // Starting the fetch directly is important during pagehide; a
+            // queued Promise may never run once the page is discarded.
+            return persistConversation(snapshot.news, snapshot.history, {
+                keepalive: true,
+                mergeOnServer,
+            });
+        }
+        return enqueueConversationPersist(snapshot);
+    }, [enqueueConversationPersist, persistConversation]);
+
+    flushPendingRef.current = flushPendingConversation;
+
+    // Delay frequent streaming updates, while retaining the exact news object
+    // associated with each snapshot so topic switches cannot cancel each other.
+    const scheduleConversationPersist = useCallback((news, conversationHistory) => {
+        if (!news || !hasUserMessage(conversationHistory) || !userSession?.user?.id) return;
+        pendingPersistRef.current = {
+            news,
+            history: dedupeManualMessages(conversationHistory),
+        };
+        if (persistTimeoutRef.current) clearTimeout(persistTimeoutRef.current);
         persistTimeoutRef.current = setTimeout(() => {
-            persistConversation(news, conversationHistory);
+            flushPendingConversation();
         }, 800);
-    }, [persistConversation, userSession?.user?.id]);
+    }, [flushPendingConversation, userSession?.user?.id]);
 
     useEffect(() => {
+        historyRef.current = history;
+    }, [history]);
+
+    useEffect(() => {
+        const flushForUnload = () => {
+            const currentNews = selectedNewsRef.current;
+            const currentHistory = historyRef.current;
+            if (!currentNews || !hasUserMessage(currentHistory)) return;
+            const lastItem = currentHistory[currentHistory.length - 1];
+            const fingerprint = [
+                getNewsKey(currentNews),
+                currentHistory.length,
+                conversationItemKey(lastItem),
+                extractMessageText(lastItem).length,
+                Boolean(lastItem?.metadata?.isFinal),
+            ].join('|');
+            if (lastUnloadFingerprintRef.current === fingerprint) return;
+            lastUnloadFingerprintRef.current = fingerprint;
+            flushPendingRef.current({ keepalive: true, mergeOnServer: true });
+        };
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') flushForUnload();
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('pagehide', flushForUnload);
         return () => {
-            if (persistTimeoutRef.current) {
-                clearTimeout(persistTimeoutRef.current);
-            }
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('pagehide', flushForUnload);
+            flushForUnload();
         };
     }, []);
 
@@ -356,23 +670,89 @@ export default function Home() {
         }
     };
 
-    // 加载初始状态
+    // Restore a conversation selected from /history before falling back to the
+    // browser's last selected topic. The skip ref prevents the topic effect
+    // from immediately replacing the restored history with a second request.
     useEffect(() => {
-        try {
-            const savedMode = localStorage.getItem('talk-mode');
-            if (savedMode === 'news' || savedMode === 'scenario') setMode(savedMode);
-        } catch (_) { /* ignore */ }
-        const savedNews = loadSelectedNewsFromStorage();
-        if (savedNews) {
-            setSelectedNews(savedNews);
-        }
-    }, []);
+        if (sessionStatus === 'loading') return undefined;
+        const controller = new AbortController();
+
+        const restoreInitialConversation = async () => {
+            try {
+                const conversationId = new URL(window.location.href).searchParams.get('conversation');
+                if (conversationId && userSession?.user?.id) {
+                    const response = await fetch(
+                        `/api/chat-history?id=${encodeURIComponent(conversationId)}`,
+                        { cache: 'no-store', signal: controller.signal },
+                    );
+                    const json = await response.json().catch(() => ({}));
+                    if (!response.ok || !json?.data) {
+                        throw new Error(json?.error || `Failed to restore conversation: ${response.status}`);
+                    }
+
+                    const row = json.data;
+                    const isScenario = row.sourceType === 'scenario';
+                    const fallbackNews = {
+                        id: row.newsKey,
+                        title: row.title || row.newsTitle || 'Saved conversation',
+                        originalTitle: row.title || row.newsTitle || 'Saved conversation',
+                        ...(isScenario
+                            ? { _isScenario: true, _scenarioId: row.newsKey?.replace(/^scenario:/, '') }
+                            : {}),
+                    };
+                    const embeddedNews = row.newsContent || row.news;
+                    const restoredNews = embeddedNews && typeof embeddedNews === 'object'
+                        ? { ...embeddedNews, ...(isScenario ? { _isScenario: true } : {}) }
+                        : fallbackNews;
+                    const newsKey = getNewsKey(restoredNews);
+                    const contextMessage = createNewsContextMessage(restoredNews);
+                    const restoredHistory = ensureContextMessage(row.history, contextMessage);
+
+                    conversationMetaRef.current.set(newsKey, {
+                        id: row.id,
+                        revision: row.revision ?? null,
+                    });
+                    conversationBaselineRef.current.set(newsKey, restoredHistory);
+                    selectedNewsRef.current = restoredNews;
+                    newsContextMessageRef.current = contextMessage;
+                    historyRef.current = restoredHistory;
+                    skipNextNewsLoadRef.current = true;
+                    setMode(isScenario ? 'scenario' : 'news');
+                    setSelectedNews(restoredNews);
+                    setHistory(restoredHistory);
+                    try { localStorage.setItem('talk-mode', isScenario ? 'scenario' : 'news'); } catch (_) { /* ignore */ }
+                    return;
+                }
+
+                try {
+                    const savedMode = localStorage.getItem('talk-mode');
+                    if (savedMode === 'news' || savedMode === 'scenario') setMode(savedMode);
+                } catch (_) { /* ignore */ }
+                const savedNews = loadSelectedNewsFromStorage();
+                if (savedNews) setSelectedNews(savedNews);
+            } catch (restoreError) {
+                if (restoreError.name === 'AbortError') return;
+                console.error('Failed to restore saved conversation:', restoreError);
+                setError(restoreError.message || 'Failed to restore saved conversation');
+                const savedNews = loadSelectedNewsFromStorage();
+                if (savedNews) setSelectedNews(savedNews);
+            } finally {
+                if (!controller.signal.aborted) setIsRestoringConversation(false);
+            }
+        };
+
+        restoreInitialConversation();
+        return () => controller.abort();
+    }, [sessionStatus, userSession?.user?.id]);
 
     // 当选择新闻时保存引用，并尝试从服务端读取对应的历史记录
     useEffect(() => {
         if (!selectedNews) {
             selectedNewsRef.current = null;
             newsContextMessageRef.current = null;
+            historyRef.current = [];
+            topicHistoryLoadingRef.current = false;
+            setIsTopicHistoryLoading(false);
             setHistory([]);
             return;
         }
@@ -382,26 +762,47 @@ export default function Home() {
         const contextMessage = createNewsContextMessage(selectedNews);
         newsContextMessageRef.current = contextMessage;
 
-        // Clear history immediately to prevent showing stale content from previous article
-        setHistory([]);
-
-        // If we are already connected, we need to inform the AI about the new context
-        if (serviceRef.current && serviceRef.current.session) {
-            if (selectedNews._isScenario) {
-                const scenarioContext = buildScenarioPrompt(selectedNews);
-                serviceRef.current.sendContextMessage(`[System Update] The user has switched to a new scenario. Please start this role-play:\n${scenarioContext}`);
-            } else {
-                const newsContext = CombineInitPrompt(selectedNews);
-                serviceRef.current.sendContextMessage(`[System Update] The user has switched to a new news article. Please focus on this new content:\n${newsContext}`);
-            }
-        }
-
-        if (!userSession?.user?.id) {
-            setHistory(ensureContextMessage([], contextMessage));
+        if (skipNextNewsLoadRef.current) {
+            skipNextNewsLoadRef.current = false;
+            topicHistoryLoadingRef.current = false;
+            setIsTopicHistoryLoading(false);
             return;
         }
 
+        // Clear history immediately to prevent showing stale content from previous article
+        historyRef.current = [];
+        setHistory([]);
+
+        if (!userSession?.user?.id) {
+            const seededHistory = ensureContextMessage([], contextMessage);
+            historyRef.current = seededHistory;
+            setHistory(seededHistory);
+            topicHistoryLoadingRef.current = false;
+            setIsTopicHistoryLoading(false);
+            return;
+        }
+
+        topicHistoryLoadingRef.current = true;
+        setIsTopicHistoryLoading(true);
         const controller = new AbortController();
+        const notifyConnectedService = (conversationHistory) => {
+            if (!serviceRef.current?.session) return;
+            if (hasUserMessage(conversationHistory)) {
+                serviceRef.current.sendContextMessage(
+                    buildResumeContext(selectedNews, conversationHistory),
+                );
+            } else if (selectedNews._isScenario) {
+                const scenarioContext = buildScenarioPrompt(selectedNews);
+                serviceRef.current.sendContextMessage(
+                    `[System Update] The user has switched to a new scenario. Please start this role-play:\n${scenarioContext}`,
+                );
+            } else {
+                const newsContext = CombineInitPrompt(selectedNews);
+                serviceRef.current.sendContextMessage(
+                    `[System Update] The user has switched to a new news article. Please focus on this new content:\n${newsContext}`,
+                );
+            }
+        };
         const loadConversation = async () => {
             try {
                 const newsKey = getNewsKey(selectedNews);
@@ -416,33 +817,46 @@ export default function Home() {
                 const rows = Array.isArray(json?.data) ? json.data : [];
                 if (rows.length > 0 && Array.isArray(rows[0]?.history)) {
                     const nextHistory = ensureContextMessage(rows[0].history, contextMessage);
+                    conversationMetaRef.current.set(newsKey, {
+                        id: rows[0].id,
+                        revision: rows[0].revision ?? null,
+                    });
+                    conversationBaselineRef.current.set(newsKey, nextHistory);
+                    historyRef.current = nextHistory;
                     setHistory(nextHistory);
-
-                    if (!rows[0].history.some((item) => item?.itemId === contextMessage?.itemId) && contextMessage) {
-                        scheduleConversationPersist(selectedNews, nextHistory);
-                    }
+                    notifyConnectedService(nextHistory);
                 } else {
                     const seededHistory = ensureContextMessage([], contextMessage);
+                    conversationBaselineRef.current.set(newsKey, seededHistory);
+                    historyRef.current = seededHistory;
                     setHistory(seededHistory);
-                    if (seededHistory.length > 0) {
-                        scheduleConversationPersist(selectedNews, seededHistory);
-                    }
+                    notifyConnectedService(seededHistory);
                 }
             } catch (error) {
                 if (error.name === 'AbortError') return;
                 console.error('Failed to load conversation from server:', error);
                 const fallbackHistory = ensureContextMessage([], contextMessage);
+                conversationBaselineRef.current.set(getNewsKey(selectedNews), fallbackHistory);
+                historyRef.current = fallbackHistory;
                 setHistory(fallbackHistory);
+                notifyConnectedService(fallbackHistory);
+            } finally {
+                if (!controller.signal.aborted) {
+                    topicHistoryLoadingRef.current = false;
+                    setIsTopicHistoryLoading(false);
+                }
             }
         };
 
         loadConversation();
         return () => controller.abort();
-    }, [selectedNews, userSession?.user?.id, scheduleConversationPersist]);
+    }, [selectedNews, userSession?.user?.id]);
 
 
     // Handle Gemini Message
     const handleGeminiMessage = useCallback((text, isFinal, role) => {
+        if (topicHistoryLoadingRef.current) return;
+        lastUnloadFingerprintRef.current = null;
         setHistory(prev => {
             const prevHistory = [...prev];
             const lastMsg = prevHistory[prevHistory.length - 1];
@@ -468,6 +882,7 @@ export default function Home() {
                     scheduleConversationPersist(selectedNewsRef.current, newHistory);
                 }
 
+                historyRef.current = newHistory;
                 return newHistory;
             }
 
@@ -483,7 +898,7 @@ export default function Home() {
                     }],
                     metadata: {
                         isFinal: isFinal,
-                        createAt: new Date().toISOString()
+                        createdAt: new Date().toISOString()
                     }
                 };
 
@@ -491,6 +906,7 @@ export default function Home() {
                 if (isFinal && selectedNewsRef.current) {
                     scheduleConversationPersist(selectedNewsRef.current, newHistory);
                 }
+                historyRef.current = newHistory;
                 return newHistory;
             }
 
@@ -501,6 +917,7 @@ export default function Home() {
                 if (selectedNewsRef.current) {
                     scheduleConversationPersist(selectedNewsRef.current, newHistory);
                 }
+                historyRef.current = newHistory;
                 return newHistory;
             }
 
@@ -531,10 +948,15 @@ export default function Home() {
 
     async function connect() {
         setError(null);
+        if (isRestoringConversation || topicHistoryLoadingRef.current) {
+            setError('正在恢复对话，请稍候再连接。');
+            return;
+        }
         if (isConnected) {
             serviceRef.current?.disconnect();
             setIsConnected(false);
         } else {
+            const connectionTopicGeneration = topicGenerationRef.current;
             setIsConnecting(true);
 
             // ── Prime AudioContext FIRST, synchronously, before any await ──
@@ -559,23 +981,49 @@ export default function Home() {
                 return;
             }
 
+            if (connectionTopicGeneration !== topicGenerationRef.current) {
+                setIsConnecting(false);
+                return;
+            }
+
+            const savedHistory = historyRef.current;
+            const isResuming = hasUserMessage(savedHistory);
+            const connectedNewsKey = getNewsKey(selectedNewsRef.current);
+
             // Build Context Prompt
             const baseInstructions = buildInstructions(
                 uiLangCode,
                 nativeLanguage?.label || '中文',
                 learningLanguage?.label || 'English',
-                selectedNewsRef.current?._isScenario || false
+                selectedNewsRef.current?._isScenario || false,
+                isResuming,
             );
 
             await serviceRef.current?.connect(baseInstructions, token);
 
-            // Once connected, seed the model with context and instruct it to open with a bilingual intro
+            if (
+                connectionTopicGeneration !== topicGenerationRef.current
+                || connectedNewsKey !== getNewsKey(selectedNewsRef.current)
+            ) {
+                serviceRef.current?.disconnect();
+                setIsConnected(false);
+                setIsConnecting(false);
+                setError('话题已切换，请重新连接以开始当前对话。');
+                return;
+            }
+
+            // Once connected, either resume the saved transcript or seed a
+            // fresh topic and ask for the normal bilingual introduction.
             if (selectedNewsRef.current && serviceRef.current) {
                 const current = selectedNewsRef.current;
                 const nativeL = nativeLanguage?.label || '中文';
                 const targetL = learningLanguage?.label || 'English';
 
-                if (current._isScenario) {
+                if (isResuming) {
+                    await serviceRef.current.sendContextMessage(
+                        buildResumeContext(current, savedHistory),
+                    );
+                } else if (current._isScenario) {
                     const scenarioContext = buildScenarioPrompt(current);
                     const openingGuide = uiLangCode === 'en'
                         ? `Please start the scenario role-play now using a natural mix of ${nativeL} and ${targetL}.`
@@ -609,6 +1057,10 @@ export default function Home() {
 
     // 文本输入消息发送，并将本地 history 与后端同步
     const sendTextMessage = async function (input) {
+        if (isRestoringConversation || topicHistoryLoadingRef.current) {
+            setError('正在恢复对话，请稍候再发送。');
+            return;
+        }
         if (!serviceRef.current || !isConnected) {
             // If not connected, we might want to connect first? 
             // For now, assume user must connect. Or auto-connect.
@@ -645,6 +1097,12 @@ export default function Home() {
                         </div>
                         <div className="flex items-center gap-4">
                             <Link
+                                href="/history"
+                                className="px-4 py-2 border border-border text-foreground rounded hover:bg-accent transition-colors text-sm font-medium"
+                            >
+                                {uiText?.history || '对话历史'}
+                            </Link>
+                            <Link
                                 href="/vocabulary"
                                 className="px-4 py-2 border border-border text-foreground rounded hover:bg-accent transition-colors text-sm font-medium"
                             >
@@ -672,7 +1130,7 @@ export default function Home() {
                         <div className="overflow-x-auto custom-scroll pb-2 -mx-4 px-4">
                             {mode === 'news' ? (
                                 <NewsFeed
-                                    onArticleSelect={setSelectedNews}
+                                    onArticleSelect={handleArticleSelect}
                                     onCategoryChange={handleCategoryChange}
                                     selectedNews={selectedNews}
                                     nativeLanguage={nativeLanguage?.code || 'zh-CN'}
@@ -680,7 +1138,7 @@ export default function Home() {
                                 />
                             ) : (
                                 <ScenarioFeed
-                                    onArticleSelect={setSelectedNews}
+                                    onArticleSelect={handleArticleSelect}
                                     onCategoryChange={handleCategoryChange}
                                     selectedNews={selectedNews}
                                     isMobile={true}
@@ -704,14 +1162,14 @@ export default function Home() {
                         >
                             {mode === 'news' ? (
                                 <NewsFeed
-                                    onArticleSelect={setSelectedNews}
+                                    onArticleSelect={handleArticleSelect}
                                     onCategoryChange={handleCategoryChange}
                                     selectedNews={selectedNews}
                                     nativeLanguage={nativeLanguage?.code || 'zh-CN'}
                                 />
                             ) : (
                                 <ScenarioFeed
-                                    onArticleSelect={setSelectedNews}
+                                    onArticleSelect={handleArticleSelect}
                                     onCategoryChange={handleCategoryChange}
                                     selectedNews={selectedNews}
                                     lang={uiLangCode}
@@ -729,7 +1187,7 @@ export default function Home() {
                         )}
                         <History
                             isConnected={isConnected}
-                            isConnecting={isConnecting}
+                            isConnecting={isConnecting || isRestoringConversation || isTopicHistoryLoading}
                             isMuted={isMuted}
                             toggleMute={toggleMute}
                             connect={connect}

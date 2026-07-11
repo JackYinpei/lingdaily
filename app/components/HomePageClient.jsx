@@ -10,7 +10,7 @@ import MobileNav from '@/app/components/MobileNav'
 
 const I18N = {
   en: {
-    nav: { features: 'Features', how: 'How it Works', reviews: 'Reviews', podcasts: 'Podcasts', startLearning: 'Start Learning', signIn: 'Sign In', signOut: 'Sign Out', talk: 'Talk', history: 'History' },
+    nav: { features: 'Features', how: 'How it Works', reviews: 'Reviews', podcasts: 'Podcasts', startLearning: 'Start Learning', signIn: 'Sign In', signOut: 'Sign Out', talk: 'Talk', history: 'History', progress: 'Progress' },
     hero: { badge: 'AI-Powered English Learning', h1Prefix: 'Chat with AI to', h1Highlight: 'Learn English', desc: 'Master English through real-time conversations about current news. Practice speaking, improve vocabulary, and gain confidence with our AI English tutor.', primaryBtn: 'Start Free Conversation', secondaryBtn: 'Watch Demo' },
     podcasts: { title: 'Daily AI News Podcasts', subtitle: 'Immerse yourself in English with daily generated podcasts covering the latest topics.', btn: 'Listen Now', features: ['Daily Updates', 'Native-like AI Voices', 'Full Transcripts'] },
     features: { title: 'Why Choose LingDaily?', subtitle: 'Learn English naturally through AI conversations about real-world topics', card1Title: 'Real-Time Conversations', card1Desc: 'Practice speaking English with AI that understands context and provides instant feedback on your pronunciation and grammar.', card2Title: 'Current News Topics', card2Desc: 'Stay informed while learning. Discuss trending news stories to build vocabulary and cultural understanding.', card3Title: 'Personalized Learning', card3Desc: 'AI adapts to your learning level and interests, providing customized conversations that match your progress.' },
@@ -21,7 +21,7 @@ const I18N = {
     start: { learningLabel: 'Learning', nativeLabel: 'Native' },
   },
   zh: {
-    nav: { features: '功能', how: '使用方式', reviews: '评价', podcasts: '播客', startLearning: '开始学习', signIn: '登录', signOut: '退出登录', talk: '对话', history: '历史' },
+    nav: { features: '功能', how: '使用方式', reviews: '评价', podcasts: '播客', startLearning: '开始学习', signIn: '登录', signOut: '退出登录', talk: '对话', history: '历史', progress: '进度' },
     hero: { badge: 'AI 驱动的英语学习', h1Prefix: '和 AI 对话来', h1Highlight: '学习英语', desc: '通过与 AI 围绕实时新闻进行对话学习英语。练习口语、提升词汇量，并获得自信。', primaryBtn: '开始免费对话', secondaryBtn: '观看演示' },
     podcasts: { title: '每日 AI 新闻播客', subtitle: '通过涵盖最新话题的每日生成播客，让自己沉浸在英语环境中。', btn: '立即收听', features: ['每日更新', '原生 AI 语音', '完整文稿'] },
     features: { title: '为什么选择 LingDaily？', subtitle: '通过与 AI 讨论真实话题，自然地学习英语', card1Title: '实时对话', card1Desc: '与能理解上下文的 AI 进行口语练习，获得关于发音和语法的即时反馈。', card2Title: '时事新闻主题', card2Desc: '在学习的同时保持信息更新。讨论热门新闻，构建词汇与文化理解。', card3Title: '个性化学习', card3Desc: 'AI 会根据你的水平和兴趣定制对话，匹配你的学习进度。' },
@@ -32,7 +32,7 @@ const I18N = {
     start: { learningLabel: '学习语言', nativeLabel: '母语' },
   },
   ja: {
-    nav: { features: '機能', how: '使い方', reviews: 'レビュー', podcasts: 'ポッドキャスト', startLearning: '学習を始める', signIn: 'サインイン', signOut: 'サインアウト', talk: '会話', history: '履歴' },
+    nav: { features: '機能', how: '使い方', reviews: 'レビュー', podcasts: 'ポッドキャスト', startLearning: '学習を始める', signIn: 'サインイン', signOut: 'サインアウト', talk: '会話', history: '履歴', progress: '進捗' },
     hero: { badge: 'AI で英語学習', h1Prefix: 'AIと会話して', h1Highlight: '英語を学ぶ', desc: 'ニュースに関するリアルタイム会話で英語を習得。スピーキング練習、語彙力アップ、自信を獲得しよう。', primaryBtn: '無料で会話を開始', secondaryBtn: 'デモを見る' },
     podcasts: { title: 'デイリーAIニュースポッドキャスト', subtitle: '最新のトピックをカバーする毎日生成されるポッドキャストで英語に浸りましょう。', btn: '今すぐ聴く', features: ['毎日更新', 'ネイティブなAI音声', '完全なスクリプト'] },
     features: { title: 'LingDaily を選ぶ理由', subtitle: '実世界のトピックについて AI と会話し、自然に英語を学ぶ', card1Title: 'リアルタイム会話', card1Desc: '文脈を理解する AI と英会話練習。発音や文法の即時フィードバック。', card2Title: '最新ニュースの話題', card2Desc: '学びながら情報収集。トレンドのニュースで語彙と文化理解を養う。', card3Title: 'パーソナライズ学習', card3Desc: 'レベルや興味に合わせて会話を最適化。あなたの進度にマッチ。' },
@@ -49,6 +49,9 @@ const DEFAULT_LOCALE = 'en'
 export default function HomePageClient({ signedIn, signOutAction, locale = DEFAULT_LOCALE }) {
   const normalizedLocale = I18N[locale] ? locale : DEFAULT_LOCALE
   const t = I18N[normalizedLocale]
+  const talkHref = signedIn ? '/talk' : '/sign-in?callbackUrl=%2Ftalk'
+  const historyHref = signedIn ? '/history' : '/sign-in?callbackUrl=%2Fhistory'
+  const progressHref = signedIn ? '/progress' : '/sign-in?callbackUrl=%2Fprogress'
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -64,11 +67,17 @@ export default function HomePageClient({ signedIn, signOutAction, locale = DEFAU
             <nav className="hidden lg:flex items-center space-x-4">
               {signedIn ? (
                 <>
-                  <Link href="/talk" className="text-muted-foreground hover:text-foreground transition-colors">
+                  <Link href={talkHref} className="text-muted-foreground hover:text-foreground transition-colors">
                     {t.nav.talk}
                   </Link>
                   <Link href="/podcasts" className="text-muted-foreground hover:text-foreground transition-colors">
                     {t.nav.podcasts}
+                  </Link>
+                  <Link href={historyHref} className="text-muted-foreground hover:text-foreground transition-colors">
+                    {t.nav.history}
+                  </Link>
+                  <Link href={progressHref} className="text-muted-foreground hover:text-foreground transition-colors">
+                    {t.nav.progress}
                   </Link>
                   <ThemeToggle />
                   <form action={signOutAction}>
@@ -118,7 +127,7 @@ export default function HomePageClient({ signedIn, signOutAction, locale = DEFAU
             </h1>
             <p className="text-xl md:text-2xl text-muted-foreground mb-8 leading-relaxed">{t.hero.desc}</p>
             <div className="flex flex-row flex-wrap gap-4 justify-center">
-              <Link href="/talk">
+              <Link href={talkHref}>
                 <Button size="lg" className="font-semibold px-8 py-4 text-lg">
                   {t.hero.primaryBtn}
                   <MessageCircle className="ml-2 h-5 w-5" />
@@ -257,7 +266,7 @@ export default function HomePageClient({ signedIn, signOutAction, locale = DEFAU
           <div className="container mx-auto px-4 text-center">
             <h2 id="cta-heading" className="text-4xl md:text-5xl font-bold mb-6">{t.cta.title}</h2>
             <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">{t.cta.subtitle}</p>
-            <Link href="/talk">
+            <Link href={talkHref}>
               <Button size="lg" className="font-semibold px-8 py-4 text-lg">
                 {t.cta.primaryBtn}
                 <MessageCircle className="ml-2 h-5 w-5" />
@@ -282,16 +291,17 @@ export default function HomePageClient({ signedIn, signOutAction, locale = DEFAU
             <div>
               <h4 className="font-semibold mb-4">{t.footer.features}</h4>
               <ul className="space-y-2 text-muted-foreground">
-                <li><Link href="#" className="hover:text-foreground transition-colors">{t.footer.aiConversations}</Link></li>
-                <li><Link href="#" className="hover:text-foreground transition-colors">{t.footer.newsTopics}</Link></li>
-                <li><Link href="#" className="hover:text-foreground transition-colors">{t.footer.progressTracking}</Link></li>
+                <li><Link href={talkHref} className="hover:text-foreground transition-colors">{t.footer.aiConversations}</Link></li>
+                <li><Link href="#features" className="hover:text-foreground transition-colors">{t.footer.newsTopics}</Link></li>
+                <li><Link href={progressHref} className="hover:text-foreground transition-colors">{t.footer.progressTracking}</Link></li>
               </ul>
             </div>
             <div>
               <h4 className="font-semibold mb-4">{t.footer.learning}</h4>
               <ul className="space-y-2 text-muted-foreground">
-                <li><Link href="/talk" className="hover:text-foreground transition-colors">{t.footer.startLearning}</Link></li>
-                <li><Link href="#" className="hover:text-foreground transition-colors">{t.footer.tipsGuides}</Link></li>
+                <li><Link href={talkHref} className="hover:text-foreground transition-colors">{t.footer.startLearning}</Link></li>
+                <li><Link href={historyHref} className="hover:text-foreground transition-colors">{t.footer.conversationHistory}</Link></li>
+                <li><Link href="#how-it-works" className="hover:text-foreground transition-colors">{t.footer.tipsGuides}</Link></li>
               </ul>
             </div>
             <div>

@@ -15,6 +15,21 @@ import {
   CardTitle,
 } from "@/app/components/ui/card"
 
+function getSafeCallbackUrl() {
+  if (typeof window === "undefined") return "/"
+
+  const requested = new URLSearchParams(window.location.search).get("callbackUrl")
+  if (!requested?.startsWith("/") || requested.startsWith("//")) return "/"
+
+  try {
+    const destination = new URL(requested, window.location.origin)
+    if (destination.origin !== window.location.origin) return "/"
+    return `${destination.pathname}${destination.search}${destination.hash}`
+  } catch {
+    return "/"
+  }
+}
+
 export default function SignInClient({ googleEnabled, linuxDoEnabled }) {
   const [isPending, startTransition] = useTransition()
   const [email, setEmail] = useState("")
@@ -23,32 +38,36 @@ export default function SignInClient({ googleEnabled, linuxDoEnabled }) {
 
   const handleGoogleSignIn = () => {
     if (!googleEnabled) return
+    const callbackUrl = getSafeCallbackUrl()
     startTransition(() => {
-      void signIn("google", { callbackUrl: "/" })
+      void signIn("google", { redirectTo: callbackUrl })
     })
   }
 
   const handleLinuxDoSignIn = () => {
     if (!linuxDoEnabled) return
+    const callbackUrl = getSafeCallbackUrl()
     startTransition(() => {
-      void signIn("linux-do", { callbackUrl: "/" })
+      void signIn("linux-do", { redirectTo: callbackUrl })
     })
   }
 
   const handleEmailSignIn = (e) => {
     e.preventDefault()
     setError("")
+    const callbackUrl = getSafeCallbackUrl()
     startTransition(async () => {
       const res = await signIn("credentials", {
         email,
         password,
+        redirectTo: callbackUrl,
         redirect: false,
       })
       if (res?.error) {
         setError(res.error === "CredentialsSignin" ? "Invalid email or password (or email not confirmed)." : res.error)
         return
       }
-      window.location.assign("/")
+      window.location.assign(callbackUrl)
     })
   }
 

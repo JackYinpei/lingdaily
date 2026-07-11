@@ -5,6 +5,9 @@
  */
 import confetti from 'canvas-confetti';
 
+const OUTPUT_SAMPLE_RATE = 24000;
+const PLAYBACK_LEAD_TIME_SECONDS = 0.03;
+
 // Tiny, non-intrusive celebration burst — small particle count, short duration,
 // fired near the bottom-center so it never obscures the chat.
 function fireTinyConfetti() {
@@ -88,14 +91,44 @@ export class GeminiLiveServiceImpl {
         this.isMuted = false;
         this.connected = false;
         this.outputGainNode = null;
+        this.outputAudioReadyPromise = null;
+        this.audioPlaybackChain = Promise.resolve();
 
         this.config = config;
     }
 
     setMuted(muted) {
+        // This control represents microphone mute. Keep model audio audible so
+        // focusing the text input does not silently consume the first reply.
         this.isMuted = muted;
-        if (this.outputGainNode) {
-            this.outputGainNode.gain.value = muted ? 0 : 1;
+    }
+
+    createOutputAudioContext() {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) {
+            throw new Error("Web Audio API is not supported in this browser");
+        }
+
+        this.outputAudioContext = new AudioContextClass({ sampleRate: OUTPUT_SAMPLE_RATE });
+        this.outputGainNode = this.outputAudioContext.createGain();
+        this.outputGainNode.gain.value = 1;
+        this.outputGainNode.connect(this.outputAudioContext.destination);
+        this.nextStartTime = 0;
+        return this.outputAudioContext;
+    }
+
+    resumeOutputAudio() {
+        const context = this.outputAudioContext;
+        if (!context || context.state === 'closed') return Promise.resolve();
+        if (context.state === 'running') return Promise.resolve();
+
+        try {
+            return Promise.resolve(context.resume()).catch((error) => {
+                console.warn("Could not resume output AudioContext:", error);
+            });
+        } catch (error) {
+            console.warn("Could not resume output AudioContext:", error);
+            return Promise.resolve();
         }
     }
 
@@ -105,20 +138,23 @@ export class GeminiLiveServiceImpl {
      * considers this a user gesture, ensuring the first audio chunk plays.
      */
     primeOutputAudio() {
-        if (this.outputAudioContext && this.outputAudioContext.state !== 'closed') return;
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        this.outputAudioContext = new AudioContextClass({ sampleRate: 24000 });
-        this.outputAudioContext.resume();
+        if (!this.outputAudioContext || this.outputAudioContext.state === 'closed') {
+            this.createOutputAudioContext();
+        }
+
+        // Keep the promise so connect/playback can confirm that the gesture
+        // actually unlocked the context instead of racing the first audio part.
+        this.outputAudioReadyPromise = this.resumeOutputAudio();
 
         // Hard-unlock AudioContext by actually playing a silent 1-sample buffer
         // during the user gesture. On iOS/mobile, merely calling resume() is not
         // enough — the context must schedule real (even silent) audio to allow
         // future playback without another gesture.
         try {
-            const silentBuffer = this.outputAudioContext.createBuffer(1, 1, 24000);
+            const silentBuffer = this.outputAudioContext.createBuffer(1, 1, OUTPUT_SAMPLE_RATE);
             const silentSource = this.outputAudioContext.createBufferSource();
             silentSource.buffer = silentBuffer;
-            silentSource.connect(this.outputAudioContext.destination);
+            silentSource.connect(this.outputGainNode || this.outputAudioContext.destination);
             silentSource.start(0);
         } catch (_) { /* ignore — best-effort unlock */ }
 
@@ -153,13 +189,10 @@ export class GeminiLiveServiceImpl {
         // outputAudioContext was already created & resumed by primeOutputAudio()
         // but create it now if not pre-primed (e.g. reconnect flow)
         if (!this.outputAudioContext || this.outputAudioContext.state === 'closed') {
-            this.outputAudioContext = new AudioContextClass({ sampleRate: 24000 });
+            this.createOutputAudioContext();
         }
-        if (this.outputAudioContext.state === 'suspended') await this.outputAudioContext.resume();
-        // (Re)create gain node so it belongs to the current context
-        this.outputGainNode = this.outputAudioContext.createGain();
-        this.outputGainNode.gain.value = this.isMuted ? 0 : 1;
-        this.outputGainNode.connect(this.outputAudioContext.destination);
+        await this.outputAudioReadyPromise;
+        await this.resumeOutputAudio();
 
         // Open WebSocket
         return new Promise((resolve, reject) => {
@@ -214,7 +247,7 @@ export class GeminiLiveServiceImpl {
 
                 try {
                     const msg = JSON.parse(jsonData);
-                    this.handleServerMessage(msg);
+                    await this.handleServerMessage(msg);
 
                     // After setup complete, start mic & signal connected
                     if (msg.setupComplete) {
@@ -292,23 +325,22 @@ export class GeminiLiveServiceImpl {
         const serverContent = message.serverContent;
 
         // Audio Output
-        const audioData = serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-        if (audioData && this.outputAudioContext) {
-            // Resume output context if browser suspended it (autoplay policy)
-            if (this.outputAudioContext.state === 'suspended') {
-                await this.outputAudioContext.resume();
-            }
-            this.nextStartTime = Math.max(this.nextStartTime, this.outputAudioContext.currentTime);
-            const audioBuffer = this.decodeAudioFromBase64(audioData);
-            if (audioBuffer) {
-                const source = this.outputAudioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(this.outputGainNode);
-                source.start(this.nextStartTime);
-                this.nextStartTime += audioBuffer.duration;
-                source.addEventListener('ended', () => this.sources.delete(source));
-                this.sources.add(source);
-            }
+        const audioParts = (serverContent?.modelTurn?.parts || [])
+            .map((part) => part?.inlineData)
+            .filter((inlineData) => {
+                if (!inlineData?.data) return false;
+                return !inlineData.mimeType || inlineData.mimeType.startsWith('audio/');
+            });
+        if (audioParts.length > 0) {
+            // Chain playback work so async AudioContext resumes cannot reorder
+            // rapidly arriving Gemini chunks.
+            this.audioPlaybackChain = this.audioPlaybackChain
+                .then(() => this.playAudioParts(audioParts))
+                .catch((error) => {
+                    console.error("Audio playback error:", error);
+                    this.config.onError("Could not play model audio.");
+                });
+            await this.audioPlaybackChain;
         }
 
         // Output Transcription (AI Text)
@@ -329,9 +361,9 @@ export class GeminiLiveServiceImpl {
 
         // Interrupted
         if (serverContent?.interrupted) {
-            this.sources.forEach(s => s.stop());
+            this.sources.forEach(s => { try { s.stop(); } catch (_) { } });
             this.sources.clear();
-            this.nextStartTime = 0;
+            this.nextStartTime = this.outputAudioContext?.currentTime || 0;
             this.config.onMessage("", true, 'model');
         }
 
@@ -431,12 +463,18 @@ export class GeminiLiveServiceImpl {
         }
         this.sources.forEach(s => { try { s.stop(); } catch (_) { } });
         this.sources.clear();
+        this.nextStartTime = 0;
+        this.audioPlaybackChain = Promise.resolve();
         if (this.inputAudioContext && this.inputAudioContext.state !== 'closed') {
             this.inputAudioContext.close();
         }
         if (this.outputAudioContext && this.outputAudioContext.state !== 'closed') {
             this.outputAudioContext.close();
         }
+        this.inputAudioContext = null;
+        this.outputAudioContext = null;
+        this.outputGainNode = null;
+        this.outputAudioReadyPromise = null;
         if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
             this.webSocket.close();
         }
@@ -447,6 +485,36 @@ export class GeminiLiveServiceImpl {
     }
 
     // ─── Audio helpers ─────────────────────────────────────────────────
+
+    async playAudioParts(audioParts) {
+        if (!this.outputAudioContext || this.outputAudioContext.state === 'closed') {
+            this.createOutputAudioContext();
+        }
+
+        await this.outputAudioReadyPromise;
+        await this.resumeOutputAudio();
+
+        const context = this.outputAudioContext;
+        if (!context || context.state !== 'running') {
+            throw new Error(`Output AudioContext is ${context?.state || 'unavailable'}`);
+        }
+
+        for (const inlineData of audioParts) {
+            const audioBuffer = this.decodeAudioFromBase64(inlineData.data);
+            if (!audioBuffer) continue;
+
+            const source = context.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(this.outputGainNode || context.destination);
+
+            const earliestStart = context.currentTime + PLAYBACK_LEAD_TIME_SECONDS;
+            this.nextStartTime = Math.max(this.nextStartTime, earliestStart);
+            source.start(this.nextStartTime);
+            this.nextStartTime += audioBuffer.duration;
+            source.addEventListener('ended', () => this.sources.delete(source));
+            this.sources.add(source);
+        }
+    }
 
     float32ToPcm16Base64(float32Array) {
         const pcm16 = new Int16Array(float32Array.length);
@@ -480,7 +548,7 @@ export class GeminiLiveServiceImpl {
             }
 
             // Create AudioBuffer (mono, 24kHz)
-            const audioBuffer = this.outputAudioContext.createBuffer(1, float32.length, 24000);
+            const audioBuffer = this.outputAudioContext.createBuffer(1, float32.length, OUTPUT_SAMPLE_RATE);
             audioBuffer.getChannelData(0).set(float32);
             return audioBuffer;
         } catch (err) {

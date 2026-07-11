@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Headphones, Home } from 'lucide-react'
 import { formatDuration } from '@/app/lib/podcast/feed'
 import { listPodcastEpisodes } from '@/app/lib/podcast/repository'
+import { normalizePodcastShownotes } from '@/app/lib/podcast/shownotes'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,7 +45,9 @@ export default async function PodcastsPage() {
           <div className="rounded-lg border border-border bg-card p-8 text-center text-muted-foreground">第一期节目正在准备中。</div>
         ) : (
           <div className="space-y-5">
-            {episodes.map((episode) => (
+            {episodes.map((episode) => {
+              const shownotes = normalizePodcastShownotes(episode)
+              return (
               <article key={episode.id} className="rounded-xl border border-border bg-card p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
                   <div>
@@ -55,10 +58,16 @@ export default async function PodcastsPage() {
                   </div>
                   <span className="text-xs rounded-full border border-border px-2 py-1">{formatDuration(episode.duration)}</span>
                 </div>
-                <p className="text-sm text-muted-foreground leading-relaxed mb-4">{episode.summary}</p>
+                {shownotes.summaryZh && (
+                  <p lang="zh-CN" className="text-sm text-muted-foreground leading-relaxed mb-2">{shownotes.summaryZh}</p>
+                )}
+                {shownotes.summaryEn && (
+                  <p lang="en" className="text-sm text-muted-foreground leading-relaxed mb-4">{shownotes.summaryEn}</p>
+                )}
                 <audio controls preload="none" src={episode.audioUrl} className="w-full">Your browser does not support audio playback.</audio>
               </article>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

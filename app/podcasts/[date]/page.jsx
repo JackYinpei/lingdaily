@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { formatDuration } from '@/app/lib/podcast/feed'
 import { getPodcastEpisode } from '@/app/lib/podcast/repository'
+import { normalizePodcastShownotes } from '@/app/lib/podcast/shownotes'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +20,7 @@ export default async function PodcastEpisodePage({ params }) {
   if (!episode) notFound()
 
   const chunks = Array.isArray(episode.content?.chunks) ? episode.content.chunks : []
+  const shownotes = normalizePodcastShownotes(episode)
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="container mx-auto max-w-3xl px-4 py-10">
@@ -28,9 +30,39 @@ export default async function PodcastEpisodePage({ params }) {
 
         <time className="text-sm text-muted-foreground">{episode.date}</time>
         <h1 className="text-3xl font-bold mt-2 mb-3">{episode.title}</h1>
-        <p className="text-muted-foreground leading-relaxed mb-6">{episode.summary}</p>
         <div className="text-xs text-muted-foreground mb-2">时长 {formatDuration(episode.duration)}</div>
         <audio controls preload="metadata" src={episode.audioUrl} className="w-full mb-10">Your browser does not support audio playback.</audio>
+
+        <section className="mb-12 space-y-7" aria-labelledby="shownotes-heading">
+          <h2 id="shownotes-heading" className="text-2xl font-semibold">Show Notes</h2>
+          {shownotes.summaryZh && (
+            <div>
+              <h3 className="font-semibold mb-2">中文摘要</h3>
+              <p lang="zh-CN" className="text-muted-foreground leading-relaxed">{shownotes.summaryZh}</p>
+            </div>
+          )}
+          {shownotes.summaryEn && (
+            <div>
+              <h3 className="font-semibold mb-2">English Summary</h3>
+              <p lang="en" className="text-muted-foreground leading-relaxed">{shownotes.summaryEn}</p>
+            </div>
+          )}
+          {shownotes.vocabulary.length > 0 && (
+            <div>
+              <h3 className="font-semibold mb-3">生词 Vocabulary</h3>
+              <ol className="space-y-4 list-decimal pl-5">
+                {shownotes.vocabulary.map((item, index) => (
+                  <li key={`${item.term}-${index}`} className="pl-1">
+                    <strong>{item.term}</strong>
+                    {item.meaningZh && <p lang="zh-CN" className="text-sm text-muted-foreground mt-1">{item.meaningZh}</p>}
+                    {item.definitionEn && <p lang="en" className="text-sm text-muted-foreground mt-1">{item.definitionEn}</p>}
+                    {item.exampleEn && <p lang="en" className="text-sm italic text-muted-foreground mt-1">Example: {item.exampleEn}</p>}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </section>
 
         <section className="space-y-8" aria-labelledby="transcript-heading">
           <h2 id="transcript-heading" className="text-2xl font-semibold">完整文稿</h2>

@@ -1,7 +1,10 @@
 // Maintain the podcast manifest and regenerate feed.xml (RSS 2.0 + iTunes).
 
 import { readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
+import {
+    renderPodcastShownotesHtml,
+    renderPodcastShownotesText,
+} from "@/app/lib/podcast/shownotes";
 
 const CHANNEL = {
     title: "成杨英语日刊",
@@ -87,10 +90,13 @@ export function renderFeedXml(manifest) {
     const items = manifest.episodes
         .map((ep) => {
             const enclosureUrl = ep.enclosureUrl || `${baseUrl}/podcasts/${ep.filename}`;
+            const shownotesHtml = renderPodcastShownotesHtml(ep);
+            const shownotesText = renderPodcastShownotesText(ep);
             return `    <item>
       <title>${escapeXml(ep.title)}</title>
-      <description>${cdata(ep.summary || "")}</description>
-      <itunes:summary>${cdata(ep.summary || "")}</itunes:summary>
+      <description>${cdata(shownotesHtml)}</description>
+      <itunes:summary>${cdata(shownotesText)}</itunes:summary>
+      <content:encoded>${cdata(shownotesHtml)}</content:encoded>
       <pubDate>${rfc2822(ep.pubDate)}</pubDate>
       <guid isPermaLink="false">lingdaily-podcast-${escapeXml(ep.id)}</guid>
       <link>${escapeXml(enclosureUrl)}</link>

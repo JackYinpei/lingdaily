@@ -15,6 +15,7 @@ import {
   claimPodcastGeneration,
   updatePodcastEpisode,
 } from '@/app/lib/podcast/repository'
+import { renderPodcastShownotesText } from '@/app/lib/podcast/shownotes'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -30,14 +31,13 @@ function jsonResponse(body, status = 200) {
 }
 
 function renderScriptTxt(id, script) {
+  const shownotes = renderPodcastShownotesText(script)
   const lines = [
     `成杨英语日刊 ${id}`,
     script.episode_title,
-    '',
-    script.episode_summary,
-    '',
-    '─'.repeat(60),
   ]
+  if (shownotes) lines.push('', 'SHOW NOTES', '', shownotes)
+  lines.push('', '─'.repeat(60))
   for (const chunk of script.chunks) {
     lines.push('', `[ ${chunk.name.toUpperCase()} ]`, '')
     for (const turn of chunk.turns) lines.push(`${turn.speaker}: ${turn.text}`, '')
@@ -129,6 +129,12 @@ function legacyManifestEpisode(episode) {
     size: episode.size,
     duration: episode.duration,
     enclosureUrl: episode.enclosureUrl,
+    // The legacy manifest only needs show notes for RSS rebuilding. Keep the
+    // full transcript in the per-episode TXT/database instead of making the
+    // manifest grow by an entire script every day.
+    content: episode.content?.shownotes
+      ? { shownotes: episode.content.shownotes }
+      : null,
   }
 }
 

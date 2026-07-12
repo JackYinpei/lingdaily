@@ -4,6 +4,7 @@ import { useLanguage } from '@/app/contexts/LanguageContext';
 
 import { TextMessage } from './TextMessage';
 import { FunctionCallMessage } from './FunctionCallMessage';
+import { CorrectionCard } from './CorrectionCard';
 
 export function History({
     isConnected,
@@ -88,6 +89,10 @@ export function History({
 
                     if (item.type === 'function_call') {
                         return <FunctionCallMessage message={item} key={item.itemId} />;
+                    }
+
+                    if (item.type === 'correction') {
+                        return <CorrectionCard correction={item.correction} key={item.itemId} />;
                     }
 
                     if (item.type === 'message') {

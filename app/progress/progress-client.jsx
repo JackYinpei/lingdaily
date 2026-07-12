@@ -24,6 +24,10 @@ const EMPTY_PROGRESS = {
   recent7Days: [],
 }
 
+// Daily target used for the "today's progress" ring. A learner hitting this many
+// turns in a day is considered to have met the goal.
+const DAILY_TURN_GOAL = 30
+
 function safeCount(value) {
   const number = Number(value)
   return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0
@@ -43,8 +47,39 @@ function formatLastActive(value) {
   return `最近学习：${new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }).format(date)}`
 }
 
+function ProgressRing({ percent }) {
+  const radius = 40
+  const circumference = 2 * Math.PI * radius
+  const clamped = Math.max(0, Math.min(100, percent))
+  const offset = circumference * (1 - clamped / 100)
+  return (
+    <svg viewBox="0 0 96 96" className="size-24 -rotate-90" aria-hidden>
+      <circle cx="48" cy="48" r={radius} fill="none" strokeWidth="9" className="stroke-muted" />
+      <circle
+        cx="48"
+        cy="48"
+        r={radius}
+        fill="none"
+        strokeWidth="9"
+        strokeLinecap="round"
+        stroke="url(#progress-ring-grad)"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        className="transition-[stroke-dashoffset] duration-700"
+      />
+      <defs>
+        <linearGradient id="progress-ring-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="var(--brand-from)" />
+          <stop offset="100%" stopColor="var(--brand-to)" />
+        </linearGradient>
+      </defs>
+    </svg>
+  )
+}
+
 export default function ProgressClient() {
   const [progress, setProgress] = useState(EMPTY_PROGRESS)
+  const [vocabCount, setVocabCount] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -70,11 +105,36 @@ export default function ProgressClient() {
     }
   }, [])
 
+  // Vocabulary count is a best-effort enrichment; a failure here must not block
+  // the main progress view, so it is loaded and errored independently.
+  const loadVocabulary = useCallback(async (signal) => {
+    try {
+      const response = await fetch('/api/learning/items?limit=200', {
+        cache: 'no-store',
+        signal,
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) return
+      const records = Array.isArray(payload.data) ? payload.data : []
+      const unique = new Set()
+      for (const record of records) {
+        for (const item of record.items || []) {
+          const text = String(item?.text || '').normalize('NFKC').toLowerCase().trim()
+          if (text) unique.add(text)
+        }
+      }
+      if (!signal?.aborted) setVocabCount(unique.size)
+    } catch {
+      // ignore — vocab card falls back to a placeholder
+    }
+  }, [])
+
   useEffect(() => {
     const controller = new AbortController()
     void loadProgress(controller.signal)
+    void loadVocabulary(controller.signal)
     return () => controller.abort()
-  }, [loadProgress])
+  }, [loadProgress, loadVocabulary])
 
   const recentDays = useMemo(() => {
     if (!Array.isArray(progress.recent7Days)) return []
@@ -85,6 +145,10 @@ export default function ProgressClient() {
   }, [progress.recent7Days])
   const maxTurns = Math.max(1, ...recentDays.map((day) => day.userTurns))
 
+  const todayTurns = recentDays.length ? recentDays[recentDays.length - 1].userTurns : 0
+  const todayPercent = Math.min(100, Math.round((todayTurns / DAILY_TURN_GOAL) * 100))
+  const weekTurns = recentDays.reduce((sum, day) => sum + day.userTurns, 0)
+
   const metrics = [
     { label: '对话总数', value: safeCount(progress.totalConversations), suffix: '次', icon: MessagesSquare },
     { label: '你的发言', value: safeCount(progress.totalUserTurns), suffix: '轮', icon: TrendingUp },
@@ -93,8 +157,9 @@ export default function ProgressClient() {
   ]
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border bg-card/70 backdrop-blur">
+    <main className="relative min-h-screen text-foreground">
+      <div aria-hidden className="bg-aurora grain-overlay pointer-events-none fixed inset-0 -z-10" />
+      <header className="sticky top-0 z-20 border-b border-border/60 bg-background/70 backdrop-blur">
         <div className="container mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-4">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" asChild>
@@ -130,15 +195,93 @@ export default function ProgressClient() {
           </div>
         ) : (
           <>
-            <section aria-labelledby="overview-heading">
+            {/* Highlight cards mirroring the homepage dashboard preview */}
+            <section aria-label="今日概览" className="grid gap-4 lg:grid-cols-3">
+              {/* Today's progress ring */}
+              <Card className="bg-card/70 backdrop-blur">
+                <CardHeader>
+                  <CardTitle className="text-base">今日学习进度</CardTitle>
+                </CardHeader>
+                <CardContent className="flex items-center gap-5">
+                  <div className="relative grid shrink-0 place-items-center">
+                    <ProgressRing percent={todayPercent} />
+                    <div className="absolute text-center">
+                      <span className="block text-xl font-bold leading-none">{todayPercent}%</span>
+                      <span className="block text-[10px] text-muted-foreground">目标 {DAILY_TURN_GOAL} 轮</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">今日发言</p>
+                    <p className="text-2xl font-bold">
+                      {todayTurns}
+                      <span className="ml-1 text-sm font-normal text-muted-foreground">/ {DAILY_TURN_GOAL} 轮</span>
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Vocabulary mastery */}
+              <Card className="bg-card/70 backdrop-blur">
+                <CardHeader>
+                  <CardTitle className="text-base">词汇掌握</CardTitle>
+                </CardHeader>
+                <CardContent className="flex items-end justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground">熟悉单词</p>
+                    <p className="text-3xl font-bold">{vocabCount ?? '—'}</p>
+                  </div>
+                  <Link href="/vocabulary" className="text-sm text-brand hover:underline">
+                    生词本 →
+                  </Link>
+                </CardContent>
+              </Card>
+
+              {/* This week summary */}
+              <Card className="bg-card/70 backdrop-blur">
+                <CardHeader>
+                  <CardTitle className="text-base">本周学习量表</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="mb-3 flex justify-between text-sm">
+                    <div>
+                      <p className="text-xs text-muted-foreground">本周发言</p>
+                      <p className="text-xl font-bold">{weekTurns} 轮</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">连续学习</p>
+                      <p className="text-xl font-bold text-brand">{safeCount(progress.currentStreak)} 天</p>
+                    </div>
+                  </div>
+                  <div className="flex h-16 items-end justify-between gap-1" aria-hidden>
+                    {recentDays.length === 0
+                      ? Array.from({ length: 7 }).map((_, i) => (
+                          <div key={i} className="w-full rounded-t bg-muted" style={{ height: '8%' }} />
+                        ))
+                      : recentDays.map((day) => {
+                          const height = day.userTurns === 0 ? 6 : Math.max(12, Math.round((day.userTurns / maxTurns) * 100))
+                          return (
+                            <div
+                              key={day.date}
+                              className="w-full rounded-t bg-gradient-to-t from-brand-from to-brand-to"
+                              style={{ height: `${height}%` }}
+                            />
+                          )
+                        })}
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
+
+            {/* All-time metrics */}
+            <section aria-labelledby="overview-heading" className="mt-6">
               <h2 id="overview-heading" className="sr-only">学习数据概览</h2>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 {metrics.map((metric) => {
                   const Icon = metric.icon
                   return (
-                    <Card key={metric.label} className="gap-4 py-5">
+                    <Card key={metric.label} className="gap-4 bg-card/70 py-5 backdrop-blur">
                       <CardContent className="px-5">
-                        <Icon className="mb-4 size-5 text-muted-foreground" aria-hidden />
+                        <Icon className="mb-4 size-5 text-brand" aria-hidden />
                         <p className="text-2xl font-bold md:text-3xl">
                           {metric.value}
                           <span className="ml-1 text-sm font-normal text-muted-foreground">{metric.suffix}</span>
@@ -151,7 +294,8 @@ export default function ProgressClient() {
               </div>
             </section>
 
-            <Card className="mt-6">
+            {/* Detailed weekly chart */}
+            <Card className="mt-6 bg-card/70 backdrop-blur">
               <CardHeader>
                 <CardTitle>最近 7 天发言</CardTitle>
                 <p className="text-sm text-muted-foreground">只统计你在学习对话中的发言轮数</p>
@@ -171,7 +315,7 @@ export default function ProgressClient() {
                             {day.userTurns}
                           </span>
                           <div
-                            className="w-full max-w-10 rounded-t-md bg-foreground/80 transition-[height]"
+                            className="w-full max-w-10 rounded-t-md bg-gradient-to-t from-brand-from to-brand-to transition-[height]"
                             style={{ height: `${height}px` }}
                             aria-hidden
                           />
@@ -185,13 +329,13 @@ export default function ProgressClient() {
             </Card>
 
             <section className="mt-6 grid gap-4 sm:grid-cols-2" aria-label="学习记录入口">
-              <Link href="/history" className="group rounded-xl border border-border bg-card p-5 transition-colors hover:bg-accent">
-                <MessagesSquare className="mb-3 size-6" aria-hidden />
+              <Link href="/history" className="group rounded-xl border border-border bg-card/70 p-5 backdrop-blur transition-colors hover:border-brand/40 hover:bg-card">
+                <MessagesSquare className="mb-3 size-6 text-brand" aria-hidden />
                 <h2 className="font-semibold">对话历史</h2>
                 <p className="mt-1 text-sm text-muted-foreground">查看过去的新闻与场景练习，继续上次对话。</p>
               </Link>
-              <Link href="/vocabulary" className="group rounded-xl border border-border bg-card p-5 transition-colors hover:bg-accent">
-                <BookOpen className="mb-3 size-6" aria-hidden />
+              <Link href="/vocabulary" className="group rounded-xl border border-border bg-card/70 p-5 backdrop-blur transition-colors hover:border-brand/40 hover:bg-card">
+                <BookOpen className="mb-3 size-6 text-brand" aria-hidden />
                 <h2 className="font-semibold">生词本</h2>
                 <p className="mt-1 text-sm text-muted-foreground">复习对话中识别并保存的单词、短语和语法。</p>
               </Link>

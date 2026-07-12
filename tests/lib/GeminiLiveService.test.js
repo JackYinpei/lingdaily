@@ -13,6 +13,7 @@ class FakeAudioContext {
     this.currentTime = 2
     this.destination = {}
     this.bufferSources = []
+    this.listeners = {}
     this.resume = vi.fn(async () => {
       this.state = 'running'
     })
@@ -20,6 +21,18 @@ class FakeAudioContext {
       this.state = 'closed'
     })
     FakeAudioContext.instances.push(this)
+  }
+
+  addEventListener(type, handler) {
+    (this.listeners[type] ||= []).push(handler)
+  }
+
+  removeEventListener(type, handler) {
+    this.listeners[type] = (this.listeners[type] || []).filter((fn) => fn !== handler)
+  }
+
+  emit(type) {
+    for (const handler of [...(this.listeners[type] || [])]) handler()
   }
 
   createGain() {
@@ -144,6 +157,38 @@ describe('Gemini Live output audio', () => {
 
     expect(context.bufferSources).toHaveLength(2)
     expect(context.bufferSources[1].start).toHaveBeenCalledWith(2.03)
+  })
+
+  it('buffers the first model chunk while suspended and flushes it on resume', async () => {
+    const { config, service } = createService()
+    const context = service.createOutputAudioContext()
+    // Simulate a browser that keeps the output context suspended through the
+    // connect gesture: resume() does not flip state to running on its own.
+    context.resume = vi.fn(async () => {})
+    context.state = 'suspended'
+    service.outputAudioReadyPromise = Promise.resolve()
+
+    await service.handleServerMessage({
+      serverContent: {
+        modelTurn: {
+          parts: [{ inlineData: { mimeType: 'audio/pcm;rate=24000', data: pcmBase64(0, 1024) } }],
+        },
+      },
+    })
+
+    // Nothing scheduled yet, but the chunk is retained rather than dropped.
+    expect(context.bufferSources).toHaveLength(0)
+    expect(service.pendingAudioParts).toHaveLength(1)
+    expect(config.onPlaybackError).not.toHaveBeenCalled()
+
+    // The context unlocks (e.g. mic resume or a later gesture) → buffered audio plays.
+    context.state = 'running'
+    context.emit('statechange')
+    await Promise.resolve()
+
+    expect(context.bufferSources).toHaveLength(1)
+    expect(context.bufferSources[0].start).toHaveBeenCalledWith(2.03)
+    expect(service.pendingAudioParts).toHaveLength(0)
   })
 
   it('does not schedule queued audio after the playback epoch is invalidated', async () => {

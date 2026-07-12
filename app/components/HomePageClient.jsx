@@ -1,50 +1,115 @@
 import Link from 'next/link'
 import { Button } from '@/app/components/ui/button'
-import { Card, CardContent } from '@/app/components/ui/card'
 import { Badge } from '@/app/components/ui/badge'
-import { MessageCircle, Users, Globe, CheckCircle, Star, Headphones } from 'lucide-react'
+import {
+  MessageCircle,
+  Sparkles,
+  Zap,
+  Target,
+  CalendarDays,
+  Headphones,
+  MessagesSquare,
+  BookOpen,
+  ArrowRight,
+} from 'lucide-react'
 import StartLearningWithLanguage from '@/app/components/StartLearningWithLanguage'
 import ThemeToggle from '@/app/components/ThemeToggle'
 import HeroVideoDemo from '@/app/components/HeroVideoDemo'
 import MobileNav from '@/app/components/MobileNav'
+import AuroraBackground from '@/app/components/home/AuroraBackground'
+import HeroPreview from '@/app/components/home/HeroPreview'
+import StatsPanel from '@/app/components/home/StatsPanel'
 
 const I18N = {
   en: {
     nav: { features: 'Features', how: 'How it Works', reviews: 'Reviews', podcasts: 'Podcasts', startLearning: 'Start Learning', signIn: 'Sign In', signOut: 'Sign Out', talk: 'Talk', history: 'History', progress: 'Progress' },
-    hero: { badge: 'AI-Powered English Learning', h1Prefix: 'Chat with AI to', h1Highlight: 'Learn English', desc: 'Master English through real-time conversations about current news. Practice speaking, improve vocabulary, and gain confidence with our AI English tutor.', primaryBtn: 'Start Free Conversation', secondaryBtn: 'Watch Demo' },
-    podcasts: { title: 'Daily AI News Podcasts', subtitle: 'Immerse yourself in English with daily generated podcasts covering the latest topics.', btn: 'Listen Now', features: ['Daily Updates', 'Native-like AI Voices', 'Full Transcripts'] },
-    features: { title: 'Why Choose LingDaily?', subtitle: 'Learn English naturally through AI conversations about real-world topics', card1Title: 'Real-Time Conversations', card1Desc: 'Practice speaking English with AI that understands context and provides instant feedback on your pronunciation and grammar.', card2Title: 'Current News Topics', card2Desc: 'Stay informed while learning. Discuss trending news stories to build vocabulary and cultural understanding.', card3Title: 'Personalized Learning', card3Desc: 'AI adapts to your learning level and interests, providing customized conversations that match your progress.' },
-    how: { title: 'How It Works', subtitle: 'Three simple steps to start improving your English today', step1Title: 'Choose a News Topic', step1Desc: 'Select from current news stories that interest you, from technology to global events.', step2Title: 'Start Talking', step2Desc: 'Engage in natural conversation with our AI tutor about the topic you chose.', step3Title: 'Learn & Improve', step3Desc: 'Receive real-time feedback, learn new vocabulary, and track your progress.' },
-    benefits: { title: 'Perfect for English Learners', bullets: ['Practice speaking without judgment', 'Learn vocabulary in context', 'Improve pronunciation with AI feedback', 'Stay updated with global news', 'Learn at your own pace, 24/7'], rating: '4.9/5 from 1000+ learners', quote: '“LingDaily helped me improve my English speaking skills faster than any other method. The AI conversations feel natural and the news topics keep me engaged.”', cite: '— Sarah K., International Student' },
-    cta: { title: 'Ready to Master English?', subtitle: 'Join thousands of learners who are improving their English through AI-powered conversations', primaryBtn: 'Start Your Free Conversation', note: 'No credit card required • Start learning immediately' },
-    footer: { features: 'Features', learning: 'Learning', support: 'Support', aiConversations: 'AI Conversations', newsTopics: 'News Topics', progressTracking: 'Progress Tracking', startLearning: 'Start Learning', conversationHistory: 'Conversation History', tipsGuides: 'Tips & Guides', helpCenter: 'Help Center', contactUs: 'Contact Us', privacy: 'Privacy Policy', rights: 'All rights reserved. Chat with AI to learn English.' },
+    hero: {
+      badge: 'AI-Powered English Learning',
+      h1Prefix: 'Talk with AI,',
+      h1Highlight: 'learn English naturally',
+      desc: 'Learn English through real-time conversations about the day’s news. Practice speaking, grow your vocabulary, and get personalized feedback.',
+      primaryBtn: 'Start Free Conversation',
+      secondaryBtn: 'Watch Demo',
+      chips: ['Live news chat', 'Personalized correction', 'Daily updates'],
+    },
+    preview: { title: 'AI Conversation', streak: '18-day streak', topic: 'Today’s Topic', source: 'Source', correctTitle: 'AI Correction & Tips', correctBody: 'Try a more inspiring phrasing:', grammar: 'Grammar' },
+    today: { title: 'Today’s Progress', goal: 'Goal 30 min', minutes: 'Study time', min: 'min' },
+    vocab: { title: 'Vocabulary Mastery', known: 'Known words', rate: 'Mastery' },
+    week: { title: 'This Week', total: 'Total', days: ['M', 'T', 'W', 'T', 'F', 'S', 'S'] },
+    features: {
+      title: 'Everything you need to learn',
+      subtitle: 'Real conversations, real news, real progress',
+      cards: [
+        { icon: 'headphones', title: 'Daily AI News Podcast', desc: 'A fresh podcast generated daily from the latest topics, so you stay immersed in English.', tags: ['Native voices', 'CN/EN subtitles', 'Line-by-line'], href: '/podcasts' },
+        { icon: 'chat', title: 'Immersive Conversation', desc: 'Have real conversations with AI around news topics and get instant feedback on your speaking.', tags: ['Live chat', 'Smart correction', 'Speaking score'], href: '/talk' },
+        { icon: 'book', title: 'Vocabulary & Expressions', desc: 'Automatically extract high-frequency words and idiomatic phrases into your personal lexicon.', tags: ['Word bank', 'Examples', 'Spaced review'], href: '/vocabulary' },
+      ],
+    },
+    cta: { title: 'Ready to master English?', subtitle: 'Join thousands of learners improving through AI conversations', primaryBtn: 'Start Your Free Conversation', note: 'No credit card required • Start learning immediately' },
+    footer: { tagline: 'AI-powered English learning through news conversations', features: 'Features', learning: 'Learning', support: 'Support', aiConversations: 'AI Conversations', newsTopics: 'News Topics', progressTracking: 'Progress Tracking', startLearning: 'Start Learning', conversationHistory: 'Conversation History', tipsGuides: 'Tips & Guides', helpCenter: 'Help Center', contactUs: 'Contact Us', privacy: 'Privacy Policy', rights: 'All rights reserved.' },
     start: { learningLabel: 'Learning', nativeLabel: 'Native' },
   },
   zh: {
     nav: { features: '功能', how: '使用方式', reviews: '评价', podcasts: '播客', startLearning: '开始学习', signIn: '登录', signOut: '退出登录', talk: '对话', history: '历史', progress: '进度' },
-    hero: { badge: 'AI 驱动的英语学习', h1Prefix: '和 AI 对话来', h1Highlight: '学习英语', desc: '通过与 AI 围绕实时新闻进行对话学习英语。练习口语、提升词汇量，并获得自信。', primaryBtn: '开始免费对话', secondaryBtn: '观看演示' },
-    podcasts: { title: '每日 AI 新闻播客', subtitle: '通过涵盖最新话题的每日生成播客，让自己沉浸在英语环境中。', btn: '立即收听', features: ['每日更新', '原生 AI 语音', '完整文稿'] },
-    features: { title: '为什么选择 LingDaily？', subtitle: '通过与 AI 讨论真实话题，自然地学习英语', card1Title: '实时对话', card1Desc: '与能理解上下文的 AI 进行口语练习，获得关于发音和语法的即时反馈。', card2Title: '时事新闻主题', card2Desc: '在学习的同时保持信息更新。讨论热门新闻，构建词汇与文化理解。', card3Title: '个性化学习', card3Desc: 'AI 会根据你的水平和兴趣定制对话，匹配你的学习进度。' },
-    how: { title: '如何使用', subtitle: '三步开始高效提升英语', step1Title: '选择新闻话题', step1Desc: '在科技、全球事件等当前新闻中选择你感兴趣的话题。', step2Title: '开始对话', step2Desc: '围绕你选择的话题，与我们的 AI 导师自然交流。', step3Title: '学习与提升', step3Desc: '获得实时反馈，学习新词汇，并跟踪你的进步。' },
-    benefits: { title: '英语学习者的理想选择', bullets: ['无压力的口语练习', '在语境中学习词汇', 'AI 帮助改进发音', '持续了解全球资讯', '随时随地按节奏学习'], rating: '来自 1000+ 学员的 4.9/5 评分', quote: '“LingDaily 让我口语提升更快。与 AI 的对话很自然，新闻话题也让我保持兴趣。”', cite: '— Sarah K., 国际学生' },
+    hero: {
+      badge: 'AI 驱动的英语学习',
+      h1Prefix: '和 AI 对话，',
+      h1Highlight: '自然学会英语',
+      desc: '通过与 AI 围绕实时新闻进行对话学习英语。练习口语、提升词汇量，并获得个性化反馈。',
+      primaryBtn: '开始免费对话',
+      secondaryBtn: '观看演示',
+      chips: ['实时新闻对话', '个性化纠错', '每日更新'],
+    },
+    preview: { title: 'AI 对话练习', streak: '连续学习 18 天', topic: '今日话题', source: '来源', correctTitle: 'AI 纠错与建议', correctBody: '建议使用更具启发的表达：', grammar: '语法' },
+    today: { title: '今日学习进度', goal: '目标 30 分钟', minutes: '学习时长', min: '分钟' },
+    vocab: { title: '词汇掌握', known: '熟悉单词', rate: '掌握率' },
+    week: { title: '本周学习量表', total: '累计时长', days: ['一', '二', '三', '四', '五', '六', '日'] },
+    features: {
+      title: '你需要的一切，都在这里',
+      subtitle: '真实对话、真实新闻、真实进步',
+      cards: [
+        { icon: 'headphones', title: '每日 AI 新闻播客', desc: '通过涵盖最新话题的每日生成播客，让自己沉浸在英语语境中。', tags: ['原生发音', '中英字幕', '逐句精听'], href: '/podcasts' },
+        { icon: 'chat', title: '沉浸式对话练习', desc: '与 AI 围绕新闻话题进行真实对话，获得即时反馈，提升口语能力。', tags: ['实时对话', '智能纠错', '口语评分'], href: '/talk' },
+        { icon: 'book', title: '词汇与表达积累', desc: '自动提取高频词汇与地道表达，构建属于你的个性化词库。', tags: ['生词本', '例句库', '记忆复习'], href: '/vocabulary' },
+      ],
+    },
     cta: { title: '准备好掌握英语了吗？', subtitle: '加入数千学员，通过 AI 对话不断提升英语', primaryBtn: '开始你的免费对话', note: '无需信用卡 • 立即开始学习' },
-    footer: { features: '功能', learning: '学习', support: '支持', aiConversations: 'AI 对话', newsTopics: '新闻话题', progressTracking: '进度追踪', startLearning: '开始学习', conversationHistory: '对话历史', tipsGuides: '技巧与指南', helpCenter: '帮助中心', contactUs: '联系我们', privacy: '隐私政策', rights: '版权所有。和 AI 对话学习英语。' },
+    footer: { tagline: '通过新闻对话，AI 驱动的英语学习', features: '功能', learning: '学习', support: '支持', aiConversations: 'AI 对话', newsTopics: '新闻话题', progressTracking: '进度追踪', startLearning: '开始学习', conversationHistory: '对话历史', tipsGuides: '技巧与指南', helpCenter: '帮助中心', contactUs: '联系我们', privacy: '隐私政策', rights: '版权所有。' },
     start: { learningLabel: '学习语言', nativeLabel: '母语' },
   },
   ja: {
     nav: { features: '機能', how: '使い方', reviews: 'レビュー', podcasts: 'ポッドキャスト', startLearning: '学習を始める', signIn: 'サインイン', signOut: 'サインアウト', talk: '会話', history: '履歴', progress: '進捗' },
-    hero: { badge: 'AI で英語学習', h1Prefix: 'AIと会話して', h1Highlight: '英語を学ぶ', desc: 'ニュースに関するリアルタイム会話で英語を習得。スピーキング練習、語彙力アップ、自信を獲得しよう。', primaryBtn: '無料で会話を開始', secondaryBtn: 'デモを見る' },
-    podcasts: { title: 'デイリーAIニュースポッドキャスト', subtitle: '最新のトピックをカバーする毎日生成されるポッドキャストで英語に浸りましょう。', btn: '今すぐ聴く', features: ['毎日更新', 'ネイティブなAI音声', '完全なスクリプト'] },
-    features: { title: 'LingDaily を選ぶ理由', subtitle: '実世界のトピックについて AI と会話し、自然に英語を学ぶ', card1Title: 'リアルタイム会話', card1Desc: '文脈を理解する AI と英会話練習。発音や文法の即時フィードバック。', card2Title: '最新ニュースの話題', card2Desc: '学びながら情報収集。トレンドのニュースで語彙と文化理解を養う。', card3Title: 'パーソナライズ学習', card3Desc: 'レベルや興味に合わせて会話を最適化。あなたの進度にマッチ。' },
-    how: { title: '使い方', subtitle: '3 ステップで英語力を向上', step1Title: 'ニューストピックを選ぶ', step1Desc: 'テクノロジーから国際情勢まで、気になるニュースを選択。', step2Title: '会話を始める', step2Desc: '選んだトピックについて AI チューターと自然に会話。', step3Title: '学び、上達する', step3Desc: 'リアルタイムのフィードバックを受け、語彙を学び、進捗を追跡。' },
-    benefits: { title: '英語学習者に最適', bullets: ['気軽にスピーキング練習', '文脈で語彙を学ぶ', 'AI で発音を改善', '世界のニュースを把握', 'いつでも自分のペースで'], rating: '1000人以上から4.9/5の評価', quote: '「LingDaily で英会話力が大幅に向上しました。AI との会話は自然で、ニュース話題で飽きません。」', cite: '— Sarah K.（留学生）' },
+    hero: {
+      badge: 'AI で英語学習',
+      h1Prefix: 'AIと会話して、',
+      h1Highlight: '自然に英語を学ぶ',
+      desc: 'ニュースに関するリアルタイム会話で英語を習得。スピーキング練習、語彙力アップ、個別フィードバックを得られます。',
+      primaryBtn: '無料で会話を開始',
+      secondaryBtn: 'デモを見る',
+      chips: ['ニュース会話', '個別の添削', '毎日更新'],
+    },
+    preview: { title: 'AI 会話練習', streak: '18日連続', topic: '今日のトピック', source: '出典', correctTitle: 'AI 添削とヒント', correctBody: 'より印象的な言い回し：', grammar: '文法' },
+    today: { title: '今日の進捗', goal: '目標 30 分', minutes: '学習時間', min: '分' },
+    vocab: { title: '語彙の習得', known: '既知の単語', rate: '習得率' },
+    week: { title: '今週の学習量', total: '合計', days: ['月', '火', '水', '木', '金', '土', '日'] },
+    features: {
+      title: '学習に必要なすべて',
+      subtitle: '本物の会話、本物のニュース、本物の上達',
+      cards: [
+        { icon: 'headphones', title: 'デイリーAIニュースポッドキャスト', desc: '最新トピックから毎日生成されるポッドキャストで英語に浸りましょう。', tags: ['ネイティブ音声', '日英字幕', '一文ずつ'], href: '/podcasts' },
+        { icon: 'chat', title: '没入型の会話練習', desc: 'ニュースを題材にAIと本物の会話をし、スピーキングへの即時フィードバックを得られます。', tags: ['ライブ会話', 'スマート添削', '発話スコア'], href: '/talk' },
+        { icon: 'book', title: '語彙と表現の蓄積', desc: '高頻度語や自然な表現を自動抽出し、あなただけの語彙帳を作ります。', tags: ['単語帳', '例文', '復習'], href: '/vocabulary' },
+      ],
+    },
     cta: { title: '英語をマスターする準備はできた？', subtitle: '何千人もの学習者が AI 会話で英語力を向上', primaryBtn: '無料で会話を開始', note: 'クレジットカード不要 • 今すぐ始められます' },
-    footer: { features: '機能', learning: '学習', support: 'サポート', aiConversations: 'AI 会話', newsTopics: 'ニューストピック', progressTracking: '進捗トラッキング', startLearning: '学習を始める', conversationHistory: '会話履歴', tipsGuides: 'ヒントとガイド', helpCenter: 'ヘルプセンター', contactUs: 'お問い合わせ', privacy: 'プライバシーポリシー', rights: '無断転載禁止。AI と会話して英語を学ぶ。' },
+    footer: { tagline: 'ニュース会話による AI 英語学習', features: '機能', learning: '学習', support: 'サポート', aiConversations: 'AI 会話', newsTopics: 'ニューストピック', progressTracking: '進捗トラッキング', startLearning: '学習を始める', conversationHistory: '会話履歴', tipsGuides: 'ヒントとガイド', helpCenter: 'ヘルプセンター', contactUs: 'お問い合わせ', privacy: 'プライバシーポリシー', rights: '無断転載禁止。' },
     start: { learningLabel: '学習言語', nativeLabel: '母語' },
   },
 }
 
 const DEFAULT_LOCALE = 'en'
+const CARD_ICONS = { headphones: Headphones, chat: MessagesSquare, book: BookOpen }
+const HERO_CHIP_ICONS = [Zap, Target, CalendarDays]
 
 export default function HomePageClient({ signedIn, signOutAction, locale = DEFAULT_LOCALE }) {
   const normalizedLocale = I18N[locale] ? locale : DEFAULT_LOCALE
@@ -54,267 +119,182 @@ export default function HomePageClient({ signedIn, signOutAction, locale = DEFAU
   const progressHref = signedIn ? '/progress' : '/sign-in?callbackUrl=%2Fprogress'
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="relative min-h-screen text-foreground">
+      <AuroraBackground />
+
       {/* Header */}
-      <header className="border-b border-border relative">
-        <div className="container mx-auto px-4 py-6">
+      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/70 backdrop-blur-md">
+        <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <MessageCircle className="h-8 w-8" />
-              <span className="text-2xl font-bold text-foreground">LingDaily</span>
+            <div className="flex items-center gap-2">
+              <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-brand-from to-brand-to text-white">
+                <MessageCircle className="size-5" />
+              </span>
+              <span className="text-xl font-bold">LingDaily</span>
             </div>
-            {/* Desktop nav — shown from lg (1024 px) up */}
-            <nav className="hidden lg:flex items-center space-x-4">
+            {/* Desktop nav — from lg up */}
+            <nav className="hidden items-center gap-4 lg:flex">
               {signedIn ? (
                 <>
-                  <Link href={talkHref} className="text-muted-foreground hover:text-foreground transition-colors">
-                    {t.nav.talk}
-                  </Link>
-                  <Link href="/podcasts" className="text-muted-foreground hover:text-foreground transition-colors">
-                    {t.nav.podcasts}
-                  </Link>
-                  <Link href={historyHref} className="text-muted-foreground hover:text-foreground transition-colors">
-                    {t.nav.history}
-                  </Link>
-                  <Link href={progressHref} className="text-muted-foreground hover:text-foreground transition-colors">
-                    {t.nav.progress}
-                  </Link>
+                  <Link href={talkHref} className="text-muted-foreground transition-colors hover:text-foreground">{t.nav.talk}</Link>
+                  <Link href="/podcasts" className="text-muted-foreground transition-colors hover:text-foreground">{t.nav.podcasts}</Link>
+                  <Link href={historyHref} className="text-muted-foreground transition-colors hover:text-foreground">{t.nav.history}</Link>
+                  <Link href={progressHref} className="text-muted-foreground transition-colors hover:text-foreground">{t.nav.progress}</Link>
                   <ThemeToggle />
                   <form action={signOutAction}>
-                    <Button variant="outline" className="font-semibold">
-                      {t.nav.signOut}
-                    </Button>
+                    <Button variant="outline" className="font-semibold">{t.nav.signOut}</Button>
                   </form>
                 </>
               ) : (
                 <>
-                  <Link href="#features" className="text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
-                    {t.nav.features}
-                  </Link>
-                  <Link href="#how-it-works" className="text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
-                    {t.nav.how}
-                  </Link>
-                  <Link href="#testimonials" className="text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
-                    {t.nav.reviews}
-                  </Link>
-                  <Link href="/podcasts" className="text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
-                    {t.nav.podcasts}
-                  </Link>
+                  <Link href="#features" className="whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground">{t.nav.features}</Link>
+                  <Link href="/podcasts" className="whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground">{t.nav.podcasts}</Link>
                   <StartLearningWithLanguage startLabel={t.nav.startLearning} learningLabel={t.start.learningLabel} nativeLabel={t.start.nativeLabel} />
                   <ThemeToggle />
                   <Link href="/sign-in">
-                    <Button variant="outline" className="font-semibold whitespace-nowrap">
-                      {t.nav.signIn}
-                    </Button>
+                    <Button variant="outline" className="whitespace-nowrap font-semibold">{t.nav.signIn}</Button>
                   </Link>
                 </>
               )}
             </nav>
-            {/* Mobile hamburger — shown below lg */}
             <MobileNav t={t} signedIn={signedIn} signOutAction={signOutAction} />
           </div>
         </div>
       </header>
 
-      <main id="content" className="flex flex-col gap-0">
-        {/* Hero Section */}
-        <section className="container mx-auto px-4 py-20 text-center" aria-labelledby="hero-heading">
-          <div className="max-w-4xl mx-auto">
-            <Badge variant="secondary" className="mb-6">🚀 {t.hero.badge}</Badge>
-            <h1 id="hero-heading" className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
-              {t.hero.h1Prefix}
-              <span className="text-transparent bg-gradient-to-r from-white to-zinc-400 bg-clip-text"> {t.hero.h1Highlight}</span>
-            </h1>
-            <p className="text-xl md:text-2xl text-muted-foreground mb-8 leading-relaxed">{t.hero.desc}</p>
-            <div className="flex flex-row flex-wrap gap-4 justify-center">
-              <Link href={talkHref}>
-                <Button size="lg" className="font-semibold px-8 py-4 text-lg">
-                  {t.hero.primaryBtn}
-                  <MessageCircle className="ml-2 h-5 w-5" />
-                </Button>
-              </Link>
-              <HeroVideoDemo buttonLabel={t.hero.secondaryBtn} />
-            </div>
-          </div>
-        </section>
-
-        <section id="podcasts" className="bg-muted py-16" aria-labelledby="podcasts-heading">
-          <div className="container mx-auto px-4">
-            <Card className="max-w-4xl mx-auto">
-              <CardContent className="p-8 md:p-10 flex flex-col md:flex-row items-start md:items-center gap-7">
-                <div className="rounded-full border border-border bg-background p-4">
-                  <Headphones className="size-9" aria-hidden />
-                </div>
-                <div className="flex-1">
-                  <h2 id="podcasts-heading" className="text-3xl font-bold mb-2">{t.podcasts.title}</h2>
-                  <p className="text-muted-foreground mb-4">{t.podcasts.subtitle}</p>
-                  <div className="flex flex-wrap gap-2 mb-5">
-                    {t.podcasts.features.map((feature) => <Badge key={feature} variant="secondary">{feature}</Badge>)}
-                  </div>
-                  <Link href="/podcasts"><Button>{t.podcasts.btn}</Button></Link>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </section>
-
-        {/* Features Section */}
-        <section id="features" className="container mx-auto px-4 py-20" aria-labelledby="features-heading">
-          <div className="text-center mb-16">
-            <h2 id="features-heading" className="text-4xl md:text-5xl font-bold mb-4">{t.features.title}</h2>
-            <p className="text-xl text-muted-foreground max-w-2xl mx-auto">{t.features.subtitle}</p>
-          </div>
-          <div className="grid md:grid-cols-3 gap-8">
-            <Card className="transition-colors">
-              <CardContent className="p-6">
-                <MessageCircle className="h-12 w-12 mb-4" aria-hidden />
-                <h3 className="text-2xl font-semibold mb-4">{t.features.card1Title}</h3>
-                <p className="text-muted-foreground">{t.features.card1Desc}</p>
-              </CardContent>
-            </Card>
-            <Card className="transition-colors">
-              <CardContent className="p-6">
-                <Globe className="h-12 w-12 mb-4" aria-hidden />
-                <h3 className="text-2xl font-semibold mb-4">{t.features.card2Title}</h3>
-                <p className="text-muted-foreground">{t.features.card2Desc}</p>
-              </CardContent>
-            </Card>
-            <Card className="transition-colors">
-              <CardContent className="p-6">
-                <Users className="h-12 w-12 mb-4" aria-hidden />
-                <h3 className="text-2xl font-semibold mb-4">{t.features.card3Title}</h3>
-                <p className="text-muted-foreground">{t.features.card3Desc}</p>
-              </CardContent>
-            </Card>
-          </div>
-        </section>
-
-        {/* How it Works */}
-        <section id="how-it-works" className="bg-muted py-20" aria-labelledby="how-heading">
-          <div className="container mx-auto px-4">
-            <div className="text-center mb-16">
-              <h2 id="how-heading" className="text-4xl md:text-5xl font-bold mb-4">{t.how.title}</h2>
-              <p className="text-xl text-muted-foreground max-w-2xl mx-auto">{t.how.subtitle}</p>
-            </div>
-            <div className="grid md:grid-cols-3 gap-8">
-              <div className="text-center">
-                <div className="bg-card text-card-foreground border border-border rounded-full w-16 h-16 flex items-center justify-center text-2xl font-bold mx-auto mb-6" aria-hidden>1</div>
-                <h3 className="text-2xl font-semibold mb-4">{t.how.step1Title}</h3>
-                <p className="text-muted-foreground">{t.how.step1Desc}</p>
-              </div>
-              <div className="text-center">
-                <div className="bg-card text-card-foreground border border-border rounded-full w-16 h-16 flex items-center justify-center text-2xl font-bold mx-auto mb-6" aria-hidden>2</div>
-                <h3 className="text-2xl font-semibold mb-4">{t.how.step2Title}</h3>
-                <p className="text-muted-foreground">{t.how.step2Desc}</p>
-              </div>
-              <div className="text-center">
-                <div className="bg-card text-card-foreground border border-border rounded-full w-16 h-16 flex items-center justify-center text-2xl font-bold mx-auto mb-6" aria-hidden>3</div>
-                <h3 className="text-2xl font-semibold mb-4">{t.how.step3Title}</h3>
-                <p className="text-muted-foreground">{t.how.step3Desc}</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Benefits */}
-        <section className="container mx-auto px-4 py-20" aria-labelledby="benefits-heading">
-          <div className="grid md:grid-cols-2 gap-12 items-center">
+      <main id="content" className="flex flex-col">
+        {/* Hero */}
+        <section className="container mx-auto px-4 py-12 lg:py-20" aria-labelledby="hero-heading">
+          <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-8">
+            {/* left */}
             <div>
-              <h2 id="benefits-heading" className="text-4xl md:text-5xl font-bold mb-6">{t.benefits.title}</h2>
-              <div className="space-y-4">
-                <div className="flex items-center space-x-3">
-                  <CheckCircle className="h-6 w-6 text-green-400" aria-hidden />
-                  <span className="text-lg">{t.benefits.bullets[0]}</span>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <CheckCircle className="h-6 w-6 text-green-400" aria-hidden />
-                  <span className="text-lg">{t.benefits.bullets[1]}</span>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <CheckCircle className="h-6 w-6 text-green-400" aria-hidden />
-                  <span className="text-lg">{t.benefits.bullets[2]}</span>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <CheckCircle className="h-6 w-6 text-green-400" aria-hidden />
-                  <span className="text-lg">{t.benefits.bullets[3]}</span>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <CheckCircle className="h-6 w-6 text-green-400" aria-hidden />
-                  <span className="text-lg">{t.benefits.bullets[4]}</span>
-                </div>
+              <Badge variant="secondary" className="mb-5 gap-1.5 border border-brand/20 bg-brand/10 text-brand">
+                <Sparkles className="size-3.5" /> {t.hero.badge}
+              </Badge>
+              <h1 id="hero-heading" className="text-4xl font-bold leading-tight sm:text-5xl xl:text-6xl">
+                {t.hero.h1Prefix}
+                <span className="mt-1 block bg-gradient-to-r from-brand-from via-brand-via to-brand-to bg-clip-text text-transparent">
+                  {t.hero.h1Highlight}
+                </span>
+              </h1>
+              <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">{t.hero.desc}</p>
+              <div className="mt-8 flex flex-wrap gap-4">
+                <Link href={talkHref}>
+                  <Button size="lg" className="bg-gradient-to-r from-brand-from to-brand-to px-8 font-semibold text-white shadow-lg hover:opacity-90">
+                    {t.hero.primaryBtn}
+                    <ArrowRight className="ml-1 size-5" />
+                  </Button>
+                </Link>
+                <HeroVideoDemo buttonLabel={t.hero.secondaryBtn} />
+              </div>
+              <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3">
+                {t.hero.chips.map((chip, i) => {
+                  const Icon = HERO_CHIP_ICONS[i]
+                  return (
+                    <span key={chip} className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Icon className="size-4 text-brand" aria-hidden /> {chip}
+                    </span>
+                  )
+                })}
               </div>
             </div>
-            <Card>
-              <CardContent className="p-8">
-                <div className="flex items-center mb-4">
-                  <div className="flex text-yellow-400" aria-hidden>
-                    {[...Array(5)].map((_, i) => (
-                      <Star key={i} className="h-5 w-5 fill-current" />
-                    ))}
-                  </div>
-                  <span className="ml-2 text-muted-foreground">{t.benefits.rating}</span>
-                </div>
-                <blockquote className="text-lg mb-4">{t.benefits.quote}</blockquote>
-                <cite className="text-muted-foreground">{t.benefits.cite}</cite>
-              </CardContent>
-            </Card>
+
+            {/* right: preview + stats */}
+            <div className="grid gap-4 sm:grid-cols-[1.4fr_1fr] lg:gap-4">
+              <HeroPreview t={t} />
+              <StatsPanel t={t} />
+            </div>
           </div>
         </section>
 
-        {/* CTA Section */}
-        <section className="bg-accent py-20" aria-labelledby="cta-heading">
-          <div className="container mx-auto px-4 text-center">
-            <h2 id="cta-heading" className="text-4xl md:text-5xl font-bold mb-6">{t.cta.title}</h2>
-            <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">{t.cta.subtitle}</p>
-            <Link href={talkHref}>
-              <Button size="lg" className="font-semibold px-8 py-4 text-lg">
+        {/* Feature cards */}
+        <section id="features" className="container mx-auto px-4 py-16" aria-labelledby="features-heading">
+          <div className="mb-12 text-center">
+            <h2 id="features-heading" className="text-3xl font-bold sm:text-4xl">{t.features.title}</h2>
+            <p className="mt-3 text-lg text-muted-foreground">{t.features.subtitle}</p>
+          </div>
+          <div className="grid gap-6 md:grid-cols-3">
+            {t.features.cards.map((card) => {
+              const Icon = CARD_ICONS[card.icon] || MessagesSquare
+              return (
+                <Link
+                  key={card.title}
+                  href={card.href}
+                  className="group flex flex-col rounded-2xl border border-border bg-card/70 p-6 backdrop-blur transition-colors hover:border-brand/40 hover:bg-card"
+                >
+                  <span className="mb-4 grid size-14 place-items-center rounded-2xl bg-gradient-to-br from-brand-from/20 to-brand-to/20 text-brand">
+                    <Icon className="size-7" aria-hidden />
+                  </span>
+                  <h3 className="text-xl font-semibold">{card.title}</h3>
+                  <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">{card.desc}</p>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    {card.tags.map((tag) => (
+                      <span key={tag} className="rounded-full border border-border bg-background/60 px-2.5 py-1 text-xs text-muted-foreground">{tag}</span>
+                    ))}
+                    <ArrowRight className="ml-auto size-5 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-brand" aria-hidden />
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        </section>
+
+        {/* CTA */}
+        <section className="container mx-auto px-4 py-16" aria-labelledby="cta-heading">
+          <div className="mx-auto max-w-3xl rounded-3xl border border-brand/20 bg-gradient-to-br from-brand-from/10 via-brand-via/10 to-brand-to/10 p-10 text-center backdrop-blur">
+            <h2 id="cta-heading" className="text-3xl font-bold sm:text-4xl">{t.cta.title}</h2>
+            <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground">{t.cta.subtitle}</p>
+            <Link href={talkHref} className="mt-8 inline-block">
+              <Button size="lg" className="bg-gradient-to-r from-brand-from to-brand-to px-8 font-semibold text-white shadow-lg hover:opacity-90">
                 {t.cta.primaryBtn}
-                <MessageCircle className="ml-2 h-5 w-5" />
+                <MessageCircle className="ml-1 size-5" />
               </Button>
             </Link>
-            <p className="text-sm text-muted-foreground mt-4">{t.cta.note}</p>
+            <p className="mt-4 text-sm text-muted-foreground">{t.cta.note}</p>
           </div>
         </section>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-border bg-card">
+      <footer className="border-t border-border/60 bg-card/50 backdrop-blur">
         <div className="container mx-auto px-4 py-12">
-          <div className="grid md:grid-cols-4 gap-8">
+          <div className="grid gap-8 md:grid-cols-4">
             <div>
-              <div className="flex items-center space-x-2 mb-4">
-                <MessageCircle className="h-6 w-6" />
-                <span className="text-xl font-bold">LingDaily</span>
+              <div className="mb-4 flex items-center gap-2">
+                <span className="grid size-8 place-items-center rounded-lg bg-gradient-to-br from-brand-from to-brand-to text-white">
+                  <MessageCircle className="size-4" />
+                </span>
+                <span className="text-lg font-bold">LingDaily</span>
               </div>
-              <p className="text-muted-foreground">AI-powered English learning through news conversations</p>
+              <p className="text-sm text-muted-foreground">{t.footer.tagline}</p>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">{t.footer.features}</h4>
-              <ul className="space-y-2 text-muted-foreground">
-                <li><Link href={talkHref} className="hover:text-foreground transition-colors">{t.footer.aiConversations}</Link></li>
-                <li><Link href="#features" className="hover:text-foreground transition-colors">{t.footer.newsTopics}</Link></li>
-                <li><Link href={progressHref} className="hover:text-foreground transition-colors">{t.footer.progressTracking}</Link></li>
+              <h4 className="mb-4 font-semibold">{t.footer.features}</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li><Link href={talkHref} className="transition-colors hover:text-foreground">{t.footer.aiConversations}</Link></li>
+                <li><Link href="#features" className="transition-colors hover:text-foreground">{t.footer.newsTopics}</Link></li>
+                <li><Link href={progressHref} className="transition-colors hover:text-foreground">{t.footer.progressTracking}</Link></li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">{t.footer.learning}</h4>
-              <ul className="space-y-2 text-muted-foreground">
-                <li><Link href={talkHref} className="hover:text-foreground transition-colors">{t.footer.startLearning}</Link></li>
-                <li><Link href={historyHref} className="hover:text-foreground transition-colors">{t.footer.conversationHistory}</Link></li>
-                <li><Link href="#how-it-works" className="hover:text-foreground transition-colors">{t.footer.tipsGuides}</Link></li>
+              <h4 className="mb-4 font-semibold">{t.footer.learning}</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li><Link href={talkHref} className="transition-colors hover:text-foreground">{t.footer.startLearning}</Link></li>
+                <li><Link href={historyHref} className="transition-colors hover:text-foreground">{t.footer.conversationHistory}</Link></li>
+                <li><Link href="/podcasts" className="transition-colors hover:text-foreground">{t.nav.podcasts}</Link></li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">{t.footer.support}</h4>
-              <ul className="space-y-2 text-muted-foreground">
-                <li><Link href="#" className="hover:text-foreground transition-colors">{t.footer.helpCenter}</Link></li>
-                <li><Link href="#" className="hover:text-foreground transition-colors">{t.footer.contactUs}</Link></li>
-                <li><Link href="#" className="hover:text-foreground transition-colors">{t.footer.privacy}</Link></li>
+              <h4 className="mb-4 font-semibold">{t.footer.support}</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li><Link href="#" className="transition-colors hover:text-foreground">{t.footer.helpCenter}</Link></li>
+                <li><Link href="#" className="transition-colors hover:text-foreground">{t.footer.contactUs}</Link></li>
+                <li><Link href="#" className="transition-colors hover:text-foreground">{t.footer.privacy}</Link></li>
               </ul>
             </div>
           </div>
-          <div className="border-t border-border mt-12 pt-8 text-center text-muted-foreground">
-            <p>&copy; 2024 LingDaily. {t.footer.rights}</p>
+          <div className="mt-12 border-t border-border/60 pt-8 text-center text-sm text-muted-foreground">
+            <p>&copy; 2026 LingDaily. {t.footer.rights}</p>
           </div>
         </div>
       </footer>

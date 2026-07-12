@@ -207,9 +207,14 @@ export default function Home() {
         );
         if (!news || !hasUserMessage(conversationHistory) || !userId || !isCurrentIdentity()) return;
 
+        // Correction cards are UI-only advisory items; never persist them.
+        const persistableHistory = Array.isArray(conversationHistory)
+            ? conversationHistory.filter((item) => item?.type !== 'correction')
+            : conversationHistory;
+
         const newsKey = getNewsKey(news);
         const baseline = conversationBaselineRef.current.get(newsKey) || [];
-        let historyToSave = mergeConversationHistory(baseline, conversationHistory);
+        let historyToSave = mergeConversationHistory(baseline, persistableHistory);
         if (keepalive) historyToSave = compactHistoryForKeepalive(historyToSave);
         let expectedRevision = conversationMetaRef.current.get(newsKey)?.revision ?? 0;
 
@@ -742,10 +747,35 @@ export default function Home() {
         onMessageRef.current = handleGeminiMessage;
     }, [handleGeminiMessage]);
 
+    // AI correction tool result. Rendered inline in the conversation flow but
+    // intentionally NOT persisted (stripped before serialization) so saved
+    // transcripts stay limited to real dialogue turns.
+    const handleCorrection = useCallback((correction) => {
+        if (topicHistoryLoadingRef.current) return;
+        const item = {
+            itemId: uuidv4(),
+            type: 'correction',
+            role: 'assistant',
+            correction,
+            metadata: { isFinal: true, createdAt: new Date().toISOString() },
+        };
+        setHistory((prev) => {
+            const next = [...prev, item];
+            historyRef.current = next;
+            return next;
+        });
+    }, []);
+
+    const onCorrectionRef = useRef(null);
+    useEffect(() => {
+        onCorrectionRef.current = handleCorrection;
+    }, [handleCorrection]);
+
     const initService = useCallback(() => {
         if (!serviceRef.current) {
             const config = {
                 onMessage: (...args) => onMessageRef.current?.(...args),
+                onCorrection: (...args) => onCorrectionRef.current?.(...args),
                 onConnectionUpdate: (connected) => {
                     setIsConnected(connected);
                     setIsConnecting(false);

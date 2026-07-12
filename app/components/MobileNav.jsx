@@ -73,20 +73,6 @@ export default function MobileNav({ t, signedIn, signOutAction }) {
                   {t.nav.features}
                 </Link>
                 <Link
-                  href="#how-it-works"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={() => setOpen(false)}
-                >
-                  {t.nav.how}
-                </Link>
-                <Link
-                  href="#testimonials"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={() => setOpen(false)}
-                >
-                  {t.nav.reviews}
-                </Link>
-                <Link
                   href="/podcasts"
                   className="text-muted-foreground hover:text-foreground transition-colors"
                   onClick={() => setOpen(false)}

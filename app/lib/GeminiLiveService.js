@@ -108,6 +108,44 @@ export const extractUnfamiliarEnglishToolDecl = {
     name: 'extract_unfamiliar_english',
 };
 
+// Correction tool: after a user turn, the model may surface a single gentle,
+// idiomatic rewrite of the user's target-language attempt. Purely advisory —
+// the result is streamed to the UI and is not persisted.
+export function createCorrectionToolDecl(pair) {
+    const { learningLanguage, nativeLanguage } = normalizeLanguagePair(pair);
+    const target = learningLanguage.label;
+    const native = nativeLanguage.label;
+    return {
+        name: 'record_language_correction',
+        description: `Call this tool when the user's ${target} can be improved, to offer ONE gentle, natural rewrite. Only call it when there is a genuine grammar, word-choice, or phrasing issue worth correcting — skip it when the user's ${target} is already fine. Do not call it more than once per user turn.`,
+        parameters: {
+            type: 'OBJECT',
+            properties: {
+                original: {
+                    type: 'STRING',
+                    description: `The user's original ${target} sentence or phrase that is being corrected.`,
+                },
+                corrected: {
+                    type: 'STRING',
+                    description: `The improved, natural ${target} version.`,
+                },
+                explanation: {
+                    type: 'STRING',
+                    description: `A concise ${native} explanation of what changed and why.`,
+                },
+                category: {
+                    type: 'STRING',
+                    enum: ['grammar', 'vocabulary', 'phrasing', 'other'],
+                    description: 'The main kind of improvement.',
+                },
+            },
+            required: ['original', 'corrected'],
+        },
+    };
+}
+
+export const correctionToolDecl = createCorrectionToolDecl(DEFAULT_LANGUAGE_PAIR);
+
 export class GeminiLiveServiceImpl {
     constructor(config) {
         this.session = null; // kept for API compat: truthy when connected
@@ -125,6 +163,10 @@ export class GeminiLiveServiceImpl {
         this.outputGainNode = null;
         this.outputAudioReadyPromise = null;
         this.audioPlaybackChain = Promise.resolve();
+        // Audio parts that arrived while the output context was not yet running.
+        // Replayed by flushPendingAudio() once the context unlocks so the first
+        // model turn is never silently dropped.
+        this.pendingAudioParts = [];
         this.playbackEpoch = 0;
         this.connectionEpoch = 0;
         this.languagePair = normalizeLanguagePair();
@@ -169,6 +211,7 @@ export class GeminiLiveServiceImpl {
 
     invalidatePlayback() {
         this.playbackEpoch += 1;
+        this.pendingAudioParts = [];
         this.sources.forEach((source) => { try { source.stop(); } catch (_) { } });
         this.sources.clear();
         this.nextStartTime = this.outputAudioContext?.currentTime || 0;
@@ -367,7 +410,10 @@ export class GeminiLiveServiceImpl {
                 this.session = true; // compatibility flag
 
                 // Send setup message (official reference pattern)
-                const toolDecls = [createLearningItemsToolDecl(connectionPair)];
+                const toolDecls = [
+                    createLearningItemsToolDecl(connectionPair),
+                    createCorrectionToolDecl(connectionPair),
+                ];
                 const setupMessage = {
                     setup: {
                         model: `models/${MODEL}`,
@@ -509,6 +555,11 @@ export class GeminiLiveServiceImpl {
 
             this.mediaSource.connect(this.scriptProcessor);
             this.scriptProcessor.connect(inputAudioContext.destination);
+            // Acquiring the mic on the connect gesture can leave the OUTPUT
+            // context suspended on some browsers, which is what silenced the
+            // first model turn. Resume it now (still within the gesture) and
+            // flush anything that was buffered while it was locked.
+            this.resumeOutputAudio();
             return true;
         } catch (e) {
             if (!this.isCurrentConnection(connectionEpoch, socket)) return false;
@@ -580,6 +631,8 @@ export class GeminiLiveServiceImpl {
                         || call.name === 'extract_unfamiliar_english'
                     ) {
                         await this.handleLearningItems(call.args, call.id, call.name);
+                    } else if (call.name === 'record_language_correction') {
+                        await this.handleCorrection(call.args, call.id, call.name);
                     }
                 }
             }
@@ -638,6 +691,37 @@ export class GeminiLiveServiceImpl {
         return this.handleLearningItems(args, callId, 'extract_unfamiliar_english');
     }
 
+    async handleCorrection(args = {}, callId, callName = 'record_language_correction') {
+        const payload = args && typeof args === 'object' ? args : {};
+        console.log(`Tool: ${callName}`, payload);
+
+        // Acknowledge immediately so the Live session never stalls waiting on us.
+        if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
+            const toolResponse = {
+                toolResponse: {
+                    functionResponses: [{
+                        name: callName,
+                        id: callId,
+                        response: { result: 'accepted' },
+                    }],
+                },
+            };
+            this.webSocket.send(JSON.stringify(toolResponse));
+        }
+
+        const original = typeof payload.original === 'string' ? payload.original.trim() : '';
+        const corrected = typeof payload.corrected === 'string' ? payload.corrected.trim() : '';
+        // Nothing to show if the two are missing or identical.
+        if (!original || !corrected || original === corrected) return;
+
+        this.config.onCorrection?.({
+            original,
+            corrected,
+            explanation: typeof payload.explanation === 'string' ? payload.explanation.trim() : '',
+            category: typeof payload.category === 'string' ? payload.category : 'other',
+        });
+    }
+
     // ─── Send text ─────────────────────────────────────────────────────
 
     async sendText(text) {
@@ -682,6 +766,8 @@ export class GeminiLiveServiceImpl {
         }
         this.stopInputAudio();
         this.invalidatePlayback();
+        this.pendingAudioParts = [];
+        this._pendingFlushContext = null;
         this.nextStartTime = 0;
         if (this.outputAudioContext && this.outputAudioContext.state !== 'closed') {
             try {
@@ -710,10 +796,54 @@ export class GeminiLiveServiceImpl {
         await this.resumeOutputAudio();
         if (playbackEpoch !== this.playbackEpoch || context !== this.outputAudioContext) return;
 
+        // The context can still be 'suspended' here — most often for the very
+        // first model turn, when autoplay unlock from the connect click has not
+        // yet taken effect. Instead of dropping this audio (which made the first
+        // reply silent until a later gesture), stash it and flush automatically
+        // once the context reaches 'running'.
         if (!context || context.state !== 'running') {
+            if (context && context.state === 'suspended') {
+                this.queuePendingAudio(audioParts, playbackEpoch, context);
+                return;
+            }
             throw new Error(`Output AudioContext is ${context?.state || 'unavailable'}`);
         }
 
+        this.scheduleAudioParts(audioParts, playbackEpoch, context);
+    }
+
+    // Buffer audio that arrived before the output context unlocked, and arrange
+    // to replay it the instant the context resumes. Registered once per context;
+    // repeated calls only append to the pending queue.
+    queuePendingAudio(audioParts, playbackEpoch, context) {
+        this.pendingAudioParts.push(...audioParts);
+
+        if (this._pendingFlushContext === context) return;
+        this._pendingFlushContext = context;
+
+        const flush = () => {
+            if (context.state !== 'running') {
+                // Nudge again — a resume() may have been swallowed while locked.
+                this.resumeOutputAudio();
+                return;
+            }
+            context.removeEventListener('statechange', flush);
+            if (this._pendingFlushContext === context) this._pendingFlushContext = null;
+            if (playbackEpoch !== this.playbackEpoch || context !== this.outputAudioContext) {
+                this.pendingAudioParts = [];
+                return;
+            }
+            const queued = this.pendingAudioParts;
+            this.pendingAudioParts = [];
+            this.scheduleAudioParts(queued, playbackEpoch, context);
+        };
+
+        context.addEventListener('statechange', flush);
+        // Also try immediately in case it flips to running between checks.
+        this.resumeOutputAudio().then(flush);
+    }
+
+    scheduleAudioParts(audioParts, playbackEpoch, context) {
         for (const inlineData of audioParts) {
             if (playbackEpoch !== this.playbackEpoch || context !== this.outputAudioContext) return;
             const audioBuffer = this.decodeAudioFromBase64(inlineData.data);

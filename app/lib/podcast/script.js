@@ -9,6 +9,13 @@ export const HOST_B = "DD";
 const CHUNK_NAMES = ["intro", "world", "tech", "business", "outro"];
 const MAX_GENERATION_ATTEMPTS = 2;
 
+// gemini-3-flash-preview is a thinking model, and maxOutputTokens caps thinking
+// plus visible output combined. The full 5-chunk bilingual script needs several
+// thousand output tokens, so give thinking a bounded budget and leave the rest
+// for the JSON body — otherwise thinking starves the output and truncates it.
+const THINKING_BUDGET = 4000;
+const MAX_OUTPUT_TOKENS = 32000;
+
 export const SYSTEM_PROMPT = `You are a senior producer writing a daily news podcast called "成杨英语日刊" for Chinese learners of English.
 
 The show is hosted by two friends:
@@ -360,10 +367,18 @@ export async function generatePodcastScript(newsByCategory) {
           systemInstruction: SYSTEM_PROMPT,
           responseMimeType: "application/json",
           temperature: attempt === 0 ? 0.8 : 0.4,
-          maxOutputTokens: 8000,
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
+          thinkingConfig: { thinkingBudget: THINKING_BUDGET },
         },
         contents: buildContents(userMessage, previousRaw, previousError),
       });
+
+      const finishReason = result.candidates?.[0]?.finishReason;
+      if (finishReason === "MAX_TOKENS") {
+        throw new Error(
+          "Script model output was truncated (hit maxOutputTokens); increase the output budget or reduce the thinking budget",
+        );
+      }
 
       previousRaw = result.text?.trim() || "";
       const parsed = parseScriptResponse(previousRaw);

@@ -41,7 +41,7 @@ export default function StartLearningWithLanguage({ startLabel = 'Start Learning
       <Button
         variant="outline"
         onClick={onStart}
-        className="bg-white text-black border-zinc-700 hover:bg-zinc-800 hover:text-white font-semibold"
+        className="whitespace-nowrap font-semibold"
         disabled={loading || submitting}
       >
         {startLabel}

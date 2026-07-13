@@ -8,6 +8,10 @@ import { DEFAULT_LEARNING_LANGUAGE, DEFAULT_NATIVE_LANGUAGE } from '@/app/lib/la
 
 const OUTPUT_SAMPLE_RATE = 24000;
 const PLAYBACK_LEAD_TIME_SECONDS = 0.03;
+// How long outgoing mic frames stay held after setup when no model turn ever
+// completes (e.g. no opening prompt was sent). Releasing mid-greeting at worst
+// restores normal barge-in behavior.
+const MIC_HOLD_FALLBACK_MS = 10000;
 
 // Tiny, non-intrusive celebration burst — small particle count, short duration,
 // fired near the bottom-center so it never obscures the chat.
@@ -170,6 +174,11 @@ export class GeminiLiveServiceImpl {
         this.playbackEpoch = 0;
         this.connectionEpoch = 0;
         this.languagePair = normalizeLanguagePair();
+        // While true, mic frames are captured but not sent. Active from setup
+        // until the model's first turnComplete so the opening prompt cannot be
+        // barged-in by ambient noise before the greeting becomes audible.
+        this.micStreamHold = false;
+        this.micStreamHoldTimer = null;
 
         this.config = config;
     }
@@ -252,6 +261,25 @@ export class GeminiLiveServiceImpl {
 
     isCurrentConnection(epoch, socket = null) {
         return epoch === this.connectionEpoch && (!socket || socket === this.webSocket);
+    }
+
+    beginMicStreamHold(connectionEpoch, socket) {
+        this.micStreamHold = true;
+        if (this.micStreamHoldTimer) clearTimeout(this.micStreamHoldTimer);
+        this.micStreamHoldTimer = setTimeout(() => {
+            this.micStreamHoldTimer = null;
+            if (this.isCurrentConnection(connectionEpoch, socket)) {
+                this.releaseMicStreamHold();
+            }
+        }, MIC_HOLD_FALLBACK_MS);
+    }
+
+    releaseMicStreamHold() {
+        this.micStreamHold = false;
+        if (this.micStreamHoldTimer) {
+            clearTimeout(this.micStreamHoldTimer);
+            this.micStreamHoldTimer = null;
+        }
     }
 
     stopInputAudio() {
@@ -466,7 +494,8 @@ export class GeminiLiveServiceImpl {
 
                     // After setup complete, start mic & signal connected
                     if (msg.setupComplete) {
-                        console.log("Setup complete — starting mic");
+                        console.log("Setup complete — starting mic (frames held until first model turn)");
+                        this.beginMicStreamHold(connectionEpoch, socket);
                         const micStarted = await this.startMic(connectionEpoch, socket);
                         if (!micStarted || !this.isCurrentConnection(connectionEpoch, socket)) {
                             settleResolve(false);
@@ -530,6 +559,7 @@ export class GeminiLiveServiceImpl {
             this.scriptProcessor.onaudioprocess = (e) => {
                 if (
                     this.isMuted
+                    || this.micStreamHold
                     || !this.connected
                     || !this.isCurrentConnection(connectionEpoch, socket)
                 ) return;
@@ -616,6 +646,8 @@ export class GeminiLiveServiceImpl {
 
         // Turn complete
         if (serverContent?.turnComplete) {
+            // First model turn is done — open the mic stream for the user.
+            this.releaseMicStreamHold();
             this.config.onMessage("", true, 'model');
             this.config.onMessage("", true, 'user');
         }
@@ -728,6 +760,10 @@ export class GeminiLiveServiceImpl {
         const socket = this.webSocket;
         if (!this.connected || !socket || socket.readyState !== WebSocket.OPEN) return;
 
+        // A typed message supersedes the first-turn hold: restore the normal
+        // realtime-input conditions the model expects around text input.
+        this.releaseMicStreamHold();
+
         // Optimistically update UI
         this.config.onMessage(text, true, 'user');
 
@@ -744,10 +780,15 @@ export class GeminiLiveServiceImpl {
         const socket = this.webSocket;
         if (!this.connected || !socket || socket.readyState !== WebSocket.OPEN) return;
 
-        // Use realtimeInput.text — same as official reference
+        // realtimeInput.text carries no explicit end-of-turn — the server
+        // derives one from voice activity, which never arrives while the mic
+        // streams silence, so opening prompts could sit unanswered forever.
+        // clientContent with turnComplete forces generation to start from the
+        // accumulated prompt immediately.
         const message = {
-            realtimeInput: {
-                text: text,
+            clientContent: {
+                turns: [{ role: 'user', parts: [{ text }] }],
+                turnComplete: true,
             },
         };
         socket.send(JSON.stringify(message));
@@ -765,6 +806,7 @@ export class GeminiLiveServiceImpl {
             try { socket.close(); } catch (_) { /* ignore */ }
         }
         this.stopInputAudio();
+        this.releaseMicStreamHold();
         this.invalidatePlayback();
         this.pendingAudioParts = [];
         this._pendingFlushContext = null;

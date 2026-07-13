@@ -251,3 +251,92 @@ describe('Gemini Live connection epochs', () => {
     service.disconnect()
   })
 })
+
+async function connectService(service) {
+  const connectPromise = service.connect('prompt', 'token')
+  await waitForSocketCount(1)
+  const socket = FakeWebSocket.instances[0]
+  socket.readyState = FakeWebSocket.OPEN
+  socket.onopen()
+  await socket.onmessage({ data: JSON.stringify({ setupComplete: true }) })
+  await expect(connectPromise).resolves.toBe(true)
+  return socket
+}
+
+function sentMessages(socket) {
+  return socket.send.mock.calls.map(([payload]) => JSON.parse(payload))
+}
+
+function emitMicFrame(service) {
+  service.scriptProcessor.onaudioprocess({
+    inputBuffer: { getChannelData: () => new Float32Array([0, 0.5, -0.5, 1]) },
+  })
+}
+
+describe('Gemini Live first turn', () => {
+  it('sends context messages as clientContent with an explicit turnComplete', async () => {
+    const { service } = createService()
+    const socket = await connectService(service)
+
+    await service.sendContextMessage('[System Initialize] intro please')
+
+    const clientContent = sentMessages(socket).find((msg) => msg.clientContent)
+    expect(clientContent).toEqual({
+      clientContent: {
+        turns: [{ role: 'user', parts: [{ text: '[System Initialize] intro please' }] }],
+        turnComplete: true,
+      },
+    })
+
+    service.disconnect()
+  })
+
+  it('holds mic frames until the first model turn completes', async () => {
+    const { service } = createService()
+    const socket = await connectService(service)
+
+    emitMicFrame(service)
+    expect(sentMessages(socket).some((msg) => msg.realtimeInput?.audio)).toBe(false)
+
+    await socket.onmessage({
+      data: JSON.stringify({ serverContent: { turnComplete: true } }),
+    })
+    emitMicFrame(service)
+    expect(sentMessages(socket).some((msg) => msg.realtimeInput?.audio)).toBe(true)
+
+    service.disconnect()
+  })
+
+  it('releases the mic hold when the user sends a typed message', async () => {
+    const { service } = createService()
+    const socket = await connectService(service)
+    expect(service.micStreamHold).toBe(true)
+
+    await service.sendText('hello')
+
+    expect(service.micStreamHold).toBe(false)
+    emitMicFrame(service)
+    expect(sentMessages(socket).some((msg) => msg.realtimeInput?.audio)).toBe(true)
+
+    service.disconnect()
+  })
+
+  it('releases the mic hold via the fallback timer when no turn ever completes', async () => {
+    vi.useFakeTimers()
+    try {
+      const { service } = createService()
+      const socket = await connectService(service)
+      expect(service.micStreamHold).toBe(true)
+
+      vi.advanceTimersByTime(10000)
+
+      expect(service.micStreamHold).toBe(false)
+      emitMicFrame(service)
+      expect(sentMessages(socket).some((msg) => msg.realtimeInput?.audio)).toBe(true)
+
+      service.disconnect()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

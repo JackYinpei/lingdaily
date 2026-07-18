@@ -173,4 +173,73 @@ describe("podcast script generation", () => {
     await expect(generatePodcastScript([])).rejects.toThrow(/after one correction retry/);
     expect(generateContent).toHaveBeenCalledTimes(2);
   });
+
+  it("treats a validation error containing a retryable keyword as a correction, not a transient retry", async () => {
+    // The model emits a duplicate vocabulary term that happens to be a word the
+    // transient-error pattern also matches ("deadline"). This must stay on the
+    // single-correction path, not trigger backoff retries or model failover.
+    const invalid = validScript();
+    invalid.shownotes.vocabulary[0].term = "deadline";
+    invalid.shownotes.vocabulary[7].term = "deadline";
+    const generateContent = vi.fn().mockResolvedValue({ text: JSON.stringify(invalid) });
+    createServerGeminiClient.mockReturnValue({ models: { generateContent } });
+
+    await expect(generatePodcastScript([])).rejects.toThrow(/after one correction retry/);
+    expect(generateContent).toHaveBeenCalledTimes(2);
+    // Never fails over: both attempts stay on the primary model.
+    expect(generateContent.mock.calls[1][0].model).toBe(generateContent.mock.calls[0][0].model);
+  });
+
+  it("retries a transient overload with the original prompt, not a correction", async () => {
+    vi.useFakeTimers();
+    try {
+      // No numeric status: exercises the stringified-body detection path.
+      const overload = new Error(
+        '{"error":{"code":503,"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}',
+      );
+      const generateContent = vi.fn()
+        .mockRejectedValueOnce(overload)
+        .mockResolvedValueOnce({ text: JSON.stringify(validScript()) });
+      createServerGeminiClient.mockReturnValue({ models: { generateContent } });
+
+      const promise = generatePodcastScript([]);
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      expect(result.episode_summary).toContain("\n\n");
+      expect(generateContent).toHaveBeenCalledTimes(2);
+      // The retry re-sends the original prompt, never a "failed validation" note.
+      expect(generateContent.mock.calls[1][0].contents.at(-1).parts[0].text).not.toContain(
+        "failed validation",
+      );
+      // First retry stays on the primary model.
+      expect(generateContent.mock.calls[1][0].model).toBe(generateContent.mock.calls[0][0].model);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fails over to the stable model when the preview stays overloaded", async () => {
+    vi.useFakeTimers();
+    try {
+      const overload = Object.assign(new Error("model is experiencing high demand"), { status: 503 });
+      const generateContent = vi.fn()
+        .mockRejectedValueOnce(overload)
+        .mockRejectedValueOnce(overload)
+        .mockResolvedValueOnce({ text: JSON.stringify(validScript()) });
+      createServerGeminiClient.mockReturnValue({ models: { generateContent } });
+
+      const promise = generatePodcastScript([]);
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      expect(result.episode_summary).toContain("\n\n");
+      expect(generateContent).toHaveBeenCalledTimes(3);
+      const models = generateContent.mock.calls.map((call) => call[0].model);
+      expect(models[0]).toBe("gemini-3-flash-preview");
+      expect(models[2]).toBe("gemini-2.5-flash");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

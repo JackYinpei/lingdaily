@@ -7,7 +7,6 @@ export const HOST_A = "LL";
 export const HOST_B = "DD";
 
 const CHUNK_NAMES = ["intro", "world", "tech", "business", "outro"];
-const MAX_GENERATION_ATTEMPTS = 2;
 
 // gemini-3-flash-preview is a thinking model, and maxOutputTokens caps thinking
 // plus visible output combined. The full 5-chunk bilingual script needs several
@@ -15,6 +14,21 @@ const MAX_GENERATION_ATTEMPTS = 2;
 // for the JSON body — otherwise thinking starves the output and truncates it.
 const THINKING_BUDGET = 4000;
 const MAX_OUTPUT_TOKENS = 32000;
+
+// The preview model periodically returns 503 "high demand". Retry those
+// transient failures with backoff instead of burning the correction budget on
+// them, and fail over to a stable GA model once the preview stays overloaded.
+// Both models are overridable so ops can swap them without a redeploy.
+const PRIMARY_MODEL = (process.env.PODCAST_SCRIPT_MODEL || "gemini-3-flash-preview").trim();
+const FALLBACK_MODEL = (process.env.PODCAST_SCRIPT_FALLBACK_MODEL ?? "gemini-2.5-flash").trim();
+const SCRIPT_MODELS = [PRIMARY_MODEL, FALLBACK_MODEL].filter(
+  (model, index, all) => model && all.indexOf(model) === index,
+);
+const MAX_TRANSIENT_RETRIES = 4;
+const TRANSIENT_RETRIES_BEFORE_FALLBACK = 2;
+const MAX_VALIDATION_RETRIES = 1;
+const RETRY_BASE_DELAY_MS = 1500;
+const RETRY_MAX_DELAY_MS = 15000;
 
 export const SYSTEM_PROMPT = `You are a senior producer writing a daily news podcast called "成杨英语日刊" for Chinese learners of English.
 
@@ -335,6 +349,34 @@ function parseScriptResponse(raw) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Exponential backoff with jitter so simultaneous overloaded requests don't all
+// retry in lockstep and re-congest the model.
+function backoffDelay(retryNumber) {
+  const capped = Math.min(RETRY_BASE_DELAY_MS * 2 ** (retryNumber - 1), RETRY_MAX_DELAY_MS);
+  return capped / 2 + Math.random() * (capped / 2);
+}
+
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+const RETRYABLE_STATUS_PATTERN = /\b(?:unavailable|resource_exhausted|internal|overloaded|deadline)\b|high demand|try again|econnreset|etimedout|fetch failed|socket hang up|network error/i;
+
+// Distinguish transient upstream failures (503 "high demand", 429 rate limits,
+// 5xx, network blips) from parse/validation errors. Only transient failures are
+// worth retrying with the same input or failing over to another model; a
+// parseable-but-invalid script instead earns a targeted correction retry.
+function isRetryableApiError(error) {
+  if (!error) return false;
+  const status = error.status ?? error.code ?? error?.error?.code;
+  if (typeof status === "number" && RETRYABLE_STATUS_CODES.has(status)) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  const codeMatch = message.match(/"code"\s*:\s*(\d{3})/);
+  if (codeMatch && RETRYABLE_STATUS_CODES.has(Number(codeMatch[1]))) return true;
+  return RETRYABLE_STATUS_PATTERN.test(message);
+}
+
 function buildContents(userMessage, previousRaw, validationError) {
   if (!validationError) {
     return [{ role: "user", parts: [{ text: userMessage }] }];
@@ -356,23 +398,73 @@ export async function generatePodcastScript(newsByCategory) {
   if (!ai) throw new Error("Gemini API key is not configured");
 
   const userMessage = buildUserMessage(newsByCategory);
+  let modelIndex = 0;
   let previousRaw = "";
   let previousError = "";
+  let validationRetries = 0;
+  let transientRetries = 0;
 
-  for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt += 1) {
+  while (true) {
+    const model = SCRIPT_MODELS[modelIndex];
+
+    // Phase 1: the API call. Only failures thrown here are candidates for
+    // transient retry/failover. Keeping this catch separate from the parse and
+    // validation below means error classification never runs the loose text
+    // pattern over our own validation messages (which interpolate model output
+    // such as chunk names or vocabulary terms).
+    let result;
     try {
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+      result = await ai.models.generateContent({
+        model,
         config: {
           systemInstruction: SYSTEM_PROMPT,
           responseMimeType: "application/json",
-          temperature: attempt === 0 ? 0.8 : 0.4,
+          temperature: previousError ? 0.4 : 0.8,
           maxOutputTokens: MAX_OUTPUT_TOKENS,
           thinkingConfig: { thinkingBudget: THINKING_BUDGET },
         },
         contents: buildContents(userMessage, previousRaw, previousError),
       });
+    } catch (apiError) {
+      const message = apiError instanceof Error ? apiError.message : String(apiError);
 
+      // A permanent API error (bad request, auth, quota exhausted for good)
+      // won't be fixed by resending, so surface it immediately.
+      if (!isRetryableApiError(apiError)) {
+        throw new Error(`Script generation failed: ${message}`);
+      }
+
+      // Transient overload/rate-limit/network blip. Retry the SAME request with
+      // backoff — never re-prompt it as a bogus validation correction.
+      if (transientRetries >= MAX_TRANSIENT_RETRIES) {
+        throw new Error(
+          `Script generation failed after ${transientRetries} transient retries: ${message}`,
+        );
+      }
+      transientRetries += 1;
+
+      // Fail over to the stable model once the preview stays overloaded, and
+      // restart it from the clean prompt rather than another model's draft.
+      if (
+        modelIndex < SCRIPT_MODELS.length - 1
+        && transientRetries >= TRANSIENT_RETRIES_BEFORE_FALLBACK
+      ) {
+        modelIndex += 1;
+        previousRaw = "";
+        previousError = "";
+      }
+
+      console.warn(
+        `[podcast/script] Transient error from ${model} (retry ${transientRetries}/${MAX_TRANSIENT_RETRIES}): ${message}`,
+      );
+      await sleep(backoffDelay(transientRetries));
+      continue;
+    }
+
+    // Phase 2: the call succeeded, so any failure below is a content problem
+    // (truncation, invalid JSON, failed validation). Those earn a single
+    // targeted correction retry, not a transient backoff.
+    try {
       const finishReason = result.candidates?.[0]?.finishReason;
       if (finishReason === "MAX_TOKENS") {
         throw new Error(
@@ -384,10 +476,13 @@ export async function generatePodcastScript(newsByCategory) {
       const parsed = parseScriptResponse(previousRaw);
       validatePodcastScript(parsed);
       return normalizePodcastScript(parsed);
-    } catch (error) {
-      previousError = error instanceof Error ? error.message : String(error);
+    } catch (validationError) {
+      const message = validationError instanceof Error ? validationError.message : String(validationError);
+      if (validationRetries >= MAX_VALIDATION_RETRIES) {
+        throw new Error(`Script generation failed after one correction retry: ${message}`);
+      }
+      validationRetries += 1;
+      previousError = message;
     }
   }
-
-  throw new Error(`Script generation failed after one correction retry: ${previousError}`);
 }

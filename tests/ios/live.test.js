@@ -70,13 +70,26 @@ describe('iOS Live development token', () => {
     expect(create).not.toHaveBeenCalled()
   })
   it('strictly validates scenario, goals, optional context and arbitrary config before provisioning', async () => {
-    for (const input of [ {}, { ...body(), model: 'expensive' }, { ...body(), wsURL: 'wss://evil.test' },
+    for (const input of [ {}, { ...body(), model: 'x'.repeat(101) }, { ...body(), wsURL: 'wss://evil.test' },
       { ...body(), context: 'a'.repeat(501) }, { ...body(), scenario: { ...body().scenario, goals: ['one'] } },
       { ...body(), stepIndex: 3 }, { ...body(), scenario: { ...body().scenario, extra: 'prompt' } } ]) {
       expect((await POST(request(input))).status).toBe(400)
     }
     expect(create).not.toHaveBeenCalled()
     expect(liveTokenRequestSchema.safeParse({ scenario: body().scenario }).success).toBe(true)
+  })
+  it('lets the learner pick only a listed Live model; anything else falls back to the server default', async () => {
+    vi.stubEnv('GEMINI_LIVE_MODEL', 'gemini-3.1-flash-live-preview')
+    const issued = async model => {
+      delete globalThis[Symbol.for('lingdaily.iosLiveToken.v2')]
+      const response = await POST(request({ ...body(), model }))
+      const locked = create.mock.calls.at(-1)[0].config.liveConnectConstraints
+      return { status: response.status, model: (await response.json()).model, locked: locked.model, prompt: locked.config.systemInstruction }
+    }
+    expect(await issued('gemini-3.8-live')).toMatchObject({ status: 200, model: 'gemini-3.8-live', locked: 'gemini-3.8-live' })
+    const unlisted = await issued('gemini-ultra-expensive')
+    expect(unlisted).toMatchObject({ status: 200, model: 'gemini-3.1-flash-live-preview', locked: 'gemini-3.1-flash-live-preview' })
+    expect(unlisted.prompt).not.toContain('gemini-ultra-expensive')
   })
   it('keeps HTTP body and media limits', async () => {
     expect((await POST(request(body(), pairing, { 'Content-Type': 'text/plain' }))).status).toBe(415)

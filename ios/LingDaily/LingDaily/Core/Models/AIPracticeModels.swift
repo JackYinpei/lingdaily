@@ -86,6 +86,8 @@ struct AIPracticeRequest: Codable {
     let context: String
     let scenario: Scenario
     let messages: [Message]
+    /// The learner's model choice; the server only honours listed models.
+    var model: String? = nil
 }
 
 struct AIPracticeResponse: Codable {

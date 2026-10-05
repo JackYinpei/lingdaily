@@ -92,6 +92,10 @@ flowchart LR
 
 Live 建立后的开场信号由 `LiveKickoff` 决定：新会话请对方开场；对方最后一句尚未回答（从文字切到语音或重连）时不发任何信号，等学习者先说，避免模型把上一句问题再问一遍；学习者最后说话时请对方接着回应，且不再打招呼、不重复。服务端 Live 指令同样要求续聊时不重复已说内容。
 
+## App 内模型切换（2026-10-05）
+
+所有登录用户可在「我的 → AI 模型」按功能（文字对话、卡住时的建议、单句翻译、语音通话）选择模型，选择存在本机 UserDefaults（`aiModel.<feature>`，空=服务端默认）。可选清单只在服务端 `app/lib/ios/models.js` 维护并由 `GET /api/ios/models` 下发；practice/translate/suggest/live-token 请求可带 `model`，服务端 `resolveModel` 只接受清单内或服务端默认的模型，其余一律回退默认（不报错、也不进入提示词），客户端无法调用清单外模型。服务端默认仍由 `GEMINI_PRACTICE_MODEL / GEMINI_SUGGEST_MODEL / GEMINI_TRANSLATE_MODEL / GEMINI_LIVE_MODEL` 配置。清单内每个模型均于 2026-10-05 用项目真实提示词实测：文字 `gemini-3.1-flash-lite`（~3s）、`gemini-3.5-flash-lite`（~1.2s）、`gemini-3.8-flash`（常 503、计费思考）；语音 `gemini-3.1-flash-live-preview`、`gemini-3.8-live`、`gemini-2.5-flash-native-audio-latest` 均以完整 Live 配置跑通一轮。
+
 ## 通话中卡住时的回复建议（2026-10-05）
 
 Live 通话中，对方一句结束（服务端 turnComplete，通常早于播放结束）就在后台预生成建议（失败自动重试一次，每句一次）；对方说完后学习者 8 秒未开口且该句尚未回答，或学习者点「卡住了？」时直接展示预生成结果（未就绪则等待，均失败时手动请求才提示重试）。建议模型由服务端 `GEMINI_SUGGEST_MODEL` 配置，默认同练习模型 `gemini-3.1-flash-lite`：2026-10-05 实测 3/3 成功、约 3–4 秒、无思考 token；`gemini-3.8-flash` 3 次中 2 次 503 高负载，成功那次另有 443 个计费思考 token，故未采用。接口 `POST /api/ios/suggest`（场景、目标、当前任务与最近 12 句作为数据传入，文字模型生成）。返回 `hint`（中文：该说什么，不是整句翻译）、`keywords`、`reply`（学习者视角英文参考句）和 `meaning`。卡片先显示中文提示与关键词，点「看参考说法」才展开英文，保留自己组织句子的练习。每句对方台词自动最多提示一次；学习者开口或对方开始说下一句时卡片收起；建议不落库、不同步。静音时不自动提示。

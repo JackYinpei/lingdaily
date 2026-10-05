@@ -41,14 +41,30 @@ struct PracticeHomeView: View {
                     if !account.canPractice { signInCard }
                     if let unfinished { continueCard(unfinished) }
                     VStack(spacing: 14) {
-                        ForEach(store.archive.scenarios) { scenario in
-                            sceneButton(scenario, isCustom: true).contextMenu {
-                                Button(role: .destructive) { store.removeScenario(scenario.id) } label: {
-                                    Label("删除这个场景", systemImage: "trash")
+                        ForEach(store.archive.scenarios.filter { !finished.contains($0.id) }) { scenario in
+                            customSceneButton(scenario)
+                        }
+                        ForEach(ScenarioLibrary.all.filter { !finished.contains($0.id) }) { sceneButton($0, isCustom: false) }
+                    }
+                    if !finishedScenarios.isEmpty {
+                        // Finished scenarios fold away so new ones stay on top; still one tap to practise again.
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("练过的").font(.subheadline.weight(.semibold)).foregroundColor(Brand.secondary)
+                            ForEach(finishedScenarios, id: \.scenario.id) { item in
+                                Button { selectedScenario = item.scenario } label: {
+                                    CompactSceneCard(scenario: item.scenario, isCustom: item.isCustom)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("scene-\(item.scenario.id)")
+                                .contextMenu {
+                                    if item.isCustom {
+                                        Button(role: .destructive) { store.removeScenario(item.scenario.id) } label: {
+                                            Label("删除这个场景", systemImage: "trash")
+                                        }
+                                    }
                                 }
                             }
                         }
-                        ForEach(ScenarioLibrary.all) { sceneButton($0, isCustom: false) }
                     }
                 }
                 .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 32)
@@ -64,6 +80,24 @@ struct PracticeHomeView: View {
         .fullScreenCover(item: $selectedScenario) { PreparationFlowView(scenario: $0) }
         .fullScreenCover(item: $resumed) { session in
             ConversationView(initialSession: session, onClose: { resumed = nil })
+        }
+    }
+
+    /// Scenarios with at least one completed rehearsal.
+    private var finished: Set<String> {
+        Set(store.archive.sessions.filter { $0.phase == .completed }.map(\.scenario.id))
+    }
+
+    private var finishedScenarios: [(scenario: PracticeScenario, isCustom: Bool)] {
+        store.archive.scenarios.filter { finished.contains($0.id) }.map { ($0, true) }
+            + ScenarioLibrary.all.filter { finished.contains($0.id) }.map { ($0, false) }
+    }
+
+    private func customSceneButton(_ scenario: PracticeScenario) -> some View {
+        sceneButton(scenario, isCustom: true).contextMenu {
+            Button(role: .destructive) { store.removeScenario(scenario.id) } label: {
+                Label("删除这个场景", systemImage: "trash")
+            }
         }
     }
 
@@ -151,6 +185,30 @@ struct SceneCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Brand.tone(scenario.id))
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// One-line card for a scenario already practised to the end.
+struct CompactSceneCard: View {
+    let scenario: PracticeScenario
+    var isCustom = false
+    var body: some View {
+        HStack(spacing: 12) {
+            Avatar(scenario: scenario, size: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(scenario.title).font(.subheadline.weight(.semibold)).foregroundColor(Brand.ink).lineLimit(1)
+                Text("\(scenario.partner) · \(isCustom ? "我的 · " : "")\(scenario.category)")
+                    .font(.caption).foregroundColor(Brand.inkOnTone).lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Label("已练完", systemImage: "checkmark").font(.caption.weight(.medium)).foregroundColor(Brand.inkOnTone)
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundColor(Brand.inkOnTone)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Brand.tone(scenario.id))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }

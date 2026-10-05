@@ -210,6 +210,8 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 | `POST /api/realtime-token` | 登录 | Gemini Live 一次性 token |
 | `POST /api/ios/auth/apple` | 公开（需有效 Apple token） | iOS Apple 登录，签发 iOS 会话 |
 | `POST /api/ios/practice`、`/scenario`、`/live-token` | iOS 会话 | 原生练习、场景生成、Live 临时 token |
+| `GET /api/ios/models` | iOS 会话 | App 可选模型清单（按功能：practice/suggest/translate/live），见 `app/lib/ios/models.js` |
+| `POST /api/ios/scenario-ideas` | iOS 会话 | 新建场景页「换一批」：生成 3 条不重复的场景灵感 |
 | `POST /api/ios/suggest` | iOS 会话 | 通话中卡住时的回复建议：中文提示 + 关键词 + 学习者视角英文参考句及中文意思 |
 | `POST /api/ios/translate` | iOS 会话 | 按需把对方一句话译成中文（Live 字幕没有自带翻译），结果存进该消息并随云同步 |
 | `GET/POST /api/ios/sync` | iOS 会话 | 原生云同步：上传待同步改动并返回账号云端快照（写入下方共享表） |

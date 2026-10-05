@@ -56,6 +56,8 @@ final class PracticeViewModel: ObservableObject {
         store.save(session)
     }
 
+    func keepDraft(_ text: String) { session.keepDraft(text) }
+
     func enterLive() { pause(); session.beginLive() }
     func enterText(store: PracticeStore) { session.prepareText(); requestPending(store: store) }
     func updateLive(_ changed: PracticeSession) { session = changed }

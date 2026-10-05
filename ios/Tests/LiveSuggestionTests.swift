@@ -25,4 +25,18 @@ final class LiveSuggestionTests: XCTestCase {
         XCTAssertEqual(Set(json?.keys.map { $0 } ?? []), ["requestId", "scenario", "goal", "context", "stepIndex", "messages"],
                        "Matches the server's strict schema")
     }
+
+    func testUnsentDraftIsKeptAndClearedOnSend() throws {
+        var session = PracticeSession(scenario: scenario)
+        session.keepDraft("We found a bug in the")
+        XCTAssertEqual(session.draft, "We found a bug in the")
+        let restored = try JSONDecoder().decode(PracticeSession.self, from: JSONEncoder().encode(session))
+        XCTAssertEqual(restored.draft, "We found a bug in the", "The draft survives saving")
+        session.keepDraft("   ")
+        XCTAssertNil(session.draft)
+        session.keepDraft("We found a bug.")
+        XCTAssertTrue(session.submit("We found a bug."))
+        XCTAssertNil(session.draft, "Sending clears the draft")
+    }
 }
+

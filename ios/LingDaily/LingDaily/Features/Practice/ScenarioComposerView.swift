@@ -8,10 +8,15 @@ struct ScenarioComposerView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var task: Task<Void, Never>?
+    @State private var examples = Self.starterExamples
+    /// Every idea shown so far, so a new batch never repeats one.
+    @State private var shownIdeas = Self.starterExamples
+    @State private var refreshing = false
+    @State private var refreshError: String?
     @FocusState private var focused: Bool
     let onCreated: (PracticeScenario) -> Void
 
-    private static let examples = [
+    private static let starterExamples = [
         "周五要跟房东谈退押金，他说墙上有划痕要扣钱",
         "下周一第一次和海外客户开视频会，要做自我介绍",
         "在机场航班取消了，要去柜台改签到明天早上",
@@ -36,7 +41,7 @@ struct ScenarioComposerView: View {
                             .accessibilityIdentifier("scenario-description")
                             .onChange(of: description) { description = String($0.prefix(300)) }
                         if description.isEmpty {
-                            Text("比如：\(Self.examples[0])").font(.body).foregroundColor(Brand.secondary)
+                            Text("比如：\(Self.starterExamples[0])").font(.body).foregroundColor(Brand.secondary)
                                 .padding(.horizontal, 17).padding(.vertical, 20).allowsHitTesting(false)
                         }
                     }
@@ -44,8 +49,24 @@ struct ScenarioComposerView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Brand.line))
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("试试这些").font(.caption).foregroundColor(Brand.secondary)
-                        ForEach(Self.examples, id: \.self) { example in
+                        HStack {
+                            Text("试试这些").font(.caption).foregroundColor(Brand.secondary)
+                            Spacer()
+                            Button(action: refreshIdeas) {
+                                HStack(spacing: 4) {
+                                    if refreshing { ProgressView().scaleEffect(0.7) }
+                                    else { Image(systemName: "arrow.triangle.2.circlepath") }
+                                    Text(refreshing ? "正在想…" : "换一批")
+                                }
+                            }
+                            .font(.caption.weight(.medium)).foregroundColor(Brand.ink).frame(minHeight: 32)
+                            .disabled(refreshing || isLoading)
+                            .accessibilityIdentifier("refresh-ideas")
+                        }
+                        if let refreshError {
+                            Text(refreshError).font(.caption).foregroundColor(Brand.secondary)
+                        }
+                        ForEach(examples, id: \.self) { example in
                             Button { description = example } label: {
                                 Text(example).font(.subheadline).foregroundColor(Brand.ink)
                                     .multilineTextAlignment(.leading)
@@ -85,6 +106,23 @@ struct ScenarioComposerView: View {
         }
         .interactiveDismissDisabled(isLoading)
         .onDisappear { task?.cancel() }
+    }
+
+    private func refreshIdeas() {
+        guard !refreshing else { return }
+        refreshing = true
+        refreshError = nil
+        let avoid = shownIdeas
+        Task {
+            defer { refreshing = false }
+            do {
+                let ideas = try await PracticeAPIClient().scenarioIdeas(avoiding: avoid)
+                examples = ideas
+                shownIdeas += ideas
+            } catch {
+                refreshError = error.localizedDescription
+            }
+        }
     }
 
     private func generate() {

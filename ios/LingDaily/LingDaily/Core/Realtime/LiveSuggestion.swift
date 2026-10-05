@@ -12,6 +12,7 @@ struct LiveSuggestionRequest: Encodable {
     let goal, context: String
     let stepIndex: Int
     let messages: [LiveTokenRequest.Message]
+    var model: String? = nil
 
     init?(session: PracticeSession) {
         let live = LiveTokenRequest(session: session)

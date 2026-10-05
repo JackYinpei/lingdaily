@@ -30,6 +30,7 @@ struct SettingsView: View {
                         Toggle("自动朗读对方的话", isOn: $autoReadReplies)
                             .font(.subheadline).foregroundColor(Brand.ink).tint(Brand.accent)
                     }.surfaceCard()
+                    if account.canPractice { AIModelCard() }
                     if account.session != nil && !account.usesLocalDevelopment {
                         Button("删除账号") { confirmingDeletion = true }
                             .font(.subheadline).foregroundColor(Brand.accent)
@@ -166,3 +167,64 @@ private struct DeleteAccountSheet: View {
         .interactiveDismissDisabled(deleting)
     }
 }
+
+/// Lets the learner pick a model per feature from the server's allowed list.
+/// The choice is stored on this device; empty means the server default.
+private struct AIModelCard: View {
+    @State private var catalog: AIModelCatalog?
+    @State private var failed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("AI 模型").font(.subheadline).foregroundColor(Brand.ink)
+            if let catalog {
+                ForEach(AIModelFeature.allCases) { feature in
+                    if feature != AIModelFeature.allCases.first { Brand.line.frame(height: 1) }
+                    ModelRow(feature: feature, options: catalog.feature(feature))
+                }
+                Text("只影响这台设备，换模型不会影响已有记录。").font(.caption).foregroundColor(Brand.secondary)
+            } else if failed {
+                Button("暂时读不到可选模型，点此重试") { Task { await load() } }
+                    .font(.caption).foregroundColor(Brand.secondary).frame(minHeight: 44)
+            } else {
+                ProgressView().frame(maxWidth: .infinity, minHeight: 44)
+            }
+        }
+        .surfaceCard()
+        .task { if catalog == nil { await load() } }
+    }
+
+    private func load() async {
+        failed = false
+        do { catalog = try await PracticeAPIClient().modelCatalog() } catch { failed = true }
+    }
+}
+
+private struct ModelRow: View {
+    let feature: AIModelFeature
+    let options: AIModelCatalog.Feature
+    @AppStorage private var selection: String
+
+    init(feature: AIModelFeature, options: AIModelCatalog.Feature) {
+        self.feature = feature
+        self.options = options
+        _selection = AppStorage(wrappedValue: "", AIModelPreference.key(feature))
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(feature.title).font(.subheadline).foregroundColor(Brand.ink)
+            Spacer(minLength: 8)
+            Picker(feature.title, selection: $selection) {
+                Text("默认（\(options.default)）").tag("")
+                ForEach(options.choices.filter { $0.id != options.default }, id: \.id) { choice in
+                    Text("\(choice.id) · \(choice.note)").tag(choice.id)
+                }
+            }
+            .pickerStyle(.menu).tint(Brand.secondary).font(.caption)
+            .accessibilityIdentifier("model-\(feature.rawValue)")
+        }
+        .frame(minHeight: 44)
+    }
+}
+

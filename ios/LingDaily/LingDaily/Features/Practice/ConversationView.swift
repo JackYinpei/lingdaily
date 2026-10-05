@@ -18,6 +18,9 @@ struct ConversationView: View {
     @StateObject private var translations = BubbleTranslations()
     @FocusState private var inputFocused: Bool
     let onClose: () -> Void
+    /// Set when the learner already chose 进入语音通话: the call starts without a second tap.
+    private let autoStartVoice: Bool
+    @State private var autoStarted = false
     private var session: PracticeSession { model.session }
     private var messageCount: Int { session.messages.count }
     private var lastMessageText: String { session.messages.last?.text ?? "" }
@@ -25,8 +28,11 @@ struct ConversationView: View {
     private var practiceStep: PracticeStep { session.suggestedStep ?? session.step }
     private var isLastStep: Bool { session.stepIndex + 1 == session.scenario.steps.count }
 
-    init(initialSession: PracticeSession, initialVoiceMode: Bool? = nil, onClose: @escaping () -> Void) {
+    init(initialSession: PracticeSession, initialVoiceMode: Bool? = nil, autoStartVoice: Bool = false,
+         onClose: @escaping () -> Void) {
+        self.autoStartVoice = autoStartVoice
         _model = StateObject(wrappedValue: PracticeViewModel(session: initialSession))
+        _draft = State(initialValue: initialSession.draft ?? "")
         let preferred = initialVoiceMode ?? (UserDefaults.standard.object(forKey: "preferVoicePractice") as? Bool ?? true)
         _voiceMode = State(initialValue: initialSession.isAI && preferred)
         self.onClose = onClose
@@ -57,7 +63,10 @@ struct ConversationView: View {
             }
         }
         .onChange(of: scenePhase) { phase in
-            if phase == .background { dictationActive = false; live.stop(); speech.stopAll(); model.pause(); store.save(session) }
+            if phase == .background {
+                dictationActive = false; live.stop(); speech.stopAll(); model.pause()
+                model.keepDraft(draft); store.save(session)
+            }
         }
         .onChange(of: voiceMode) { enabled in
             dictationActive = false; speech.stopAll(); inputFocused = false
@@ -65,7 +74,15 @@ struct ConversationView: View {
             if enabled { model.enterLive() }
             else { live.stop(); model.enterText(store: store) }
         }
-        .onAppear { if voiceMode { model.enterLive() } else { model.requestPending(store: store) } }
+        .onAppear {
+            if voiceMode {
+                model.enterLive()
+                if autoStartVoice && !autoStarted && live.state == .disconnected {
+                    autoStarted = true
+                    live.start(model: model, store: store)
+                }
+            } else { model.requestPending(store: store) }
+        }
         .onDisappear { dictationActive = false; live.stop(); speech.stopAll(); model.pause() }
     }
 
@@ -80,7 +97,8 @@ struct ConversationView: View {
                     speech.stopAll()
                     model.pause()
                     inputFocused = false
-                    // Everything said is already kept; leaving just saves and closes.
+                    // Leaving always saves, including any unsent draft.
+                    model.keepDraft(draft)
                     if session.userTurns > 0 { store.save(session) }
                     onClose()
                 } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }

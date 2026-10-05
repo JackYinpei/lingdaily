@@ -3,6 +3,7 @@ import { GoogleGenAI } from '@google/genai'
 import { getServerGeminiApiKey } from './geminiConfig'
 import { PracticeAPIError, createUserLimiter } from './iosPractice'
 import { buildLiveInstruction, LIVE_TOOLS } from '../ios/live'
+import { resolveModel } from '../ios/models'
 import { DEFAULT_LIVE_WS_URL, liveWebSocketEndpoint } from '../ios/liveEndpoint.mjs'
 
 export const IOS_LIVE_WS_URL = DEFAULT_LIVE_WS_URL
@@ -28,7 +29,9 @@ export async function issueLiveToken(body) {
   }
   const apiKey = getServerGeminiApiKey()
   if (!apiKey) throw new PracticeAPIError(503, 'NOT_CONFIGURED', '服务端尚未配置语音通话。')
-  const model = liveModel()
+  // The learner may pick a listed Live model; the scenario JSON in the prompt never carries it.
+  const { model: requestedModel, ...scenarioBody } = body
+  const model = resolveModel('live', requestedModel, liveModel())
   if (!/^[a-zA-Z0-9._-]{1,100}$/.test(model)) throw new PracticeAPIError(503, 'NOT_CONFIGURED', '语音模型配置无效。')
   const now = Date.now()
   const expiresAt = new Date(now + 30 * 60_000).toISOString()
@@ -41,7 +44,7 @@ export async function issueLiveToken(body) {
       uses: 1, expireTime: expiresAt, newSessionExpireTime: new Date(now + 2 * 60_000).toISOString(),
       httpOptions: { apiVersion: 'v1alpha' }, abortSignal: AbortSignal.timeout(25000),
       liveConnectConstraints: { model, config: {
-        responseModalities: ['AUDIO'], systemInstruction: buildLiveInstruction(body), tools: LIVE_TOOLS,
+        responseModalities: ['AUDIO'], systemInstruction: buildLiveInstruction(scenarioBody), tools: LIVE_TOOLS,
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } },
         inputAudioTranscription: {}, outputAudioTranscription: {},
         realtimeInputConfig: { automaticActivityDetection: LIVE_ACTIVITY_DETECTION },

@@ -12,7 +12,7 @@ struct PreparationFlowView: View {
 
     var body: some View {
         if let session {
-            ConversationView(initialSession: session, initialVoiceMode: voiceMode, onClose: { dismiss() })
+            ConversationView(initialSession: session, initialVoiceMode: voiceMode, autoStartVoice: voiceMode, onClose: { dismiss() })
         } else {
             ZStack(alignment: .topLeading) {
                 PageBackground()

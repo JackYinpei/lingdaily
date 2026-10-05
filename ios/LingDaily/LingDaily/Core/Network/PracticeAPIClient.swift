@@ -153,6 +153,8 @@ final class PracticeAPIClient: PracticeServing {
     }
 
     func respond(to request: AIPracticeRequest) async throws -> AIPracticeResponse {
+        var request = request
+        request.model = AIModelPreference.model(for: .practice)
         let result: AIPracticeResponse = try await post("api/ios/practice", request)
         guard result.requestId == request.requestId, result.data.isValid(for: request.action) else {
             throw PracticeNetworkError.invalidReply
@@ -172,9 +174,10 @@ final class PracticeAPIClient: PracticeServing {
 
     /// Chinese gloss for one partner line, fetched when the learner taps 中文.
     func translate(_ text: String) async throws -> String {
-        struct Request: Encodable { let requestId: UUID; let text: String }
+        struct Request: Encodable { let requestId: UUID; let text: String; let model: String? }
         struct Response: Decodable { let requestId: UUID; let translation: String }
-        let request = Request(requestId: UUID(), text: String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1000)))
+        let request = Request(requestId: UUID(), text: String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1000)),
+                              model: AIModelPreference.model(for: .translate))
         let result: Response = try await post("api/ios/translate", request)
         guard result.requestId == request.requestId, !result.translation.isEmpty else { throw PracticeNetworkError.invalidReply }
         return result.translation
@@ -182,7 +185,8 @@ final class PracticeAPIClient: PracticeServing {
 
     /// Chinese-first reply idea for the learner's next line in a Live call.
     func suggest(for session: PracticeSession) async throws -> LiveSuggestion {
-        guard let request = LiveSuggestionRequest(session: session) else { throw PracticeNetworkError.invalidReply }
+        guard var request = LiveSuggestionRequest(session: session) else { throw PracticeNetworkError.invalidReply }
+        request.model = AIModelPreference.model(for: .suggest)
         struct Response: Decodable { let requestId: UUID; let suggestion: LiveSuggestion }
         let result: Response = try await post("api/ios/suggest", request)
         guard result.requestId == request.requestId, !result.suggestion.hint.isEmpty else { throw PracticeNetworkError.invalidReply }
@@ -190,10 +194,27 @@ final class PracticeAPIClient: PracticeServing {
     }
 
     func liveToken(for session: PracticeSession) async throws -> LiveToken {
-        try await post("api/ios/live-token", LiveTokenRequest(session: session))
+        var request = LiveTokenRequest(session: session)
+        request.model = AIModelPreference.model(for: .live)
+        return try await post("api/ios/live-token", request)
     }
 
-    private func post<Body: Encodable, Result: Decodable>(_ path: String, _ body: Body) async throws -> Result {
+    /// "换一批": three fresh one-line scenario ideas, avoiding ones already shown.
+    func scenarioIdeas(avoiding shown: [String]) async throws -> [String] {
+        struct Request: Encodable { let requestId: UUID; let avoid: [String] }
+        struct Response: Decodable { let requestId: UUID; let ideas: [String] }
+        let request = Request(requestId: UUID(), avoid: Array(shown.suffix(30)).map { String($0.prefix(120)) })
+        let result: Response = try await post("api/ios/scenario-ideas", request)
+        guard result.requestId == request.requestId, result.ideas.count == 3 else { throw PracticeNetworkError.invalidReply }
+        return result.ideas
+    }
+
+    /// Models the learner may choose per feature.
+    func modelCatalog() async throws -> AIModelCatalog {
+        try await post("api/ios/models", Optional<String>.none, method: "GET")
+    }
+
+    private func post<Body: Encodable, Result: Decodable>(_ path: String, _ body: Body, method: String = "POST") async throws -> Result {
         #if os(iOS) && !targetEnvironment(simulator)
         let physicalDevice = true
         #else
@@ -201,20 +222,22 @@ final class PracticeAPIClient: PracticeServing {
         #endif
         if let config = configuration {
             guard config.isValidForDevelopment(physicalDevice: physicalDevice) else { throw PracticeNetworkError.notConfigured }
-            return try await send(path, body, baseURL: config.baseURL, bearer: config.accessToken)
+            return try await send(path, body, baseURL: config.baseURL, bearer: config.accessToken, method: method)
         }
         guard let account = accountSession(), account.isUsable() else { throw PracticeNetworkError.signedOut }
-        return try await send(path, body, baseURL: LingDailyService.baseURL, bearer: account.token)
+        return try await send(path, body, baseURL: LingDailyService.baseURL, bearer: account.token, method: method)
     }
 
     private func send<Body: Encodable, Result: Decodable>(_ path: String, _ body: Body, baseURL: URL, bearer: String?,
                                                           encoder: JSONEncoder = JSONEncoder(), decoder: JSONDecoder = JSONDecoder(),
-                                                          maxBytes: Int = 24 * 1024) async throws -> Result {
+                                                          maxBytes: Int = 24 * 1024, method: String = "POST") async throws -> Result {
         var urlRequest = URLRequest(url: baseURL.appendingPathComponent(path))
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.httpMethod = method
         if let bearer { urlRequest.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
-        urlRequest.httpBody = try encoder.encode(body)
+        if method != "GET" {
+            urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            urlRequest.httpBody = try encoder.encode(body)
+        }
         do {
             let (data, response) = try await session.data(for: urlRequest)
             try Task.checkCancellation()

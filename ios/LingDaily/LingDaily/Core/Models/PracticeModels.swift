@@ -48,6 +48,8 @@ struct PracticeSession: Codable, Equatable, Identifiable {
     private(set) var phase: Phase
     private(set) var ai: AIPracticeState?
     private(set) var live: LivePracticeState? = nil
+    /// Unsent text in the composer, restored when the learner comes back. Optional so older archives still decode.
+    private(set) var draft: String? = nil
 
     init(scenario: PracticeScenario, goal: String = "", context: String = "", useAI: Bool = false, now: Date = Date()) {
         precondition(!scenario.steps.isEmpty)
@@ -115,6 +117,7 @@ struct PracticeSession: Codable, Equatable, Identifiable {
         messages.append(PracticeMessage(id: UUID(), role: .user,
             kind: phase == .retry ? .retry : .answer, text: trimmed,
             stepIndex: stepIndex, createdAt: now))
+        draft = nil
         phase = .review
         if isAI { ai?.pending = AIPendingRequest(id: UUID(), action: .answer) }
         updatedAt = now
@@ -332,3 +335,14 @@ extension PracticeSession {
         return true
     }
 }
+
+extension PracticeSession {
+    /// Keeps what the learner typed but has not sent, so leaving never loses it.
+    mutating func keepDraft(_ text: String, now: Date = Date()) {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : String(text.prefix(800))
+        guard value != draft else { return }
+        draft = value
+        updatedAt = now
+    }
+}
+

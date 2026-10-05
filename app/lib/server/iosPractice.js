@@ -3,8 +3,10 @@ import 'server-only'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { GoogleGenAI } from '@google/genai'
 import { getServerGeminiApiKey, getServerGeminiBaseUrl } from './geminiConfig'
+import { resolveModel } from '../ios/models'
 import {
-  buildPracticeContext, parsePracticeTurn, parseScenarioDraft, parseSuggestion, parseTranslation,
+  buildPracticeContext, IDEAS_INSTRUCTION, IDEAS_RESPONSE_SCHEMA, parseIdeas,
+  parsePracticeTurn, parseScenarioDraft, parseSuggestion, parseTranslation,
   RESPONSE_SCHEMA, SCENARIO_INSTRUCTION, SCENARIO_RESPONSE_SCHEMA, SYSTEM_INSTRUCTION,
   SUGGESTION_INSTRUCTION, SUGGESTION_RESPONSE_SCHEMA, TRANSLATION_INSTRUCTION, TRANSLATION_RESPONSE_SCHEMA,
 } from '../ios/practice'
@@ -43,6 +45,7 @@ export function practiceModel() { return process.env.GEMINI_PRACTICE_MODEL || 'g
 // Stuck-in-call suggestions are prefetched every partner line, so they default
 // to the cheap, reliable practice model; switchable without an app release.
 export function suggestionModel() { return process.env.GEMINI_SUGGEST_MODEL?.trim() || practiceModel() }
+export function translationModel() { return process.env.GEMINI_TRANSLATE_MODEL?.trim() || practiceModel() }
 
 function geminiClient() {
   const apiKey = getServerGeminiApiKey()
@@ -98,7 +101,7 @@ export async function generatePracticeTurn(body) {
     payload: context,
     retryPayload: { ...context, formatReminder: 'The previous attempt was invalid. Rewrite ONLY learnerLatestAnswer in feedback.revised; do not put the role-play partner reply there. Follow every required field and length limit.' },
     parse: raw => parsePracticeTurn(raw, body.action, context.learnerLatestAnswer || ''),
-    temperature: 0.65, maxOutputTokens: 1800,
+    temperature: 0.65, maxOutputTokens: 1800, model: resolveModel('practice', body.model, practiceModel()),
     invalidMessage: 'AI 这次的表达建议不完整，请重试。',
     unavailableMessage: '暂时连不上 AI，请重试。你的回答已保留。',
   })
@@ -124,7 +127,8 @@ export async function generateTranslation(body) {
   const { model, data } = await generateStructured({
     systemInstruction: TRANSLATION_INSTRUCTION, responseSchema: TRANSLATION_RESPONSE_SCHEMA,
     payload, retryPayload: { ...payload, formatReminder: 'Return {"translation": "..."} only.' },
-    parse: parseTranslation, temperature: 0.2, maxOutputTokens: 400,
+    parse: parseTranslation, temperature: 0.2, maxOutputTokens: 1200,
+    model: resolveModel('translate', body.model, translationModel()),
     invalidMessage: '这句翻译不完整，请重试。',
     unavailableMessage: '暂时无法翻译，请稍后重试。',
   })
@@ -140,11 +144,24 @@ export async function generateSuggestion(body) {
     systemInstruction: SUGGESTION_INSTRUCTION, responseSchema: SUGGESTION_RESPONSE_SCHEMA,
     payload, retryPayload: { ...payload, formatReminder: 'Return hint, keywords, reply and meaning only, within the length limits.' },
     // Headroom for models that think before answering (they bill and count those tokens too).
-    parse: parseSuggestion, temperature: 0.5, maxOutputTokens: 1500, model: suggestionModel(),
+    parse: parseSuggestion, temperature: 0.5, maxOutputTokens: 1500,
+    model: resolveModel('suggest', body.model, suggestionModel()),
     invalidMessage: '这次的建议不完整，请再点一次。',
     unavailableMessage: '暂时拿不到建议，请稍后再试。',
   })
   return { requestId: body.requestId, model, suggestion: data }
+}
+
+export async function generateIdeas(body) {
+  const payload = { avoid: body.avoid }
+  const { model, data } = await generateStructured({
+    systemInstruction: IDEAS_INSTRUCTION, responseSchema: IDEAS_RESPONSE_SCHEMA,
+    payload, retryPayload: { ...payload, formatReminder: 'Return exactly 3 ideas, each at most 30 Chinese characters.' },
+    parse: parseIdeas, temperature: 1, maxOutputTokens: 1200,
+    invalidMessage: '这一批没生成好，请再点一次。',
+    unavailableMessage: '暂时换不了，请稍后再试。',
+  })
+  return { requestId: body.requestId, model, ideas: data }
 }
 
 // Per-user single-process budget. Cached practice replies do not acquire a
@@ -218,6 +235,7 @@ export const performPracticeRequest = (body, userId) => coordinated('practice', 
 export const performScenarioRequest = (body, userId) => coordinated('scenario', generateScenarioDraft)(body, userId)
 export const performTranslationRequest = (body, userId) => coordinated('translate', generateTranslation)(body, userId)
 export const performSuggestionRequest = (body, userId) => coordinated('suggest', generateSuggestion)(body, userId)
+export const performIdeasRequest = (body, userId) => coordinated('ideas', generateIdeas)(body, userId)
 
 // ---- HTTP helpers shared by the /api/ios/* routes ----
 

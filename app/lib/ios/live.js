@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { requestedModelSchema } from './models'
 import { practiceScenarioSchema } from './practice'
 
 const text = max => z.string().trim().min(1).max(max)
@@ -8,6 +9,7 @@ export const liveTokenRequestSchema = z.object({
   context: z.string().trim().max(500).optional(),
   stepIndex: z.number().int().min(0).max(2).optional(),
   messages: z.array(z.object({ role: z.enum(['user', 'partner']), text: text(2000) }).strict()).max(12).optional(),
+  model: requestedModelSchema,
 }).strict()
 
 const string = { type: 'STRING' }

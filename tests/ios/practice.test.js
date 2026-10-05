@@ -12,6 +12,7 @@ import { GET, POST } from '@/app/api/ios/practice/route'
 import { POST as POST_SCENARIO } from '@/app/api/ios/scenario/route'
 import { POST as POST_TRANSLATE } from '@/app/api/ios/translate/route'
 import { POST as POST_SUGGEST } from '@/app/api/ios/suggest/route'
+import { POST as POST_IDEAS } from '@/app/api/ios/scenario-ideas/route'
 import { practiceRequestSchema, parsePracticeTurn, buildPracticeContext } from '@/app/lib/ios/practice'
 import { authorizeDevelopmentPractice, createPracticeCoordinator } from '@/app/lib/server/iosPractice'
 
@@ -262,6 +263,28 @@ describe('stuck-in-call suggestion', () => {
   it('requires a session and at least one message', async () => {
     expect((await POST_SUGGEST(suggestRequest(input(), 'invalid'))).status).toBe(401)
     expect((await POST_SUGGEST(suggestRequest({ ...input(), messages: [] }))).status).toBe(400)
+    expect(generate).not.toHaveBeenCalled()
+  })
+})
+
+describe('scenario ideas (换一批)', () => {
+  const ideasRequest = (payload, credential = token) => new Request('http://localhost:8000/api/ios/scenario-ideas', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${credential}` }, body: JSON.stringify(payload),
+  })
+  it('returns three ideas and passes the ones to avoid as data', async () => {
+    const ideas = ['明天面试要介绍自己的项目经历', '周末想在餐厅换一个靠窗的座位', '下周要跟室友商量分摊电费']
+    generate.mockResolvedValueOnce({ text: JSON.stringify({ ideas }), candidates: [{ finishReason: 'STOP' }], modelVersion: 'test-model' })
+    const body = { requestId: randomUUID(), avoid: ['周五要跟房东谈退押金'] }
+    const response = await POST_IDEAS(ideasRequest(body))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ requestId: body.requestId, model: 'test-model', ideas })
+    const sent = generate.mock.calls.at(-1)[0]
+    expect(sent.config.systemInstruction).not.toContain('房东')
+    expect(JSON.parse(sent.contents[0].parts[0].text)).toEqual({ avoid: ['周五要跟房东谈退押金'] })
+  })
+  it('requires a session and rejects malformed input', async () => {
+    expect((await POST_IDEAS(ideasRequest({ requestId: randomUUID() }, 'invalid'))).status).toBe(401)
+    expect((await POST_IDEAS(ideasRequest({ requestId: randomUUID(), avoid: 'x' }))).status).toBe(400)
     expect(generate).not.toHaveBeenCalled()
   })
 })

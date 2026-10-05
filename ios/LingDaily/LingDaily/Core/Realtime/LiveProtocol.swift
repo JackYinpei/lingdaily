@@ -6,6 +6,7 @@ struct LiveTokenRequest: Encodable {
     let goal, context: String
     let stepIndex: Int
     let messages: [Message]
+    var model: String? = nil
     init(session: PracticeSession) {
         scenario = .init(title: session.scenario.title, partner: session.scenario.partner,
                          partnerRole: session.scenario.partnerRole, setting: session.scenario.setting,

@@ -180,6 +180,15 @@ final class PracticeAPIClient: PracticeServing {
         return result.translation
     }
 
+    /// Chinese-first reply idea for the learner's next line in a Live call.
+    func suggest(for session: PracticeSession) async throws -> LiveSuggestion {
+        guard let request = LiveSuggestionRequest(session: session) else { throw PracticeNetworkError.invalidReply }
+        struct Response: Decodable { let requestId: UUID; let suggestion: LiveSuggestion }
+        let result: Response = try await post("api/ios/suggest", request)
+        guard result.requestId == request.requestId, !result.suggestion.hint.isEmpty else { throw PracticeNetworkError.invalidReply }
+        return result.suggestion
+    }
+
     func liveToken(for session: PracticeSession) async throws -> LiveToken {
         try await post("api/ios/live-token", LiveTokenRequest(session: session))
     }

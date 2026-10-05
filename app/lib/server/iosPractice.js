@@ -4,9 +4,9 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import { GoogleGenAI } from '@google/genai'
 import { getServerGeminiApiKey, getServerGeminiBaseUrl } from './geminiConfig'
 import {
-  buildPracticeContext, parsePracticeTurn, parseScenarioDraft, parseTranslation,
+  buildPracticeContext, parsePracticeTurn, parseScenarioDraft, parseSuggestion, parseTranslation,
   RESPONSE_SCHEMA, SCENARIO_INSTRUCTION, SCENARIO_RESPONSE_SCHEMA, SYSTEM_INSTRUCTION,
-  TRANSLATION_INSTRUCTION, TRANSLATION_RESPONSE_SCHEMA,
+  SUGGESTION_INSTRUCTION, SUGGESTION_RESPONSE_SCHEMA, TRANSLATION_INSTRUCTION, TRANSLATION_RESPONSE_SCHEMA,
 } from '../ios/practice'
 
 export class PracticeAPIError extends Error {
@@ -128,6 +128,21 @@ export async function generateTranslation(body) {
   return { requestId: body.requestId, model, translation: data }
 }
 
+export async function generateSuggestion(body) {
+  const payload = {
+    scenario: body.scenario, personalGoal: body.goal, context: body.context,
+    currentTask: body.scenario.goals[body.stepIndex], stepIndex: body.stepIndex, recentMessages: body.messages,
+  }
+  const { model, data } = await generateStructured({
+    systemInstruction: SUGGESTION_INSTRUCTION, responseSchema: SUGGESTION_RESPONSE_SCHEMA,
+    payload, retryPayload: { ...payload, formatReminder: 'Return hint, keywords, reply and meaning only, within the length limits.' },
+    parse: parseSuggestion, temperature: 0.5, maxOutputTokens: 500,
+    invalidMessage: '这次的建议不完整，请再点一次。',
+    unavailableMessage: '暂时拿不到建议，请稍后再试。',
+  })
+  return { requestId: body.requestId, model, suggestion: data }
+}
+
 // Per-user single-process budget. Cached practice replies do not acquire a
 // slot; each single-use Live credential does acquire a fresh slot.
 export function createUserLimiter({ now = Date.now, maxConcurrent = 2, maxPerMinute = 20 } = {}) {
@@ -198,6 +213,7 @@ function coordinated(name, generate) {
 export const performPracticeRequest = (body, userId) => coordinated('practice', generatePracticeTurn)(body, userId)
 export const performScenarioRequest = (body, userId) => coordinated('scenario', generateScenarioDraft)(body, userId)
 export const performTranslationRequest = (body, userId) => coordinated('translate', generateTranslation)(body, userId)
+export const performSuggestionRequest = (body, userId) => coordinated('suggest', generateSuggestion)(body, userId)
 
 // ---- HTTP helpers shared by the /api/ios/* routes ----
 

@@ -11,6 +11,7 @@ vi.mock('@/app/lib/server/geminiConfig', () => ({
 import { GET, POST } from '@/app/api/ios/practice/route'
 import { POST as POST_SCENARIO } from '@/app/api/ios/scenario/route'
 import { POST as POST_TRANSLATE } from '@/app/api/ios/translate/route'
+import { POST as POST_SUGGEST } from '@/app/api/ios/suggest/route'
 import { practiceRequestSchema, parsePracticeTurn, buildPracticeContext } from '@/app/lib/ios/practice'
 import { authorizeDevelopmentPractice, createPracticeCoordinator } from '@/app/lib/server/iosPractice'
 
@@ -228,3 +229,32 @@ describe('on-demand translation', () => {
     expect(generate).not.toHaveBeenCalled()
   })
 })
+
+describe('stuck-in-call suggestion', () => {
+  const suggestRequest = (payload, credential = token) => new Request('http://localhost:8000/api/ios/suggest', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${credential}` }, body: JSON.stringify(payload),
+  })
+  const input = () => ({
+    requestId: randomUUID(), goal: '', context: '', stepIndex: 0,
+    scenario: { title: 'Deadline', partner: 'Alex', partnerRole: 'Colleague', setting: '你负责的注册页周五上线，但验证码有问题。', goals: ['说明情况', '提出请求', '给出方案'] },
+    messages: [{ role: 'partner', text: 'How is the sign-up page coming along?' }],
+  })
+  const suggestion = { hint: '先说页面做完了，再说验证码出了问题。', keywords: 'almost done · a bug', reply: 'It is almost done, but we found a bug.', meaning: '差不多做完了，但我们发现了一个问题。' }
+  it('returns a Chinese-first suggestion from the learner side, passing the conversation as data', async () => {
+    generate.mockResolvedValueOnce({ text: JSON.stringify(suggestion), candidates: [{ finishReason: 'STOP' }], modelVersion: 'test-model' })
+    const body = input()
+    const response = await POST_SUGGEST(suggestRequest(body))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ requestId: body.requestId, model: 'test-model', suggestion })
+    const sent = generate.mock.calls.at(-1)[0]
+    expect(sent.config.systemInstruction).toContain('THE LEARNER')
+    expect(sent.config.systemInstruction).not.toContain('How is the sign-up page')
+    expect(JSON.parse(sent.contents[0].parts[0].text)).toMatchObject({ currentTask: '说明情况' })
+  })
+  it('requires a session and at least one message', async () => {
+    expect((await POST_SUGGEST(suggestRequest(input(), 'invalid'))).status).toBe(401)
+    expect((await POST_SUGGEST(suggestRequest({ ...input(), messages: [] }))).status).toBe(400)
+    expect(generate).not.toHaveBeenCalled()
+  })
+})
+

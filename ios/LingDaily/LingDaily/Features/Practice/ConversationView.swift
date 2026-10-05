@@ -176,9 +176,20 @@ struct ConversationView: View {
 
     private var voiceControls: some View {
         VStack(spacing: 10) {
-            Text(live.status).font(.caption.weight(.medium)).foregroundColor(Brand.secondary)
-                .accessibilityIdentifier("live-status")
-            if let message = live.errorMessage {
+            if let suggestion = live.suggestion {
+                LiveSuggestionCard(suggestion: suggestion, partner: session.scenario.partner) { live.dismissSuggestion() }
+            }
+            HStack(spacing: 12) {
+                Text(live.status).font(.caption.weight(.medium)).foregroundColor(Brand.secondary)
+                    .accessibilityIdentifier("live-status")
+                if live.state == .active && live.suggestion == nil {
+                    Button(live.suggesting ? "正在想…" : "卡住了？") { live.requestSuggestion() }
+                        .font(.caption.weight(.medium)).foregroundColor(Brand.accent)
+                        .frame(minHeight: 32).disabled(live.suggesting)
+                        .accessibilityIdentifier("live-suggest")
+                }
+            }
+            if let message = live.suggestionError ?? live.errorMessage {
                 Text(message).font(.caption).foregroundColor(Brand.secondary)
             }
             HStack(spacing: 10) {
@@ -376,6 +387,45 @@ struct ConversationView: View {
 
     private func scrollToLatest(_ proxy: ScrollViewProxy) {
         withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("latest", anchor: .bottom) }
+    }
+}
+
+/// Help when the learner is stuck in a call: the idea in Chinese first, the
+/// English model answer only on request, so the learner still forms the sentence.
+struct LiveSuggestionCard: View {
+    let suggestion: LiveSuggestion
+    let partner: String
+    let onDismiss: () -> Void
+    @State private var showsReply = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("可以这样回应 \(partner)").font(.caption.weight(.semibold)).foregroundColor(Brand.accent)
+                Spacer(minLength: 8)
+                Button(action: onDismiss) { Image(systemName: "xmark").frame(width: 32, height: 32) }
+                    .font(.caption).foregroundColor(Brand.secondary).accessibilityLabel("收起建议")
+            }
+            Text(suggestion.hint).font(.subheadline).foregroundColor(Brand.ink).lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(suggestion.keywords).font(.caption).foregroundColor(Brand.secondary)
+            if showsReply {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(suggestion.reply).font(Brand.english(.body)).foregroundColor(Brand.ink).lineSpacing(3)
+                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    Text(suggestion.meaning).font(.caption).foregroundColor(Brand.secondary)
+                }
+            } else {
+                Button("看参考说法") { showsReply = true }
+                    .font(.caption.weight(.medium)).foregroundColor(Brand.ink).frame(minHeight: 32)
+                    .accessibilityIdentifier("live-suggestion-reply")
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Brand.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .accessibilityElement(children: .contain)
     }
 }
 

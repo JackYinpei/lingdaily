@@ -178,3 +178,9 @@ Sitemap 只包含真实公开页面：首页、播客列表和已完成的播客
 ## Gemini 代理
 
 可选 Nginx 示例位于 [`nginx/gemini-proxy.conf`](nginx/gemini-proxy.conf)。上线时应替换示例域名、启用 HTTPS、限制访问并设置合理的速率/连接数上限，避免把代理暴露成不受控的公共转发服务。
+
+## iOS 重构规划
+
+原生客户端位于 [`ios/`](ios/README.md)，最低支持 iOS 15。已有免登录的 SwiftUI AI 体验版：真实 Gemini 对话、明日预演、一句话重来、本机记录与表达收藏。先运行 `npm run ios:dev`，再在 Xcode 运行 iPhone 模拟器；自己的真机改用 `npm run ios:dev -- --device` 并重新安装 Debug 版。已支持 Gemini Live 实时语音；正式认证与云同步仍待接入。
+后续按“新闻/场景 → 语音练习 → 历史与学习项”完成首版，播客与进度后置。
+设计语言、页面模板、架构、数据契约、实施计划与产品创意见 [iOS 重构方案](docs/ios/README.md)。

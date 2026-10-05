@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "ios:dev": "node scripts/ios-dev.mjs",
     "dev": "next dev --turbopack -p 8000",
     "build": "next build --turbopack",
     "postbuild": "next-sitemap",
@@ -25,6 +26,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cos-nodejs-sdk-v5": "^2.14.6",
+    "jose": "^6.1.0",
     "lucide-react": "^0.542.0",
     "next": "15.5.9",
     "next-auth": "^5.0.0-beta.29",

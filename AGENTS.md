@@ -57,6 +57,14 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | `scripts/` | 生产 preflight/postflight 与隔离迁移测试 |
 | `tests/` | Live 音频、对话合并、播客脚本/shownotes/RSS 单测 |
 | `.github/workflows/` | PR 质量门禁与 main 分支镜像部署 |
+| `ios/` | 原生 SwiftUI AI 体验版，最低 iOS 15；Sign in with Apple 后连线上服务，真实 Gemini 逐轮文字 + Live 实时语音/重说/本机历史与收藏，云同步待接入 |
+| `app/api/ios/auth/apple/` | 原生 Sign in with Apple：验证 Apple identity token（JWKS、bundle ID audience、nonce），按 Apple 验证邮箱复用 `ensureAuthUser()` 映射 Supabase UUID，签发 60 天 iOS 会话 JWT（AUTH_SECRET 经 HKDF 派生的独立密钥） |
+| `app/api/ios/practice/`、`app/api/ios/scenario/`、`app/api/ios/live-token/` | Gemini 逐句练习、新场景生成及受约束 Gemini Live 临时 token API；生产只接受 iOS 会话，本机配对 token 仅 development + 显式启用可用；缓存与限流按用户隔离，不读写数据库 |
+| `app/lib/ios/liveEndpoint.mjs`、`nginx/gemini-proxy.conf` | 原生Live服务端独立选择Google/受控JP/旧中转，严格origin与固定Constrained路径；Nginx示例透传WSS且禁用含凭据URL日志，App也检查完整endpoint白名单 |
+| `ios/.../Core/Realtime/`、`Core/Network/LiveWebSocketClient.swift`、`Core/Audio/LiveAudioController.swift` | 原生 Live 编解码/字幕/有界待转录工具/generation/PCM（共享 LiveMicrophonePipeline 大缓冲拆分、静音批次失效、采集图重启与路由重排输出、opt-in有界数字诊断），URLSession WebSocket 与 AVAudioEngine；收到 setupComplete 才开采集，后台/中断需用户手动重连 |
+| `ios/.../Core/Models/DictationTranscript.swift`、`Core/Audio/SpeechController.swift` | 文字模式设备听写按音频窗口累积，停止/发送等待末句；系统TTS仅供文字/记录朗读，Live音频直传模型，不经过本地ASR/TTS |
+| `scripts/ios-dev.mjs` | 可选的本机 iOS AI 服务（调试服务端改动用）；默认回环监听，显式 `-- --device` 绑定单一私有局域网地址；配对文件只在进程运行期间存在，退出即删除，此后 Debug 构建改连线上；仅 Debug 打包配对 token，绝不打包模型密钥 |
+| `docs/ios/` | iOS 设计、架构、数据契约、阶段计划与待选择的产品创意；实现前阅读总览，区分现状与提案。iOS 视觉单一来源是 `ios/.../DesignSystem/Brand.swift`（纸墨 + 单一强调色，与网页紫色主题分开），改 UI 前先读 `02-design-system.md` 的设计原则 |
 
 ## 用户功能
 
@@ -200,6 +208,8 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 | `POST /api/auth/register` | 公开 | Supabase 邮箱注册 |
 | `GET/POST /api/auth/[...nextauth]` | NextAuth | 登录、OAuth callback、session |
 | `POST /api/realtime-token` | 登录 | Gemini Live 一次性 token |
+| `POST /api/ios/auth/apple` | 公开（需有效 Apple token） | iOS Apple 登录，签发 iOS 会话 |
+| `POST /api/ios/practice`、`/scenario`、`/live-token` | iOS 会话 | 原生练习、场景生成、Live 临时 token |
 | `POST /api/gemini-token` | 登录，已弃用 | 上一个接口的兼容别名，带 Deprecation/Sunset header |
 | `GET /api/news` | 公开 | 受 allowlist 限制的 Kagi RSS 代理 |
 | `POST /api/translate` | 登录 | 用 Gemini 翻译新闻标题 |
@@ -358,6 +368,7 @@ completed 只有 force 可重领，进行中租约超过 30 分钟可重领。
 - Gemini 服务端：`GEMINI_API_KEY`，可选 `GEMINI_BASE_URL`。`GOOGLE_API_KEY` 和
   `GOOGLE_GEMINI_BASE_URL` 仅是旧别名。
 - Gemini 浏览器代理：`NEXT_PUBLIC_GEMINI_BASE_URL`。
+- 原生Live中转：服务端`GEMINI_LIVE_WS_BASE_URL`，独立于网页配置，默认官方直连；仅受控JP/旧代理或官方origin，签发仍官方，代理不接收API Key。
 - Supabase 公开配置：`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`。
 - Supabase 服务端密钥：`SUPABASE_SERVICE_ROLE_KEY`。
 - 播客：`PODCAST_SECRET`, `PODCAST_TIMEZONE`, `PODCAST_PUBLIC_URL`, COS 配置。
@@ -387,6 +398,10 @@ completed 只有 force 可重领，进行中租约超过 30 分钟可重领。
   manifest 回退展示。
 
 ## 测试与发布
+
+iOS 当前实现边界、运行命令和已知验证限制见 `docs/ios/10-ai-integration.md` 与 `ios/README.md`，09 为旧原型记录。
+修改纯 Swift 练习状态/归档后执行 `swift test --package-path ios`；修改原生页面或音频后执行模拟器构建与对应交互验证。不得把本机体验版 JSON 直接上传为 Web 历史，或把预设对话当成真实 AI 能力。
+修改 iOS AI 接口执行 `npx vitest run tests/ios`；真实模型测试需显式设置 `LINGDAILY_AI_TEST_CONFIG`，使用合成对话，不能在普通测试中自动消耗模型额度。Live 真联调另外必须显式 `LINGDAILY_LIVE_TEST=1`（共享 Swift 的 `LiveNetworkTests` 或 `scripts/ios-live-smoke.mjs`）；不得打印临时 token、带凭据的 WebSocket URL 或供应商正文。正式部署不能开启本机配对入口（`IOS_PRACTICE_DEV_ENABLED`）；生产只通过 Apple 登录签发的 iOS 会话访问。
 
 常用命令：
 

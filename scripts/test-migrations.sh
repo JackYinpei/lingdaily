@@ -52,7 +52,10 @@ CONTAINER_ID="$(docker run --detach \
 
 ready=false
 for _ in $(seq 1 45); do
-  if docker exec "$CONTAINER_ID" pg_isready --username postgres --dbname postgres >/dev/null 2>&1; then
+  # Probe over TCP inside the container: the image's temporary init server only
+  # listens on the Unix socket and restarts afterwards, so a socket probe can
+  # report ready just before the server goes away.
+  if docker exec "$CONTAINER_ID" pg_isready --host 127.0.0.1 --username postgres --dbname postgres >/dev/null 2>&1; then
     ready=true
     break
   fi

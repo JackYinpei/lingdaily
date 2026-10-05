@@ -32,6 +32,7 @@ final class LiveAudioController {
     private var receivedBytes = 0, scheduledBytes = 0, playedBytes = 0, droppedBytes = 0
     private var routeRestarts = 0
     private var echoGate = LiveEchoGate()
+    private var gatedFrames: [Data] = []
     private var speakerOutput = true
     private var observers: [NSObjectProtocol] = []
     var onStopRequired: ((StopReason) -> Void)?
@@ -155,14 +156,18 @@ final class LiveAudioController {
         catch { requestStop(.capture) }
     }
     func takeFrame() -> Data? {
-        lock.lock(); let pipeline = microphone; lock.unlock()
-        guard let frame = pipeline?.takeFrame() else { return nil }
-        lock.lock()
-        let suppress = echoGate.suppressesMicrophone(partnerAudible: playback.reservedBytes > 0,
-                                                     speakerOutput: speakerOutput, now: ProcessInfo.processInfo.systemUptime)
-        lock.unlock()
-        // Keep the stream timing so server-side voice detection sees the learner as silent.
-        return suppress ? Data(count: frame.count) : frame
+        while true {
+            lock.lock()
+            if !gatedFrames.isEmpty { let frame = gatedFrames.removeFirst(); lock.unlock(); return frame }
+            let pipeline = microphone
+            lock.unlock()
+            guard let frame = pipeline?.takeFrame() else { return nil }
+            lock.lock()
+            // Echo residue becomes silence (keeping stream timing); learner speech passes, so barge-in still works.
+            gatedFrames += echoGate.filter(frame, partnerAudible: playback.reservedBytes > 0,
+                                           speakerOutput: speakerOutput, now: ProcessInfo.processInfo.systemUptime)
+            lock.unlock()
+        }
     }
 
     /// Echo suppression only applies when the partner plays through the phone's own speaker.
@@ -174,7 +179,7 @@ final class LiveAudioController {
     func setMuted(_ value: Bool) {
         worker.sync {
             muted = value
-            lock.lock(); let pipeline = microphone; lock.unlock()
+            lock.lock(); let pipeline = microphone; echoGate.reset(); gatedFrames.removeAll(); lock.unlock()
             pipeline?.setMuted(value)
         }
     }
@@ -233,7 +238,7 @@ final class LiveAudioController {
         worker.sync {
             lock.lock()
             let input = microphone
-            let output = "received=\(receivedBytes) scheduled=\(scheduledBytes) played=\(playedBytes) dropped=\(droppedBytes) queuedBytes=\(playback.reservedBytes)"
+            let output = "received=\(receivedBytes) scheduled=\(scheduledBytes) played=\(playedBytes) dropped=\(droppedBytes) queuedBytes=\(playback.reservedBytes) echoLevel=\(echoGate.echoLevel) speechThreshold=\(echoGate.speechThreshold) speaker=\(speakerOutput ? 1 : 0)"
             lock.unlock()
             guard let input else { return "mic=none " + output }
             let stats = input.statistics()
@@ -249,6 +254,7 @@ final class LiveAudioController {
             lock.lock(); let latest = microphone; microphone = nil; lock.unlock()
             latest?.stop()
             timer?.cancel(); timer = nil
+            lock.lock(); echoGate.reset(); gatedFrames.removeAll(); lock.unlock()
             if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
             engine.stop(); outputReady = false
         }

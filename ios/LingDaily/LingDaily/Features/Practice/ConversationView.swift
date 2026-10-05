@@ -16,7 +16,6 @@ struct ConversationView: View {
     @AppStorage("preferVoicePractice") private var preferVoicePractice = true
     @State private var hintLevel = 0
     @StateObject private var translations = BubbleTranslations()
-    @State private var showExit = false
     @FocusState private var inputFocused: Bool
     let onClose: () -> Void
     private var session: PracticeSession { model.session }
@@ -48,10 +47,6 @@ struct ConversationView: View {
                 if session.phase != .completed { header }
             }
         }
-        .confirmationDialog("稍后可以从学习记录继续", isPresented: $showExit, titleVisibility: .visible) {
-            Button("保存并离开") { store.save(session); onClose() }
-            Button("继续练习", role: .cancel) {}
-        } message: { Text("已发送的内容会保留，输入框中未发送的草稿不会保存。") }
         .onChange(of: speech.transcript) { text in
             guard dictationActive, !voiceMode, !text.isEmpty else { return }
             draft = String((dictationPrefix + text).prefix(800))
@@ -85,7 +80,9 @@ struct ConversationView: View {
                     speech.stopAll()
                     model.pause()
                     inputFocused = false
-                    if session.userTurns == 0 { onClose() } else { showExit = true }
+                    // Everything said is already kept; leaving just saves and closes.
+                    if session.userTurns > 0 { store.save(session) }
+                    onClose()
                 } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
                     .accessibilityLabel("离开练习")
                 Avatar(scenario: session.scenario, size: 34)

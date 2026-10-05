@@ -14,6 +14,8 @@ final class LivePracticeController: ObservableObject {
     @Published private(set) var suggesting = false
     @Published private(set) var suggestionError: String?
     private var stuckTask: Task<Void, Never>?
+    /// Idea generated in the background as soon as the partner finishes a line.
+    private var prefetched: (line: UUID?, task: Task<LiveSuggestion?, Never>)?
     /// After 打断, the rest of the partner's current reply is dropped until the server ends that turn.
     private var discardingPartnerTurn = false
     private var suggestedLine: UUID?
@@ -189,6 +191,7 @@ final class LivePracticeController: ObservableObject {
             discardingPartnerTurn = false
             transcript.finishTurn()
             var session = model.session; pendingTools.flush(to: &session); model.updateLive(session); scheduleSave()
+            prefetchSuggestion()
             finishIfReady()
         case .tool(let call):
             // Acknowledgement was queued by the protocol client first. Work is
@@ -258,25 +261,49 @@ final class LivePracticeController: ObservableObject {
         if muted { toggleMute() }
     }
 
-    /// "卡住了" button: ask for a reply idea right away.
-    func requestSuggestion() {
+    /// "卡住了" button (or the silence timer): show the reply idea, prefetched when possible.
+    func requestSuggestion(automatic: Bool = false) {
         guard state == .active, let model, !suggesting else { return }
         stuckTask?.cancel(); stuckTask = nil
-        suggestedLine = LiveStuckPolicy.awaitedLine(in: model.session)
+        let line = LiveStuckPolicy.awaitedLine(in: model.session)
+        suggestedLine = line
+        if line == nil || prefetched?.line != line {
+            prefetched = (line, Self.fetchSuggestion(for: model.session))
+        }
+        guard let task = prefetched?.task else { return }
         suggesting = true; suggestionError = nil
         let current = generations.connection
-        let snapshot = model.session
         Task { [weak self] in
             defer { self?.suggesting = false }
-            do {
-                let idea = try await PracticeAPIClient().suggest(for: snapshot)
-                guard let self, self.generations.accepts(connection: current), self.state == .active,
-                      let model = self.model, LiveStuckPolicy.awaitedLine(in: model.session) == self.suggestedLine else { return }
-                self.suggestion = idea
-            } catch {
-                guard let self, self.generations.accepts(connection: current) else { return }
-                self.suggestionError = (error as? PracticeNetworkError)?.localizedDescription ?? "暂时拿不到建议，请稍后再试。"
+            let idea = await task.value
+            guard let self, self.generations.accepts(connection: current), self.state == .active else { return }
+            guard let idea else {
+                // Both attempts failed: forget it so the next tap tries again.
+                if self.prefetched?.line == line { self.prefetched = nil }
+                if !automatic { self.suggestionError = "暂时拿不到建议，请再点一次。" }
+                return
             }
+            guard let model = self.model, LiveStuckPolicy.awaitedLine(in: model.session) == self.suggestedLine else { return }
+            self.suggestion = idea
+        }
+    }
+
+    /// Start generating help for the partner's latest line before the learner needs it.
+    private func prefetchSuggestion() {
+        guard state == .active, let model, let line = LiveStuckPolicy.awaitedLine(in: model.session),
+              prefetched?.line != line else { return }
+        prefetched = (line, Self.fetchSuggestion(for: model.session))
+    }
+
+    /// One automatic retry: a suggestion is only useful if it is ready when the learner pauses.
+    private static func fetchSuggestion(for session: PracticeSession) -> Task<LiveSuggestion?, Never> {
+        Task {
+            for attempt in 0..<2 {
+                if let idea = try? await PracticeAPIClient().suggest(for: session) { return idea }
+                guard attempt == 0, !Task.isCancelled else { break }
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+            }
+            return nil
         }
     }
 
@@ -285,6 +312,7 @@ final class LivePracticeController: ObservableObject {
     /// After the partner finishes a line, offer help if the learner stays silent.
     private func watchForStuck() {
         stuckTask?.cancel(); stuckTask = nil
+        prefetchSuggestion()
         guard state == .active, !muted, suggestion == nil, let model,
               let line = LiveStuckPolicy.awaitedLine(in: model.session), line != suggestedLine else { return }
         let current = generations.connection
@@ -293,7 +321,7 @@ final class LivePracticeController: ObservableObject {
             guard !Task.isCancelled, let self, self.generations.accepts(connection: current), self.state == .active,
                   !self.muted, !self.playing, let model = self.model,
                   LiveStuckPolicy.awaitedLine(in: model.session) == line else { return }
-            self.requestSuggestion()
+            self.requestSuggestion(automatic: true)
         }
     }
 
@@ -323,6 +351,7 @@ final class LivePracticeController: ObservableObject {
         generations.reconnect(); connectTask?.cancel(); connectTask = nil
         audio.stop(); state = .disconnected; playing = false; muted = false
         clearSuggestion(); suggestedLine = nil; discardingPartnerTurn = false
+        prefetched?.task.cancel(); prefetched = nil
         errorMessage = message
         if let model, let store {
             var session = model.session; pendingTools.flush(to: &session); session.endLive()

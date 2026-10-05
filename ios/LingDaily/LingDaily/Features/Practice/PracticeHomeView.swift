@@ -8,8 +8,14 @@ struct PracticeHomeView: View {
     @State private var composing = false
     @State private var created: PracticeScenario?
 
+    /// Latest unfinished rehearsal, unless a newer attempt at the same scenario was already completed.
     private var unfinished: PracticeSession? {
-        store.archive.sessions.first { $0.isAI && $0.phase != .completed }
+        let sessions = store.archive.sessions
+        return sessions.first { session in
+            session.isAI && session.phase != .completed && !sessions.contains {
+                $0.scenario.id == session.scenario.id && $0.phase == .completed && $0.updatedAt > session.updatedAt
+            }
+        }
     }
 
     var body: some View {

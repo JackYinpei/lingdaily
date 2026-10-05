@@ -251,6 +251,14 @@ describe('stuck-in-call suggestion', () => {
     expect(sent.config.systemInstruction).not.toContain('How is the sign-up page')
     expect(JSON.parse(sent.contents[0].parts[0].text)).toMatchObject({ currentTask: '说明情况' })
   })
+  it('uses its own model setting, falling back to the practice model', async () => {
+    generate.mockResolvedValue({ text: JSON.stringify(suggestion), candidates: [{ finishReason: 'STOP' }], modelVersion: 'test-model' })
+    await POST_SUGGEST(suggestRequest(input()))
+    expect(generate.mock.calls.at(-1)[0].model).toBe('gemini-3.1-flash-lite')
+    vi.stubEnv('GEMINI_SUGGEST_MODEL', 'gemini-3.8-flash')
+    await POST_SUGGEST(suggestRequest(input()))
+    expect(generate.mock.calls.at(-1)[0].model).toBe('gemini-3.8-flash')
+  })
   it('requires a session and at least one message', async () => {
     expect((await POST_SUGGEST(suggestRequest(input(), 'invalid'))).status).toBe(401)
     expect((await POST_SUGGEST(suggestRequest({ ...input(), messages: [] }))).status).toBe(400)

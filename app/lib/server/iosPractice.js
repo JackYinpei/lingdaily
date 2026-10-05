@@ -40,6 +40,9 @@ export function authorizeDevelopmentPractice(request, env = process.env) {
 }
 
 export function practiceModel() { return process.env.GEMINI_PRACTICE_MODEL || 'gemini-3.1-flash-lite' }
+// Stuck-in-call suggestions are prefetched every partner line, so they default
+// to the cheap, reliable practice model; switchable without an app release.
+export function suggestionModel() { return process.env.GEMINI_SUGGEST_MODEL?.trim() || practiceModel() }
 
 function geminiClient() {
   const apiKey = getServerGeminiApiKey()
@@ -50,20 +53,20 @@ function geminiClient() {
 
 // Structured generation with one corrective retry when the JSON fails validation.
 async function generateStructured({ systemInstruction, responseSchema, payload, retryPayload, parse,
-  temperature, maxOutputTokens, invalidMessage, unavailableMessage }) {
+  temperature, maxOutputTokens, invalidMessage, unavailableMessage, model = practiceModel() }) {
   const client = geminiClient()
   try {
     const abortSignal = AbortSignal.timeout(25000)
     for (let attempt = 0; attempt < 2; attempt++) {
       const response = await client.models.generateContent({
-        model: practiceModel(),
+        model,
         contents: [{ role: 'user', parts: [{ text: JSON.stringify(attempt ? retryPayload : payload) }] }],
         config: {
           abortSignal, systemInstruction, responseMimeType: 'application/json', responseSchema,
           temperature: attempt ? 0.2 : temperature, maxOutputTokens,
           // Existing 2.5 Flash supports a zero thinking budget; other model
           // families may use different settings and should use their default.
-          ...(practiceModel().startsWith('gemini-2.5-') ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+          ...(model.startsWith('gemini-2.5-') ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
         },
       })
       if (response.candidates?.[0]?.finishReason !== 'STOP') {
@@ -75,7 +78,7 @@ async function generateStructured({ systemInstruction, responseSchema, payload, 
         if (attempt === 0) continue
         throw new PracticeAPIError(502, 'INVALID_REPLY', invalidMessage)
       }
-      return { model: response.modelVersion || practiceModel(), data }
+      return { model: response.modelVersion || model, data }
     }
   } catch (error) {
     if (isPracticeAPIError(error)) throw error
@@ -136,7 +139,8 @@ export async function generateSuggestion(body) {
   const { model, data } = await generateStructured({
     systemInstruction: SUGGESTION_INSTRUCTION, responseSchema: SUGGESTION_RESPONSE_SCHEMA,
     payload, retryPayload: { ...payload, formatReminder: 'Return hint, keywords, reply and meaning only, within the length limits.' },
-    parse: parseSuggestion, temperature: 0.5, maxOutputTokens: 500,
+    // Headroom for models that think before answering (they bill and count those tokens too).
+    parse: parseSuggestion, temperature: 0.5, maxOutputTokens: 1500, model: suggestionModel(),
     invalidMessage: '这次的建议不完整，请再点一次。',
     unavailableMessage: '暂时拿不到建议，请稍后再试。',
   })

@@ -10,7 +10,8 @@ struct LearningView: View {
         NavigationView {
             ZStack {
                 PageBackground()
-                ScrollView {
+                // A List (not a ScrollView) so practice records get the system swipe-to-delete.
+                List {
                     VStack(alignment: .leading, spacing: 20) {
                         PageTitle(title: "学习",
                                   subtitle: "练习 \(store.archive.sessions.count) 次 · 词库 \(store.archive.expressions.count) 条")
@@ -18,11 +19,14 @@ struct LearningView: View {
                             Text("练习记录").tag(0)
                             Text("词库").tag(1)
                         }.pickerStyle(.segmented).accessibilityIdentifier("learning-sections")
-                        if section == 0 { sessions } else { expressions }
                     }
-                    .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 32)
-                    .readableColumn()
+                    .padding(.top, 20).padding(.bottom, 4)
+                    .pageRow()
+                    if section == 0 { sessions } else { expressions }
+                    Color.clear.frame(height: 24).pageRow()
                 }
+                .listStyle(.plain)
+                .clearListBackground()
             }
             .navigationTitle("学习").navigationBarHidden(true)
         }.navigationViewStyle(.stack)
@@ -33,40 +37,44 @@ struct LearningView: View {
 
     @ViewBuilder private var sessions: some View {
         if store.archive.sessions.isEmpty {
-            EmptyState(title: "还没有练习记录", message: "去「练习」选一位对话对象。\n说出第一句后，记录会出现在这里。")
+            EmptyState(title: "还没有练习记录", message: "去「练习」选一位对话对象。\n说出第一句后，记录会出现在这里。").pageRow()
         } else {
-            VStack(spacing: 0) {
-                ForEach(store.archive.sessions) { session in
-                    NavigationLink { SessionDetailView(initialSession: session) } label: {
-                        HStack(spacing: 14) {
-                            Avatar(scenario: session.scenario, size: 40)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(session.title).font(.headline).foregroundColor(Brand.ink)
-                                    .multilineTextAlignment(.leading).lineLimit(2)
-                                Text("\(session.scenario.partner) · \(Self.date(session.updatedAt)) · 开口 \(session.userTurns) 次")
-                                    .font(.caption).foregroundColor(Brand.secondary)
-                            }
-                            Spacer(minLength: 8)
-                            Text(session.phase == .completed ? "已完成" : "未完成")
-                                .font(.caption.weight(.medium))
-                                .foregroundColor(session.phase == .completed ? Brand.secondary : Brand.accent)
-                        }
-                        .padding(.vertical, 14).contentShape(Rectangle())
-                    }.buttonStyle(.plain)
+            ForEach(store.archive.sessions) { session in
+                HStack(spacing: 14) {
+                    Avatar(scenario: session.scenario, size: 40)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(session.title).font(.headline).foregroundColor(Brand.ink)
+                            .multilineTextAlignment(.leading).lineLimit(2)
+                        Text("\(session.scenario.partner) · \(Self.date(session.updatedAt)) · 开口 \(session.userTurns) 次")
+                            .font(.caption).foregroundColor(Brand.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Text(session.phase == .completed ? "已完成" : "未完成")
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(session.phase == .completed ? Brand.secondary : Brand.accent)
+                }
+                .padding(.vertical, 14).contentShape(Rectangle())
+                .overlay(alignment: .bottom) {
                     if session.id != store.archive.sessions.last?.id {
                         Brand.line.frame(height: 1).padding(.leading, 54)
                     }
                 }
+                // Hidden link: the whole row navigates without the system disclosure chevron.
+                .background(NavigationLink { SessionDetailView(initialSession: session) } label: { EmptyView() }.opacity(0))
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) { store.removeSession(session.id) } label: { Label("删除", systemImage: "trash") }
+                }
+                .pageRow()
             }
         }
     }
 
     @ViewBuilder private var expressions: some View {
         if store.archive.expressions.isEmpty {
-            EmptyState(title: "词库还是空的", message: "对话中你没掌握的词和短语会自动收进来，\n想记住的整句可以点「收藏」。")
+            EmptyState(title: "词库还是空的", message: "对话中你没掌握的词和短语会自动收进来，\n想记住的整句可以点「收藏」。").pageRow()
         } else {
             if let error = speech.errorMessage {
-                Text(error).font(.caption).foregroundColor(Brand.secondary)
+                Text(error).font(.caption).foregroundColor(Brand.secondary).pageRow()
             }
             ForEach(store.archive.expressions) { expression in
                 VStack(alignment: .leading, spacing: 8) {
@@ -83,7 +91,12 @@ struct LearningView: View {
                             Image(systemName: "bookmark.fill").frame(width: 44, height: 36)
                         }.foregroundColor(Brand.accent).accessibilityLabel("移出词库")
                     }
-                }.surfaceCard(padding: 16)
+                    // In a List row, borderless buttons fire on their own instead of the whole row.
+                    .buttonStyle(.borderless)
+                }
+                .surfaceCard(padding: 16)
+                .padding(.vertical, 6)
+                .pageRow()
             }
         }
     }
@@ -113,6 +126,7 @@ struct SessionDetailView: View {
     @State private var activeSession: PracticeSession?
     @StateObject private var translations = BubbleTranslations()
     @State private var showDelete = false
+    @State private var showReview = false
     let initialSession: PracticeSession
     private var session: PracticeSession {
         store.archive.sessions.first { $0.id == initialSession.id } ?? initialSession
@@ -154,13 +168,19 @@ struct SessionDetailView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            Button(startsNew ? "再练一次" : "继续这次对话") {
-                speech.stopAll()
-                activeSession = startsNew
-                    ? PracticeSession(scenario: session.scenario, goal: session.personalGoal, context: session.context, useAI: true)
-                    : session
+            HStack(spacing: 10) {
+                Button(startsNew ? "再练一次" : "继续这次对话") {
+                    speech.stopAll()
+                    activeSession = startsNew
+                        ? PracticeSession(scenario: session.scenario, goal: session.personalGoal, context: session.context, useAI: true)
+                        : session
+                }
+                .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("resume-rehearsal")
+                if session.phase == .completed {
+                    Button("复盘") { speech.stopAll(); showReview = true }
+                        .buttonStyle(SolidButtonStyle(secondary: true)).accessibilityIdentifier("review-rehearsal")
+                }
             }
-            .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("resume-rehearsal")
             .padding(.horizontal, 20).padding(.vertical, 12)
             .readableColumn().background(Brand.page)
         }
@@ -179,5 +199,26 @@ struct SessionDetailView: View {
         .fullScreenCover(item: $activeSession) { session in
             ConversationView(initialSession: session, onClose: { activeSession = nil })
         }
+        .fullScreenCover(isPresented: $showReview) {
+            ZStack {
+                PageBackground()
+                PracticeSummaryView(session: session, onClose: { showReview = false })
+            }
+        }
+    }
+}
+
+private extension View {
+    /// A list row that looks like the rest of the app: page margins, no separator, no row background.
+    func pageRow() -> some View {
+        listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .readableColumn()
+    }
+
+    @ViewBuilder func clearListBackground() -> some View {
+        if #available(iOS 16.0, *) { scrollContentBackground(.hidden) }
+        else { onAppear { UITableView.appearance().backgroundColor = .clear } }
     }
 }

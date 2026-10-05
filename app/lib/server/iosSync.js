@@ -269,7 +269,7 @@ export async function applySync(userId, changes) {
 export async function deleteAccountData(userId) {
   const config = databaseConfig()
   const owned = new URLSearchParams({ user_id: `eq.${userId}` })
-  for (const table of ['chat_history', 'unfamiliar_english', 'scenarios', 'user_preferences']) {
+  for (const table of ['chat_history', 'unfamiliar_english', 'scenarios', 'user_preferences', 'ai_usage']) {
     await deleteRows(config, table, owned, `delete ${table}`)
   }
 }

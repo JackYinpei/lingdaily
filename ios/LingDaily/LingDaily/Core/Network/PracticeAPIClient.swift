@@ -209,6 +209,17 @@ final class PracticeAPIClient: PracticeServing {
         return result.ideas
     }
 
+    /// Token usage of one Live connection, summed on device.
+    func reportLiveUsage(_ report: LiveUsageReport) async throws {
+        struct Recorded: Decodable { let recorded: Bool }
+        let _: Recorded = try await post("api/ios/usage", report)
+    }
+
+    /// The learner's own token usage over the last 30 days.
+    func usageSummary() async throws -> AIUsageSummary {
+        try await post("api/ios/usage", Optional<String>.none, method: "GET")
+    }
+
     /// Models the learner may choose per feature.
     func modelCatalog() async throws -> AIModelCatalog {
         try await post("api/ios/models", Optional<String>.none, method: "GET")

@@ -16,6 +16,10 @@ final class LivePracticeController: ObservableObject {
     private var stuckTask: Task<Void, Never>?
     /// Idea generated in the background as soon as the partner finishes a line.
     private var prefetched: (line: UUID?, task: Task<LiveSuggestion?, Never>)?
+    /// Token usage of the current connection, reported once at hang-up (the audio never passes our server).
+    private var usage = LiveUsage()
+    private var usageModel: String?
+    private var usageReportID = UUID()
     /// After 打断, the rest of the partner's current reply is dropped until the server ends that turn.
     private var discardingPartnerTurn = false
     private var suggestedLine: UUID?
@@ -57,6 +61,7 @@ final class LivePracticeController: ObservableObject {
         completionTask?.cancel(); completionTask = nil
         turnFinished = false
         errorMessage = nil; muted = false; playing = false; state = .connecting
+        usage = LiveUsage(); usageModel = nil; usageReportID = UUID()
         model.enterLive()
         if LiveAudioController.permissionDenied {
             stop(message: "麦克风权限被拒。可在系统设置中允许麦克风，或切回文字模式。")
@@ -103,6 +108,7 @@ final class LivePracticeController: ObservableObject {
                 LiveDebugDiagnostics.record("phase=websocketConnect")
                 #endif
                 var updated = model.session; updated.beginLive(model: token.model); model.updateLive(updated)
+                self.usageModel = token.model
                 try await self.client.connect(token, generation: current,
                     handler: { [weak self] event, generation in self?.receive(event, generation: generation) },
                     failure: { [weak self] generation, diagnostics in
@@ -216,6 +222,7 @@ final class LivePracticeController: ObservableObject {
             cancelledTools.formUnion(ids)
             pendingTools.cancel(ids)
         case .goAway: stop(message: "本次连接即将到期，请重新连接。已有内容已保留。")
+        case .usage(let turn): usage = usage + turn
         }
     }
     private func scheduleSave() {
@@ -247,6 +254,18 @@ final class LivePracticeController: ObservableObject {
             self.stop()
         }
     }
+    /// Best effort with one retry; the report ID makes a repeated upload harmless.
+    private func reportUsage() {
+        defer { usage = LiveUsage(); usageModel = nil }
+        guard let model = usageModel, let report = LiveUsageReport(reportId: usageReportID, model: model, usage: usage) else { return }
+        Task.detached {
+            for attempt in 0..<2 {
+                if (try? await PracticeAPIClient().reportLiveUsage(report)) != nil { return }
+                if attempt == 0 { try? await Task.sleep(nanoseconds: 3_000_000_000) }
+            }
+        }
+    }
+
     /// 打断: stop the partner now and open the microphone for the learner. On the
     /// loudspeaker this is how the learner talks over the partner without echo.
     func interruptPartner() {
@@ -351,6 +370,7 @@ final class LivePracticeController: ObservableObject {
         generations.reconnect(); connectTask?.cancel(); connectTask = nil
         audio.stop(); state = .disconnected; playing = false; muted = false
         clearSuggestion(); suggestedLine = nil; discardingPartnerTurn = false
+        reportUsage()
         prefetched?.task.cancel(); prefetched = nil
         errorMessage = message
         if let model, let store {

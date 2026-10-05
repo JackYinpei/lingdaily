@@ -1,4 +1,4 @@
--- Read-only verification after all eight LingDaily migrations have completed.
+-- Read-only verification after all nine LingDaily migrations have completed.
 -- Run with "No limit" and require every non-INFO row to report PASS.
 
 with acl_expectations(role_name, table_name, allowed_privileges) as (
@@ -12,7 +12,9 @@ with acl_expectations(role_name, table_name, allowed_privileges) as (
     ('authenticated', 'unfamiliar_english', array['SELECT', 'INSERT']),
     ('authenticated', 'podcasts', array['SELECT']),
     ('authenticated', 'chat_history', array['SELECT', 'INSERT', 'UPDATE', 'DELETE']),
-    ('authenticated', 'scenarios', array['SELECT', 'INSERT', 'UPDATE', 'DELETE'])
+    ('authenticated', 'scenarios', array['SELECT', 'INSERT', 'UPDATE', 'DELETE']),
+    ('anon', 'ai_usage', array[]::text[]),
+    ('authenticated', 'ai_usage', array['SELECT'])
 ),
 acl_mismatches as (
   select expectation.role_name, expectation.table_name, permission.privilege_name
@@ -101,7 +103,8 @@ metrics as (
         'public.unfamiliar_english'::regclass,
         'public.podcasts'::regclass,
         'public.chat_history'::regclass,
-        'public.scenarios'::regclass
+        'public.scenarios'::regclass,
+        'public.ai_usage'::regclass
       )
         and relation.relrowsecurity
     ) as rls_enabled_tables,
@@ -132,6 +135,7 @@ metrics as (
             'Users can update their scenarios',
             'Users can delete their scenarios'
           ))
+          or (tablename = 'ai_usage' and policyname = 'Users can read their AI usage')
         )
     ) as canonical_policies,
     (
@@ -140,7 +144,7 @@ metrics as (
       where schemaname = 'public'
         and tablename in (
           'user_preferences', 'unfamiliar_english', 'podcasts',
-          'chat_history', 'scenarios'
+          'chat_history', 'scenarios', 'ai_usage'
         )
         and not (
           (tablename = 'user_preferences' and policyname in (
@@ -165,6 +169,7 @@ metrics as (
             'Users can update their scenarios',
             'Users can delete their scenarios'
           ))
+          or (tablename = 'ai_usage' and policyname = 'Users can read their AI usage')
         )
     ) as unexpected_policies,
     (select count(*) from acl_mismatches) as table_acl_mismatches,
@@ -188,7 +193,8 @@ metrics as (
       from pg_proc function_row
       where function_row.oid in (
         to_regprocedure('public.claim_podcast_generation(text,boolean,uuid)'),
-        to_regprocedure('public.save_chat_history(uuid,text,text,jsonb,jsonb,text,text,integer)')
+        to_regprocedure('public.save_chat_history(uuid,text,text,jsonb,jsonb,text,text,integer)'),
+        to_regprocedure('public.ai_usage_summary(timestamptz,uuid)')
       )
         and function_row.prosecdef
     ) as security_definer_rpcs,
@@ -209,7 +215,8 @@ metrics as (
     (select count(*) from public.podcasts) as podcast_rows,
     (select count(*) from public.chat_history) as chat_rows,
     (select count(*) from public.scenario_categories) as scenario_category_rows,
-    (select count(*) from public.scenarios) as scenario_rows
+    (select count(*) from public.scenarios) as scenario_rows,
+    (select count(*) from public.ai_usage) as ai_usage_rows
 )
 select severity, check_name, observed, expected
 from metrics
@@ -223,11 +230,12 @@ cross join lateral (
     (case when invalid_chat_rows = 0 then 'PASS' else 'FAIL' end, 'invalid_chat_rows', invalid_chat_rows::text, '0'),
     (case when scenario_language_columns = 4 then 'PASS' else 'FAIL' end, 'scenario_language_columns', scenario_language_columns::text, '4'),
     (case when invalid_scenario_language_rows = 0 then 'PASS' else 'FAIL' end, 'invalid_scenario_language_rows', invalid_scenario_language_rows::text, '0'),
-    (case when rls_enabled_tables = 5 then 'PASS' else 'FAIL' end, 'rls_enabled_tables', rls_enabled_tables::text, '5'),
-    (case when canonical_policies = 14 then 'PASS' else 'FAIL' end, 'canonical_policies', canonical_policies::text, '14'),
+    (case when rls_enabled_tables = 6 then 'PASS' else 'FAIL' end, 'rls_enabled_tables', rls_enabled_tables::text, '6'),
+    (case when canonical_policies = 15 then 'PASS' else 'FAIL' end, 'canonical_policies', canonical_policies::text, '15'),
     (case when unexpected_policies = 0 then 'PASS' else 'FAIL' end, 'unexpected_policies', unexpected_policies::text, '0'),
     (case when table_acl_mismatches = 0 then 'PASS' else 'FAIL' end, 'anon_authenticated_table_acl_mismatches', table_acl_mismatches::text, '0'),
-    (case when security_definer_rpcs = 2 then 'PASS' else 'FAIL' end, 'security_definer_rpcs', security_definer_rpcs::text, '2'),
+    (case when security_definer_rpcs = 3 then 'PASS' else 'FAIL' end, 'security_definer_rpcs', security_definer_rpcs::text, '3'),
+    (case when not has_function_privilege('authenticated', 'public.ai_usage_summary(timestamptz,uuid)', 'EXECUTE') then 'PASS' else 'FAIL' end, 'authenticated_cannot_call_usage_summary', has_function_privilege('authenticated', 'public.ai_usage_summary(timestamptz,uuid)', 'EXECUTE')::text, 'false'),
     (case when practice_chat_constraints = 2 then 'PASS' else 'FAIL' end, 'practice_chat_constraints', practice_chat_constraints::text, '2'),
     (case when scenario_practice_plan_column = 1 then 'PASS' else 'FAIL' end, 'scenario_practice_plan_column', scenario_practice_plan_column::text, '1'),
     (case when canonical_triggers = 5 then 'PASS' else 'FAIL' end, 'canonical_triggers', canonical_triggers::text, '5'),
@@ -238,7 +246,8 @@ cross join lateral (
     ('INFO', 'podcast_rows', podcast_rows::text, 'compare with preflight'),
     ('INFO', 'chat_history_rows', chat_rows::text, 'compare with preflight'),
     ('INFO', 'scenario_category_rows', scenario_category_rows::text, 'compare with preflight'),
-    ('INFO', 'scenario_rows', scenario_rows::text, 'preflight rows plus missing built-in seeds')
+    ('INFO', 'scenario_rows', scenario_rows::text, 'preflight rows plus missing built-in seeds'),
+    ('INFO', 'ai_usage_rows', ai_usage_rows::text, 'new table')
 ) result(severity, check_name, observed, expected)
 order by
   case severity when 'FAIL' then 1 when 'PASS' then 2 else 3 end,

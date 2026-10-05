@@ -64,3 +64,15 @@ export async function deleteAuthUser(userId) {
   })
   return res.ok || res.status === 404
 }
+
+/** Email of a Supabase auth user (admin views only), or null. */
+export async function authUserEmail(userId) {
+  const url = supabaseUrl()
+  const key = serviceRoleKey()
+  if (!url || !key) return null
+  const res = await fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+    headers: { apikey: key, Authorization: `Bearer ${key}` },
+  })
+  if (!res.ok) return null
+  return (await res.json())?.email || null
+}

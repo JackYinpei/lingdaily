@@ -89,6 +89,7 @@ enum LiveEvent {
     case audio(Data)
     case tool(LiveToolCall)
     case cancelledTools([String])
+    case usage(LiveUsage)
 }
 
 import CoreFoundation
@@ -160,6 +161,9 @@ enum LiveCodec {
         if let cancellation = root["toolCallCancellation"] as? [String: Any], let ids = cancellation["ids"] as? [String] {
             guard ids.count <= 20, ids.allSatisfy({ $0.utf8.count <= 128 }) else { throw LiveProtocolError.invalid }
             events.append(.cancelledTools(ids))
+        }
+        if let metadata = root["usageMetadata"] as? [String: Any], let usage = LiveUsage(metadata: metadata) {
+            events.append(.usage(usage))
         }
         if root["goAway"] != nil { events.append(.goAway) }
         return events

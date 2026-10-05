@@ -29,7 +29,7 @@ fail() {
 command -v docker >/dev/null 2>&1 || fail "docker is required"
 
 mapfile -t MIGRATIONS < <(find "$MIGRATIONS_DIR" -maxdepth 1 -type f -name '*.sql' -print | sort)
-[[ ${#MIGRATIONS[@]} -eq 8 ]] || fail "expected 8 numbered migrations, found ${#MIGRATIONS[@]}"
+[[ ${#MIGRATIONS[@]} -eq 9 ]] || fail "expected 9 numbered migrations, found ${#MIGRATIONS[@]}"
 
 for migration in "${MIGRATIONS[@]}"; do
   filename="$(basename "$migration")"
@@ -133,6 +133,9 @@ assert_equals "uuid" "$(query_scalar "$FRESH_DB" "select data_type from informat
 
 assert_equals "1" "$(query_scalar "$FRESH_DB" "select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'scenarios' and column_name = 'practice_plan' and data_type = 'jsonb';")" "fresh practice_plan column"
 expect_sql_file_failure "$FRESH_DB" "$FIXTURES_DIR/invalid-practice-key.sql" "practice source requires a practice:<uuid> key"
+apply_sql_file "$FRESH_DB" "$FIXTURES_DIR/ai-usage-smoke.sql"
+assert_equals "2|300|1" "$(query_scalar "$FRESH_DB" "select count(*) || '|' || sum(total_tokens) || '|' || (select jsonb_array_length(public.ai_usage_summary(now() - interval '1 day')->'rows')) from public.ai_usage;")" "ai usage rows and summary"
+expect_sql_file_failure "$FRESH_DB" "$FIXTURES_DIR/invalid-ai-usage.sql" "ai usage rejects a duplicate Live report"
 
 echo "Testing full-chain rerun on fresh schema..."
 apply_migrations "$FRESH_DB"

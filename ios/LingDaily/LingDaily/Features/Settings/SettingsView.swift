@@ -31,6 +31,7 @@ struct SettingsView: View {
                             .font(.subheadline).foregroundColor(Brand.ink).tint(Brand.accent)
                     }.surfaceCard()
                     if account.canPractice { AIModelCard() }
+                    if account.session != nil && !account.usesLocalDevelopment { UsageCard() }
                     Text("LingDaily 体验版 0.3.0 · iOS 15+")
                         .font(.caption).foregroundColor(Brand.secondary).frame(maxWidth: .infinity)
                 }
@@ -252,6 +253,58 @@ private struct ModelRow: View {
             .accessibilityIdentifier("model-\(feature.rawValue)")
         }
         .frame(minHeight: 44)
+    }
+}
+
+/// The learner's own AI token usage over the last 30 days (no prices).
+private struct UsageCard: View {
+    @State private var summary: AIUsageSummary?
+    @State private var failed = false
+
+    private static let labels = ["practice": "文字对话", "scenario": "生成场景", "ideas": "换一批",
+                                 "translate": "单句翻译", "suggest": "卡住时的建议", "live": "语音通话"]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("我的用量").font(.subheadline).foregroundColor(Brand.ink)
+                Spacer()
+                Text("近 30 天").font(.caption).foregroundColor(Brand.secondary)
+            }
+            if let summary {
+                Text("\(Self.format(summary.total.total_tokens)) tokens · \(summary.total.calls) 次")
+                    .font(.title3.weight(.semibold)).foregroundColor(Brand.ink)
+                ForEach(summary.byFeature, id: \.key) { group in
+                    HStack {
+                        Text(Self.labels[group.key] ?? group.key).font(.caption).foregroundColor(Brand.secondary)
+                        Spacer()
+                        Text("\(Self.format(group.total_tokens)) · \(group.calls) 次").font(.caption).foregroundColor(Brand.ink)
+                    }
+                }
+                if summary.byFeature.isEmpty {
+                    Text("还没有用量记录。").font(.caption).foregroundColor(Brand.secondary)
+                }
+            } else if failed {
+                Button("暂时读不到用量，点此重试") { Task { await load() } }
+                    .font(.caption).foregroundColor(Brand.secondary).frame(minHeight: 44)
+            } else {
+                ProgressView().frame(maxWidth: .infinity, minHeight: 44)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .surfaceCard()
+        .task { await load() }
+    }
+
+    private func load() async {
+        failed = false
+        do { summary = try await PracticeAPIClient().usageSummary() } catch { failed = true }
+    }
+
+    private static func format(_ value: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 }
 

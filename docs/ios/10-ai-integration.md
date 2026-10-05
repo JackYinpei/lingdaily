@@ -92,6 +92,10 @@ flowchart LR
 
 Live 建立后的开场信号由 `LiveKickoff` 决定：新会话请对方开场；对方最后一句尚未回答（从文字切到语音或重连）时不发任何信号，等学习者先说，避免模型把上一句问题再问一遍；学习者最后说话时请对方接着回应，且不再打招呼、不重复。服务端 Live 指令同样要求续聊时不重复已说内容。
 
+## AI 用量统计（2026-10-05，仅 iOS）
+
+服务端在每次文字类模型调用后按 Google 返回的 `usageMetadata` 记一行 `ai_usage`（纠错重试的那次也计入，记录失败只打日志、不影响学习者）；Live 音频不经服务器，App 累加每轮 `usageMetadata`（实测为单轮用量，第二轮输入已含上一轮上下文，需求和）并在挂断时 `POST /api/ios/usage` 上报一次，失败 3 秒后重试一次，`reportId` 保证不重复。学习者在「我的 → 我的用量」看近 30 天自己的 token 与次数（不含价格）；管理员在网页 `/admin/usage` 看 7/30/90 天按功能/模型/用户（前 50，显示邮箱）/天的汇总，花费仅对 `AI_PRICING_JSON` 配置了价格的模型估算。迁移 `202610050002_ai_usage.sql` 已于 2026-10-05 按备份→rollback 演练→执行→postflight（19 PASS、行数不变）→事务内冒烟的流程在生产执行。
+
 ## App 内模型切换（2026-10-05）
 
 所有登录用户可在「我的 → AI 模型」按功能（文字对话、卡住时的建议、单句翻译、语音通话）选择模型，选择存在本机 UserDefaults（`aiModel.<feature>`，空=服务端默认）。可选清单只在服务端 `app/lib/ios/models.js` 维护并由 `GET /api/ios/models` 下发；practice/translate/suggest/live-token 请求可带 `model`，服务端 `resolveModel` 只接受清单内或服务端默认的模型，其余一律回退默认（不报错、也不进入提示词），客户端无法调用清单外模型。服务端默认仍由 `GEMINI_PRACTICE_MODEL / GEMINI_SUGGEST_MODEL / GEMINI_TRANSLATE_MODEL / GEMINI_LIVE_MODEL` 配置。清单内每个模型均于 2026-10-05 用项目真实提示词实测：文字 `gemini-3.1-flash-lite`（~3s）、`gemini-3.5-flash-lite`（~1.2s）、`gemini-3.8-flash`（常 503、计费思考）；语音 `gemini-3.1-flash-live-preview`、`gemini-3.8-live`、`gemini-2.5-flash-native-audio-latest` 均以完整 Live 配置跑通一轮。

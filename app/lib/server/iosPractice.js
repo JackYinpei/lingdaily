@@ -4,6 +4,7 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import { GoogleGenAI } from '@google/genai'
 import { getServerGeminiApiKey, getServerGeminiBaseUrl } from './geminiConfig'
 import { resolveModel } from '../ios/models'
+import { recordUsage, tokensFromUsageMetadata } from './aiUsage'
 import {
   buildPracticeContext, IDEAS_INSTRUCTION, IDEAS_RESPONSE_SCHEMA, parseIdeas,
   parsePracticeTurn, parseScenarioDraft, parseSuggestion, parseTranslation,
@@ -55,9 +56,11 @@ function geminiClient() {
 }
 
 // Structured generation with one corrective retry when the JSON fails validation.
+// `usage` ({ userId, feature }) records the tokens of every billed attempt.
 async function generateStructured({ systemInstruction, responseSchema, payload, retryPayload, parse,
-  temperature, maxOutputTokens, invalidMessage, unavailableMessage, model = practiceModel() }) {
+  temperature, maxOutputTokens, invalidMessage, unavailableMessage, model = practiceModel(), usage }) {
   const client = geminiClient()
+  const billed = []
   try {
     const abortSignal = AbortSignal.timeout(25000)
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -72,6 +75,7 @@ async function generateStructured({ systemInstruction, responseSchema, payload, 
           ...(model.startsWith('gemini-2.5-') ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
         },
       })
+      billed.push(response.usageMetadata)
       if (response.candidates?.[0]?.finishReason !== 'STOP') {
         throw new PracticeAPIError(502, 'INCOMPLETE_REPLY', 'AI 这次没有完成回答，请重试。')
       }
@@ -91,10 +95,12 @@ async function generateStructured({ systemInstruction, responseSchema, payload, 
       throw new PracticeAPIError(502, 'INVALID_REPLY', 'AI 回复格式不完整，请重试。')
     }
     throw new PracticeAPIError(502, 'MODEL_UNAVAILABLE', unavailableMessage)
+  } finally {
+    if (usage && billed.length) recordUsage(usage.userId, usage.feature, model, tokensFromUsageMetadata(...billed))
   }
 }
 
-export async function generatePracticeTurn(body) {
+export async function generatePracticeTurn(body, userId) {
   const context = buildPracticeContext(body)
   const { model, data } = await generateStructured({
     systemInstruction: SYSTEM_INSTRUCTION, responseSchema: RESPONSE_SCHEMA,
@@ -102,40 +108,41 @@ export async function generatePracticeTurn(body) {
     retryPayload: { ...context, formatReminder: 'The previous attempt was invalid. Rewrite ONLY learnerLatestAnswer in feedback.revised; do not put the role-play partner reply there. Follow every required field and length limit.' },
     parse: raw => parsePracticeTurn(raw, body.action, context.learnerLatestAnswer || ''),
     temperature: 0.65, maxOutputTokens: 1800, model: resolveModel('practice', body.model, practiceModel()),
+    usage: { userId, feature: 'practice' },
     invalidMessage: 'AI 这次的表达建议不完整，请重试。',
     unavailableMessage: '暂时连不上 AI，请重试。你的回答已保留。',
   })
   return { requestId: body.requestId, model, data }
 }
 
-export async function generateScenarioDraft(body) {
+export async function generateScenarioDraft(body, userId) {
   const payload = { learnerDescription: body.description }
   const { model, data } = await generateStructured({
     systemInstruction: SCENARIO_INSTRUCTION, responseSchema: SCENARIO_RESPONSE_SCHEMA,
     payload,
     retryPayload: { ...payload, formatReminder: 'The previous attempt was invalid. Return exactly 3 steps and respect every field length.' },
     parse: parseScenarioDraft,
-    temperature: 0.8, maxOutputTokens: 2400,
+    temperature: 0.8, maxOutputTokens: 2400, usage: { userId, feature: 'scenario' },
     invalidMessage: 'AI 这次没能生成完整的场景，请重试。',
     unavailableMessage: '暂时连不上 AI，请重试。你的描述已保留。',
   })
   return { requestId: body.requestId, model, scenario: data }
 }
 
-export async function generateTranslation(body) {
+export async function generateTranslation(body, userId) {
   const payload = { line: body.text }
   const { model, data } = await generateStructured({
     systemInstruction: TRANSLATION_INSTRUCTION, responseSchema: TRANSLATION_RESPONSE_SCHEMA,
     payload, retryPayload: { ...payload, formatReminder: 'Return {"translation": "..."} only.' },
     parse: parseTranslation, temperature: 0.2, maxOutputTokens: 1200,
-    model: resolveModel('translate', body.model, translationModel()),
+    model: resolveModel('translate', body.model, translationModel()), usage: { userId, feature: 'translate' },
     invalidMessage: '这句翻译不完整，请重试。',
     unavailableMessage: '暂时无法翻译，请稍后重试。',
   })
   return { requestId: body.requestId, model, translation: data }
 }
 
-export async function generateSuggestion(body) {
+export async function generateSuggestion(body, userId) {
   const payload = {
     scenario: body.scenario, personalGoal: body.goal, context: body.context,
     currentTask: body.scenario.goals[body.stepIndex], stepIndex: body.stepIndex, recentMessages: body.messages,
@@ -145,19 +152,19 @@ export async function generateSuggestion(body) {
     payload, retryPayload: { ...payload, formatReminder: 'Return hint, keywords, reply and meaning only, within the length limits.' },
     // Headroom for models that think before answering (they bill and count those tokens too).
     parse: parseSuggestion, temperature: 0.5, maxOutputTokens: 1500,
-    model: resolveModel('suggest', body.model, suggestionModel()),
+    model: resolveModel('suggest', body.model, suggestionModel()), usage: { userId, feature: 'suggest' },
     invalidMessage: '这次的建议不完整，请再点一次。',
     unavailableMessage: '暂时拿不到建议，请稍后再试。',
   })
   return { requestId: body.requestId, model, suggestion: data }
 }
 
-export async function generateIdeas(body) {
+export async function generateIdeas(body, userId) {
   const payload = { avoid: body.avoid }
   const { model, data } = await generateStructured({
     systemInstruction: IDEAS_INSTRUCTION, responseSchema: IDEAS_RESPONSE_SCHEMA,
     payload, retryPayload: { ...payload, formatReminder: 'Return exactly 3 ideas, each at most 30 Chinese characters.' },
-    parse: parseIdeas, temperature: 1, maxOutputTokens: 1200,
+    parse: parseIdeas, temperature: 1, maxOutputTokens: 1200, usage: { userId, feature: 'ideas' },
     invalidMessage: '这一批没生成好，请再点一次。',
     unavailableMessage: '暂时换不了，请稍后再试。',
   })
@@ -210,7 +217,7 @@ export function createPracticeCoordinator({ generate = generatePracticeTurn, now
       entries.delete(oldest[0])
     }
     const entry = { fingerprint, created: time, done: false }
-    entry.promise = Promise.resolve().then(() => generate(body)).then(result => {
+    entry.promise = Promise.resolve().then(() => generate(body, userId)).then(result => {
       entry.done = true
       return result
     }).catch(error => {
@@ -222,13 +229,13 @@ export function createPracticeCoordinator({ generate = generatePracticeTurn, now
   }
 }
 
-const stateKey = Symbol.for('lingdaily.iosPracticeCoordinator.v3')
+const stateKey = Symbol.for('lingdaily.iosPracticeCoordinator.v4')
 function coordinated(name, generate) {
   // Keep cache and limits across Next HMR, but use the latest generation code.
   const state = globalThis[stateKey] ||= {}
   const slot = state[name] ||= {}
   slot.generate = generate
-  slot.perform ||= createPracticeCoordinator({ generate: input => slot.generate(input) })
+  slot.perform ||= createPracticeCoordinator({ generate: (input, userId) => slot.generate(input, userId) })
   return slot.perform
 }
 export const performPracticeRequest = (body, userId) => coordinated('practice', generatePracticeTurn)(body, userId)

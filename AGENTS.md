@@ -212,6 +212,8 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 | `POST /api/ios/practice`、`/scenario`、`/live-token` | iOS 会话 | 原生练习、场景生成、Live 临时 token |
 | `GET /api/ios/models` | iOS 会话 | App 可选模型清单（按功能：practice/suggest/translate/live），见 `app/lib/ios/models.js` |
 | `POST /api/ios/scenario-ideas` | iOS 会话 | 新建场景页「换一批」：生成 3 条不重复的场景灵感 |
+| `GET/POST /api/ios/usage` | iOS 会话 | 本人近 30 天 token 用量（不含价格）；POST 为 App 上报一次 Live 连接的用量（reportId 幂等） |
+| `GET /api/admin/usage`（页面 `/admin/usage`） | `ADMIN_EMAILS` | iOS AI 用量后台：按天/功能/模型/用户汇总 token 与估算花费 |
 | `POST /api/ios/suggest` | iOS 会话 | 通话中卡住时的回复建议：中文提示 + 关键词 + 学习者视角英文参考句及中文意思 |
 | `POST /api/ios/translate` | iOS 会话 | 按需把对方一句话译成中文（Live 字幕没有自带翻译），结果存进该消息并随云同步 |
 | `GET/POST /api/ios/sync` | iOS 会话 | 原生云同步：上传待同步改动并返回账号云端快照（写入下方共享表） |
@@ -233,7 +235,7 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 
 ## 规范数据模型
 
-除明确标为历史兼容表的对象外，以 `supabase/migrations/` 下全部八个迁移（`202607110001...007` 与 `202610050001_native_practice_sync`）
+除明确标为历史兼容表的对象外，以 `supabase/migrations/` 下全部九个迁移（`202607110001...007`、`202610050001_native_practice_sync`、`202610050002_ai_usage`）
 全部执行后的结构为准。生产库在
 2026-07-11 被确认为早期手工建表并且没有
 `supabase_migrations.schema_migrations`；不要仅根据 CI 通过就假设生产已迁移。
@@ -324,6 +326,10 @@ authenticated 只能写自己的行。
 seed 只插入缺失的系统场景，不覆盖生产已有 prompt/description。如果发现同语言对的
 重复系统场景，迁移必须回滚；不得自动选一条并删除其余场景或对话。
 
+### `ai_usage`
+
+iOS App 的 AI token 用量（仅 iOS）。文字类功能（practice/scenario/ideas/translate/suggest）由服务端每次模型调用后按 `usageMetadata` 写一行（含纠错重试的计费尝试）；Live 由 App 按每轮 `usageMetadata` 累加，挂断时上报一行，`report_id` 与 `user_id` 组成唯一键保证幂等。字段：`user_id`（auth.users FK，cascade）、`source='ios'`、`feature`、`model`、`input/output/thinking/input_audio/output_audio/total_tokens`、`report_id`、`created_at`。RLS 只允许 owner SELECT；写入只走 service_role。`ai_usage_summary(p_since, p_user_id)` 为 service_role 专用 SECURITY DEFINER RPC，按北京日期×功能×模型×用户分组。估算花费只对 `AI_PRICING_JSON` 中配置了价格（USD/1M token，可分 audioInput/audioOutput）的模型计算，思考 token 按输出计价，未配置的模型只显示 token。
+
 ### `scenario_categories`
 
 生产旧库保留的历史分类表：`id`, unique `slug`, `name_zh/en/ja`, `icon`,
@@ -352,7 +358,7 @@ completed 只有 force 可重领，进行中租约超过 30 分钟可重领。
 
 ## 数据库迁移规则
 
-- 八个规范迁移必须按文件名顺序执行（`202610050001_native_practice_sync` 必须在 iOS 云同步代码上线前执行；未执行时同步接口返回 502，iOS 数据保留在本机等待重试）。
+- 九个规范迁移必须按文件名顺序执行（`202610050001_native_practice_sync` 必须在 iOS 云同步代码上线前执行；未执行时同步接口返回 502，iOS 数据保留在本机等待重试）。
 - 每个 migration 自带 `BEGIN`/`COMMIT`。在 SQL Editor 必须整份执行，不得去掉事务
   边界或只运行局部；保护性异常必须回滚本文件此前的 DDL/DML。
 - 2026-07-11 生产 catalog 的合成等价 fixture 是

@@ -8,14 +8,16 @@ final class LiveKickoffTests: XCTestCase {
         steps: (0..<3).map { PracticeStep(id: "s\($0)", goal: "目标", prompt: "P?", translation: "译", hint: "", keywords: "", expression: "", meaning: "") })
 
     func testFreshRehearsalAsksThePartnerToOpen() {
-        XCTAssertEqual(LiveKickoff.text(for: PracticeSession(scenario: scenario, useAI: true)), LiveKickoff.fresh)
+        let kickoff = LiveKickoff.text(for: PracticeSession(scenario: scenario, useAI: true))
+        XCTAssertEqual(kickoff, LiveKickoff.fresh(scenario))
+        XCTAssertTrue(kickoff?.contains("You are Alex (同事); I am the learner") == true)
     }
 
     func testUnansweredPartnerLineSendsNothingSoItIsNotRepeated() {
         var session = PracticeSession(scenario: scenario) // opens with the partner's prompt
         XCTAssertNil(LiveKickoff.text(for: session))
         XCTAssertTrue(session.submit("I need two more days."))
-        XCTAssertEqual(LiveKickoff.text(for: session), LiveKickoff.replyToLearner)
+        XCTAssertEqual(LiveKickoff.text(for: session), LiveKickoff.replyToLearner(scenario))
     }
 
     func testTranslationIsStoredOnlyOnPartnerLines() {

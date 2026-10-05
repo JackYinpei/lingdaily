@@ -107,6 +107,7 @@ describe('iOS Live development token', () => {
     expect(locked.config.systemInstruction).toContain('中文教练规则')
     expect(locked.config.systemInstruction).toContain('native AUDIO-TO-AUDIO')
     expect(locked.config.systemInstruction).toContain('natural rhythm, varied intonation')
+    expect(locked.config.systemInstruction).toContain('every 你 there is the learner, never you')
     expect(locked.config.tools[0].functionDeclarations.map(tool => tool.name)).toEqual([
       'record_language_correction', 'record_unfamiliar_learning_items', 'mark_task_complete',
     ])

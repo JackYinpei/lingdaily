@@ -31,6 +31,8 @@ final class LiveAudioController {
     private var sessionActive = false
     private var receivedBytes = 0, scheduledBytes = 0, playedBytes = 0, droppedBytes = 0
     private var routeRestarts = 0
+    private var echoGate = LiveEchoGate()
+    private var speakerOutput = true
     private var observers: [NSObjectProtocol] = []
     var onStopRequired: ((StopReason) -> Void)?
     var onBufferPressure: (() -> Void)?
@@ -48,6 +50,7 @@ final class LiveAudioController {
                 if name == AVAudioSession.interruptionNotification,
                    (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) != AVAudioSession.InterruptionType.began.rawValue { return }
                 if name == AVAudioSession.routeChangeNotification {
+                    self?.updateOutputRoute()
                     let raw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
                     switch LiveAudioRoutePolicy.action(reason: raw) {
                     case .ignore: return
@@ -72,6 +75,7 @@ final class LiveAudioController {
         try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, bluetooth])
         try session.setActive(true)
         sessionActive = true
+        updateOutputRoute()
         try worker.sync {
             // Configure voice processing before any output is scheduled. Adding
             // the microphone tap after setup must not restart first-reply audio.
@@ -152,7 +156,20 @@ final class LiveAudioController {
     }
     func takeFrame() -> Data? {
         lock.lock(); let pipeline = microphone; lock.unlock()
-        return pipeline?.takeFrame()
+        guard let frame = pipeline?.takeFrame() else { return nil }
+        lock.lock()
+        let suppress = echoGate.suppressesMicrophone(partnerAudible: playback.reservedBytes > 0,
+                                                     speakerOutput: speakerOutput, now: ProcessInfo.processInfo.systemUptime)
+        lock.unlock()
+        // Keep the stream timing so server-side voice detection sees the learner as silent.
+        return suppress ? Data(count: frame.count) : frame
+    }
+
+    /// Echo suppression only applies when the partner plays through the phone's own speaker.
+    private func updateOutputRoute() {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType)
+        let speaker = outputs.isEmpty || outputs.contains { $0 == .builtInSpeaker || $0 == .builtInReceiver }
+        lock.lock(); speakerOutput = speaker; lock.unlock()
     }
     func setMuted(_ value: Bool) {
         worker.sync {

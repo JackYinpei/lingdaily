@@ -14,6 +14,8 @@ final class LivePracticeController: ObservableObject {
     @Published private(set) var suggesting = false
     @Published private(set) var suggestionError: String?
     private var stuckTask: Task<Void, Never>?
+    /// After 打断, the rest of the partner's current reply is dropped until the server ends that turn.
+    private var discardingPartnerTurn = false
     private var suggestedLine: UUID?
     private let audio = LiveAudioController()
     private let client = LiveWebSocketClient()
@@ -153,7 +155,7 @@ final class LivePracticeController: ObservableObject {
                 }
             }
         case .audio(let pcm):
-            guard !pcm.isEmpty else { return }
+            guard !pcm.isEmpty, !discardingPartnerTurn else { return }
             completionTask?.cancel(); completionTask = nil
             turnFinished = false; audio.play(pcm)
             clearSuggestion()
@@ -162,9 +164,12 @@ final class LivePracticeController: ObservableObject {
             LiveDebugDiagnostics.record("event=interrupted")
             #endif
             generations.interrupt(); audio.interruptPlayback(); playing = false
+            discardingPartnerTurn = false
             // Keep input subtitle until final; next partner output gets a new ID.
             transcript.finishPartner()
         case .transcription(let role, let text, let finished):
+            // Lines the learner chose not to hear after 打断 are not shown as said.
+            if role == .partner && discardingPartnerTurn { return }
             do {
                 let segment = try transcript.update(role: role, text: text, finished: finished)
                 var session = model.session
@@ -181,6 +186,7 @@ final class LivePracticeController: ObservableObject {
             LiveDebugDiagnostics.record("event=turnComplete")
             #endif
             turnFinished = true
+            discardingPartnerTurn = false
             transcript.finishTurn()
             var session = model.session; pendingTools.flush(to: &session); model.updateLive(session); scheduleSave()
             finishIfReady()
@@ -238,6 +244,20 @@ final class LivePracticeController: ObservableObject {
             self.stop()
         }
     }
+    /// 打断: stop the partner now and open the microphone for the learner. On the
+    /// loudspeaker this is how the learner talks over the partner without echo.
+    func interruptPartner() {
+        guard state == .active, playing else { return }
+        // The server often finishes a reply before it has all played; only drop
+        // what is still to come for a turn the server has not closed yet.
+        discardingPartnerTurn = !turnFinished
+        generations.interrupt()
+        audio.learnerTakesFloor()
+        playing = false
+        transcript.finishPartner()
+        if muted { toggleMute() }
+    }
+
     /// "卡住了" button: ask for a reply idea right away.
     func requestSuggestion() {
         guard state == .active, let model, !suggesting else { return }
@@ -302,7 +322,7 @@ final class LivePracticeController: ObservableObject {
         pendingSave?.cancel(); pendingSave = nil
         generations.reconnect(); connectTask?.cancel(); connectTask = nil
         audio.stop(); state = .disconnected; playing = false; muted = false
-        clearSuggestion(); suggestedLine = nil
+        clearSuggestion(); suggestedLine = nil; discardingPartnerTurn = false
         errorMessage = message
         if let model, let store {
             var session = model.session; pendingTools.flush(to: &session); session.endLive()

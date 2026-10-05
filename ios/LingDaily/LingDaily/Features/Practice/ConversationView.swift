@@ -182,7 +182,12 @@ struct ConversationView: View {
             HStack(spacing: 12) {
                 Text(live.status).font(.caption.weight(.medium)).foregroundColor(Brand.secondary)
                     .accessibilityIdentifier("live-status")
-                if live.state == .active && live.suggestion == nil {
+                if live.state == .active && live.playing {
+                    // On the loudspeaker this is how to talk over the partner without echo.
+                    Button("打断") { live.interruptPartner() }
+                        .font(.caption.weight(.semibold)).foregroundColor(Brand.accent)
+                        .frame(minHeight: 32).accessibilityIdentifier("live-interrupt")
+                } else if live.state == .active && live.suggestion == nil {
                     Button(live.suggesting ? "正在想…" : "卡住了？") { live.requestSuggestion() }
                         .font(.caption.weight(.medium)).foregroundColor(Brand.accent)
                         .frame(minHeight: 32).disabled(live.suggesting)

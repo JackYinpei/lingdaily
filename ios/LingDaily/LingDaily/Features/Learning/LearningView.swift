@@ -111,7 +111,7 @@ struct SessionDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var speech = SpeechController()
     @State private var activeSession: PracticeSession?
-    @State private var translated: Set<UUID> = []
+    @StateObject private var translations = BubbleTranslations()
     @State private var showDelete = false
     let initialSession: PracticeSession
     private var session: PracticeSession {
@@ -134,10 +134,14 @@ struct SessionDetailView: View {
                     }.padding(.bottom, 8)
                     ForEach(session.messages) { message in
                         MessageBubble(message: message, scenario: session.scenario,
-                                      showTranslation: translated.contains(message.id),
+                                      showTranslation: translations.shown.contains(message.id),
+                                      translationState: translations.state(of: message.id),
                                       onTranslate: {
-                                          if translated.contains(message.id) { translated.remove(message.id) }
-                                          else { translated.insert(message.id) }
+                                          translations.toggle(message, in: session.scenario) { text in
+                                              var updated = session
+                                              guard updated.applyTranslation(text, to: message.id) else { return }
+                                              store.save(updated)
+                                          }
                                       },
                                       onListen: speech.speak)
                         if let feedback = session.feedback(for: message.id) {

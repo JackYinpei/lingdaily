@@ -86,6 +86,12 @@ flowchart LR
 
 `npm run ios:dev` 仍可用于调试服务端改动：只在该进程运行期间生成配对文件，Debug 构建打包后改连 Mac 且免登录；进程退出即删除配对文件。生产拒绝配对 token。
 
+## 中文翻译与 Live 续聊（2026-10-05）
+
+对方每句话都显示「中文」。文字模式回复自带 `translation`；Live 字幕没有翻译，首次点开时调用 `POST /api/ios/translate { requestId, text≤1000 }`（同一模型、文本只作数据传入），结果写入该消息的 `translation` 并更新 `updatedAt`，随云同步保存，之后不再请求。对话页与记录回看页共用 `BubbleTranslations`。
+
+Live 建立后的开场信号由 `LiveKickoff` 决定：新会话请对方开场；对方最后一句尚未回答（从文字切到语音或重连）时不发任何信号，等学习者先说，避免模型把上一句问题再问一遍；学习者最后说话时请对方接着回应，且不再打招呼、不重复。服务端 Live 指令同样要求续聊时不重复已说内容。
+
 ## 云同步与删除账号（2026-10-05）
 
 iOS 不另建存储，**复用网页已有的 Supabase 表**，同一账号在网页与 App 看到同一份数据（迁移 `202610050001_native_practice_sync.sql`）：

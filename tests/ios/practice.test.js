@@ -10,6 +10,7 @@ vi.mock('@/app/lib/server/geminiConfig', () => ({
 
 import { GET, POST } from '@/app/api/ios/practice/route'
 import { POST as POST_SCENARIO } from '@/app/api/ios/scenario/route'
+import { POST as POST_TRANSLATE } from '@/app/api/ios/translate/route'
 import { practiceRequestSchema, parsePracticeTurn, buildPracticeContext } from '@/app/lib/ios/practice'
 import { authorizeDevelopmentPractice, createPracticeCoordinator } from '@/app/lib/server/iosPractice'
 
@@ -203,5 +204,27 @@ describe('learner-described scenarios', () => {
     const response = await POST_SCENARIO(scenarioRequest({ requestId: randomUUID(), description: '点咖啡' }))
     expect(response.status).toBe(502)
     expect(generate).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('on-demand translation', () => {
+  const translateRequest = (payload, credential = token) => new Request('http://localhost:8000/api/ios/translate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${credential}` }, body: JSON.stringify(payload),
+  })
+  it('translates one line as data and returns the validated Chinese text', async () => {
+    generate.mockResolvedValueOnce({ text: JSON.stringify({ translation: '你担心赶不上周五的截止日期吗？' }), candidates: [{ finishReason: 'STOP' }], modelVersion: 'test-model' })
+    const input = { requestId: randomUUID(), text: 'Are you worried about meeting the Friday deadline?' }
+    const response = await POST_TRANSLATE(translateRequest(input))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ requestId: input.requestId, model: 'test-model', translation: '你担心赶不上周五的截止日期吗？' })
+    const sent = generate.mock.calls.at(-1)[0]
+    expect(sent.config.systemInstruction).not.toContain(input.text)
+    expect(sent.contents[0].parts[0].text).toContain(input.text)
+  })
+  it('requires a session and a bounded line', async () => {
+    expect((await POST_TRANSLATE(translateRequest({ requestId: randomUUID(), text: 'Hi' }, 'invalid'))).status).toBe(401)
+    expect((await POST_TRANSLATE(translateRequest({ requestId: randomUUID(), text: '' }))).status).toBe(400)
+    expect((await POST_TRANSLATE(translateRequest({ requestId: randomUUID(), text: 'a'.repeat(1001) }))).status).toBe(400)
+    expect(generate).not.toHaveBeenCalled()
   })
 })

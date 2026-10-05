@@ -4,8 +4,9 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import { GoogleGenAI } from '@google/genai'
 import { getServerGeminiApiKey, getServerGeminiBaseUrl } from './geminiConfig'
 import {
-  buildPracticeContext, parsePracticeTurn, parseScenarioDraft,
+  buildPracticeContext, parsePracticeTurn, parseScenarioDraft, parseTranslation,
   RESPONSE_SCHEMA, SCENARIO_INSTRUCTION, SCENARIO_RESPONSE_SCHEMA, SYSTEM_INSTRUCTION,
+  TRANSLATION_INSTRUCTION, TRANSLATION_RESPONSE_SCHEMA,
 } from '../ios/practice'
 
 export class PracticeAPIError extends Error {
@@ -115,6 +116,18 @@ export async function generateScenarioDraft(body) {
   return { requestId: body.requestId, model, scenario: data }
 }
 
+export async function generateTranslation(body) {
+  const payload = { line: body.text }
+  const { model, data } = await generateStructured({
+    systemInstruction: TRANSLATION_INSTRUCTION, responseSchema: TRANSLATION_RESPONSE_SCHEMA,
+    payload, retryPayload: { ...payload, formatReminder: 'Return {"translation": "..."} only.' },
+    parse: parseTranslation, temperature: 0.2, maxOutputTokens: 400,
+    invalidMessage: '这句翻译不完整，请重试。',
+    unavailableMessage: '暂时无法翻译，请稍后重试。',
+  })
+  return { requestId: body.requestId, model, translation: data }
+}
+
 // Per-user single-process budget. Cached practice replies do not acquire a
 // slot; each single-use Live credential does acquire a fresh slot.
 export function createUserLimiter({ now = Date.now, maxConcurrent = 2, maxPerMinute = 20 } = {}) {
@@ -184,6 +197,7 @@ function coordinated(name, generate) {
 }
 export const performPracticeRequest = (body, userId) => coordinated('practice', generatePracticeTurn)(body, userId)
 export const performScenarioRequest = (body, userId) => coordinated('scenario', generateScenarioDraft)(body, userId)
+export const performTranslationRequest = (body, userId) => coordinated('translate', generateTranslation)(body, userId)
 
 // ---- HTTP helpers shared by the /api/ios/* routes ----
 

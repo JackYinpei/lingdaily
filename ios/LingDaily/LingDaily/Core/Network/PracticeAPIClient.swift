@@ -170,6 +170,16 @@ final class PracticeAPIClient: PracticeServing {
         return scenario
     }
 
+    /// Chinese gloss for one partner line, fetched when the learner taps 中文.
+    func translate(_ text: String) async throws -> String {
+        struct Request: Encodable { let requestId: UUID; let text: String }
+        struct Response: Decodable { let requestId: UUID; let translation: String }
+        let request = Request(requestId: UUID(), text: String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1000)))
+        let result: Response = try await post("api/ios/translate", request)
+        guard result.requestId == request.requestId, !result.translation.isEmpty else { throw PracticeNetworkError.invalidReply }
+        return result.translation
+    }
+
     func liveToken(for session: PracticeSession) async throws -> LiveToken {
         try await post("api/ios/live-token", LiveTokenRequest(session: session))
     }

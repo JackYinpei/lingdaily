@@ -115,9 +115,12 @@ final class LivePracticeController: ObservableObject {
                 guard let self, self.generations.accepts(connection: current), self.state == .connecting else { return }
                 do {
                     // turnComplete on clientContent interrupts live generation.
-                    // Queue the one neutral kickoff BEFORE starting input PCM;
-                    // independent tasks can otherwise race across audio turns.
-                    try await self.client.sendText("Please begin our rehearsal at the current task.", generation: current)
+                    // Queue the kickoff BEFORE starting input PCM; independent
+                    // tasks can otherwise race across audio turns. When the
+                    // partner's last line is unanswered, send none: the learner speaks first.
+                    if let kickoff = LiveKickoff.text(for: model.session) {
+                        try await self.client.sendText(kickoff, generation: current)
+                    }
                     guard self.generations.accepts(connection: current), self.state == .connecting else { return }
                     try self.audio.startCapture(); self.state = .active
                     #if DEBUG

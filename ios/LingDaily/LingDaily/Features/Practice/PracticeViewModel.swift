@@ -51,6 +51,11 @@ final class PracticeViewModel: ObservableObject {
         }
     }
 
+    func applyTranslation(_ translation: String, to messageID: UUID, store: PracticeStore) {
+        guard session.applyTranslation(translation, to: messageID) else { return }
+        store.save(session)
+    }
+
     func enterLive() { pause(); session.beginLive() }
     func enterText(store: PracticeStore) { session.prepareText(); requestPending(store: store) }
     func updateLive(_ changed: PracticeSession) { session = changed }

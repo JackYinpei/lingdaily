@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 struct ConversationView: View {
@@ -14,7 +15,7 @@ struct ConversationView: View {
     @State private var submittingDictation = false
     @AppStorage("preferVoicePractice") private var preferVoicePractice = true
     @State private var hintLevel = 0
-    @State private var translated: Set<UUID> = []
+    @StateObject private var translations = BubbleTranslations()
     @State private var showExit = false
     @FocusState private var inputFocused: Bool
     let onClose: () -> Void
@@ -159,8 +160,13 @@ struct ConversationView: View {
     private var transcriptRows: some View {
                     ForEach(session.messages) { message in
                         MessageBubble(message: message, scenario: session.scenario,
-                                      showTranslation: translated.contains(message.id),
-                                      onTranslate: { toggleTranslation(message.id) },
+                                      showTranslation: translations.shown.contains(message.id),
+                                      translationState: translations.state(of: message.id),
+                                      onTranslate: {
+                                          translations.toggle(message, in: session.scenario) { text in
+                                              model.applyTranslation(text, to: message.id, store: store)
+                                          }
+                                      },
                                       onListen: onListen)
                         if let feedback = session.feedback(for: message.id) {
                             FeedbackNote(feedback: feedback, source: session.scenario.title, onListen: onListen)
@@ -368,25 +374,65 @@ struct ConversationView: View {
         inputFocused = false
     }
 
-    private func toggleTranslation(_ id: UUID) {
-        if translated.contains(id) { translated.remove(id) } else { translated.insert(id) }
-    }
-
     private func scrollToLatest(_ proxy: ScrollViewProxy) {
         withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("latest", anchor: .bottom) }
     }
 }
 
+/// Which partner lines show their Chinese gloss. Lines without one (Live
+/// transcripts) are translated once on first tap and saved with the message.
+@MainActor
+final class BubbleTranslations: ObservableObject {
+    @Published private(set) var shown: Set<UUID> = []
+    @Published private var loading: Set<UUID> = []
+    @Published private var failed: Set<UUID> = []
+
+    func state(of id: UUID) -> MessageBubble.TranslationState {
+        loading.contains(id) ? .loading : failed.contains(id) ? .failed : .idle
+    }
+
+    func toggle(_ message: PracticeMessage, in scenario: PracticeScenario, save: @escaping (String) -> Void) {
+        let id = message.id
+        if shown.contains(id) { shown.remove(id); return }
+        if MessageBubble.translation(of: message, in: scenario) != nil { shown.insert(id); return }
+        guard !loading.contains(id) else { return }
+        loading.insert(id)
+        failed.remove(id)
+        Task {
+            do {
+                save(try await PracticeAPIClient().translate(message.text))
+                shown.insert(id)
+            } catch {
+                failed.insert(id)
+            }
+            loading.remove(id)
+        }
+    }
+}
+
 struct MessageBubble: View {
+    enum TranslationState { case idle, loading, failed }
     let message: PracticeMessage
     let scenario: PracticeScenario
     var showTranslation = false
+    var translationState = TranslationState.idle
     var onTranslate: (() -> Void)? = nil
     var onListen: ((String) -> Void)? = nil
 
     private var isUser: Bool { message.role == .user }
-    private var translation: String? {
-        message.translation ?? (message.kind == .prompt ? scenario.steps[message.stepIndex].translation : nil)
+    private var translation: String? { Self.translation(of: message, in: scenario) }
+
+    static func translation(of message: PracticeMessage, in scenario: PracticeScenario) -> String? {
+        message.translation ?? (message.kind == .prompt && scenario.steps.indices.contains(message.stepIndex)
+            ? scenario.steps[message.stepIndex].translation : nil)
+    }
+
+    private var translateLabel: String {
+        switch translationState {
+        case .loading: return "翻译中…"
+        case .failed: return "翻译失败，重试"
+        case .idle: return showTranslation ? "隐藏中文" : "中文"
+        }
     }
 
     var body: some View {
@@ -420,8 +466,9 @@ struct MessageBubble: View {
                                 Image(systemName: "speaker.wave.2").frame(width: 40, height: 32)
                             }.accessibilityLabel("朗读")
                         }
-                        if let onTranslate, translation != nil {
-                            Button(showTranslation ? "隐藏中文" : "中文", action: onTranslate).frame(height: 32)
+                        if let onTranslate {
+                            Button(translateLabel, action: onTranslate).frame(height: 32)
+                                .disabled(translationState == .loading)
                         }
                     }.font(.caption).foregroundColor(Brand.secondary)
                 }

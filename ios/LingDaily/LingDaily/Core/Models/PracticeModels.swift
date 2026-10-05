@@ -319,3 +319,16 @@ struct LivePracticeState: Codable, Equatable {
     var completedTasks: [Int] = []
     var endedAt: Date? = nil
 }
+
+extension PracticeSession {
+    /// Stores an on-demand Chinese gloss for one partner line (Live transcripts have none).
+    @discardableResult
+    mutating func applyTranslation(_ translation: String, to messageID: UUID, now: Date = Date()) -> Bool {
+        let text = translation.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.count <= 600,
+              let index = messages.firstIndex(where: { $0.id == messageID && $0.role == .partner }) else { return false }
+        messages[index].translation = text
+        updatedAt = now
+        return true
+    }
+}

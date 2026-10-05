@@ -57,7 +57,7 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | `scripts/` | 生产 preflight/postflight 与隔离迁移测试 |
 | `tests/` | Live 音频、对话合并、播客脚本/shownotes/RSS 单测 |
 | `.github/workflows/` | PR 质量门禁与 main 分支镜像部署 |
-| `ios/` | 原生 SwiftUI AI 体验版，最低 iOS 15；Sign in with Apple 后连线上服务，真实 Gemini 逐轮文字 + Live 实时语音/重说/本机历史与收藏，云同步待接入 |
+| `ios/` | 原生 SwiftUI AI 体验版，最低 iOS 15；Sign in with Apple 后连线上服务，真实 Gemini 逐轮文字 + Live 实时语音/重说/历史与收藏；本机存档经 `SyncEngine` 同步到与网页共用的 Supabase 表，可删除账号 |
 | `app/api/ios/auth/apple/` | 原生 Sign in with Apple：验证 Apple identity token（JWKS、bundle ID audience、nonce），按 Apple 验证邮箱复用 `ensureAuthUser()` 映射 Supabase UUID，签发 60 天 iOS 会话 JWT（AUTH_SECRET 经 HKDF 派生的独立密钥） |
 | `app/api/ios/practice/`、`app/api/ios/scenario/`、`app/api/ios/live-token/` | Gemini 逐句练习、新场景生成及受约束 Gemini Live 临时 token API；生产只接受 iOS 会话，本机配对 token 仅 development + 显式启用可用；缓存与限流按用户隔离，不读写数据库 |
 | `app/lib/ios/liveEndpoint.mjs`、`nginx/gemini-proxy.conf` | 原生Live服务端独立选择Google/受控JP/旧中转，严格origin与固定Constrained路径；Nginx示例透传WSS且禁用含凭据URL日志，App也检查完整endpoint白名单 |
@@ -210,6 +210,8 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 | `POST /api/realtime-token` | 登录 | Gemini Live 一次性 token |
 | `POST /api/ios/auth/apple` | 公开（需有效 Apple token） | iOS Apple 登录，签发 iOS 会话 |
 | `POST /api/ios/practice`、`/scenario`、`/live-token` | iOS 会话 | 原生练习、场景生成、Live 临时 token |
+| `GET/POST /api/ios/sync` | iOS 会话 | 原生云同步：上传待同步改动并返回账号云端快照（写入下方共享表） |
+| `POST /api/ios/account/delete` | iOS 会话 + Apple 二次确认 | 永久删除账号（含网页数据）与 Supabase auth 用户，可选撤销 Apple 授权 |
 | `POST /api/gemini-token` | 登录，已弃用 | 上一个接口的兼容别名，带 Deprecation/Sunset header |
 | `GET /api/news` | 公开 | 受 allowlist 限制的 Kagi RSS 代理 |
 | `POST /api/translate` | 登录 | 用 Gemini 翻译新闻标题 |
@@ -227,7 +229,7 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 
 ## 规范数据模型
 
-除明确标为历史兼容表的对象外，以 `supabase/migrations/202607110001...007`
+除明确标为历史兼容表的对象外，以 `supabase/migrations/` 下全部八个迁移（`202607110001...007` 与 `202610050001_native_practice_sync`）
 全部执行后的结构为准。生产库在
 2026-07-11 被确认为早期手工建表并且没有
 `supabase_migrations.schema_migrations`；不要仅根据 CI 通过就假设生产已迁移。
@@ -279,9 +281,11 @@ RLS 只允许 authenticated 读、插入和更新自己的行；不提供用户�
 | `news` | JSONB 主题快照，用于恢复对话 |
 | `history` | JSONB array，消息和 system context |
 | `summary` | 可选摘要 |
-| `source_type` | `news` 或 `scenario` |
+| `source_type` | `news`、`scenario` 或 `practice`（iOS 原生练习，只由 `/api/ios/sync` 写入，网页只读、不能续聊） |
 | `revision` | 从 1 开始的乐观并发版本 |
 | `created_at`, `updated_at` | `timestamptz` |
+
+`practice` 行的 `news_key` 必须是 `practice:<session uuid>`（CHECK 双向约束），`news` 存 `{ _isPractice, schemaVersion, title, session }` 完整 iOS 会话，`history` 是从中派生的网页消息格式，因此网页历史列表、进度/连续天数会计入 iOS 练习。
 
 唯一键是 `(user_id, news_key)`。列表索引是 `(user_id, updated_at DESC, id DESC)`
 及带 `source_type` 的变体。RLS 是 owner CRUD。
@@ -305,6 +309,7 @@ RLS 只允许 authenticated 读、插入和更新自己的行；不提供用户�
 | `sort_order`, `is_active` | 排序与启用状态 |
 | `user_id` | NULL = 系统场景；UUID = 用户场景 |
 | `is_public` | 用户场景是否公开；系统场景的可读性主要由 NULL owner + active 决定 |
+| `practice_plan` | 可空 JSONB；iOS 自建场景的完整三步练习计划（仅私有用户行可有）。这些行同时带生成的英文 `system_prompt`，网页也能当作用户场景使用 |
 | `created_at`, `updated_at` | `timestamptz` |
 
 系统场景有 partial unique index：
@@ -343,7 +348,7 @@ completed 只有 force 可重领，进行中租约超过 30 分钟可重领。
 
 ## 数据库迁移规则
 
-- 七个规范迁移必须按文件名顺序执行。
+- 八个规范迁移必须按文件名顺序执行（`202610050001_native_practice_sync` 必须在 iOS 云同步代码上线前执行；未执行时同步接口返回 502，iOS 数据保留在本机等待重试）。
 - 每个 migration 自带 `BEGIN`/`COMMIT`。在 SQL Editor 必须整份执行，不得去掉事务
   边界或只运行局部；保护性异常必须回滚本文件此前的 DDL/DML。
 - 2026-07-11 生产 catalog 的合成等价 fixture 是

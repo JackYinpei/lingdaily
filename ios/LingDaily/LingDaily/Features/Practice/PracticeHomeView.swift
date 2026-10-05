@@ -71,7 +71,7 @@ struct PracticeHomeView: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("先登录，再开口").font(.headline).foregroundColor(Brand.ink)
-                Text("用 Apple 登录后就能和场景里的人对话。练习记录只保存在这台设备。")
+                Text("用 Apple 登录后就能和场景里的人对话，练习记录会同步到你的账号。")
                     .font(.subheadline).foregroundColor(Brand.secondary)
             }
             AppleSignInButton()

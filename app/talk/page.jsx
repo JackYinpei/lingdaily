@@ -496,6 +496,8 @@ export default function Home() {
                     }
 
                     const row = json.data;
+                    // Native app rehearsals cannot be resumed as a web Live conversation.
+                    if (row.sourceType === 'practice') throw new Error('这是 iOS App 里的练习，请在 App 中继续。');
                     const isScenario = row.sourceType === 'scenario';
                     const fallbackNews = {
                         id: row.newsKey,

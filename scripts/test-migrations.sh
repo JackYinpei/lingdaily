@@ -29,7 +29,7 @@ fail() {
 command -v docker >/dev/null 2>&1 || fail "docker is required"
 
 mapfile -t MIGRATIONS < <(find "$MIGRATIONS_DIR" -maxdepth 1 -type f -name '*.sql' -print | sort)
-[[ ${#MIGRATIONS[@]} -eq 7 ]] || fail "expected 7 numbered migrations, found ${#MIGRATIONS[@]}"
+[[ ${#MIGRATIONS[@]} -eq 8 ]] || fail "expected 8 numbered migrations, found ${#MIGRATIONS[@]}"
 
 for migration in "${MIGRATIONS[@]}"; do
   filename="$(basename "$migration")"
@@ -130,6 +130,9 @@ apply_migrations "$FRESH_DB"
 assert_equals "14" "$(query_scalar "$FRESH_DB" "select count(*) from public.scenarios where user_id is null;")" "fresh seed count"
 assert_equals "0" "$(query_scalar "$FRESH_DB" "select count(*) from (select category_slug, title_en from public.scenarios where user_id is null group by category_slug, title_en having count(*) > 1) duplicates;")" "fresh seed duplicates"
 assert_equals "uuid" "$(query_scalar "$FRESH_DB" "select data_type from information_schema.columns where table_schema = 'public' and table_name = 'user_preferences' and column_name = 'user_id';")" "fresh preference user_id type"
+
+assert_equals "1" "$(query_scalar "$FRESH_DB" "select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'scenarios' and column_name = 'practice_plan' and data_type = 'jsonb';")" "fresh practice_plan column"
+expect_sql_file_failure "$FRESH_DB" "$FIXTURES_DIR/invalid-practice-key.sql" "practice source requires a practice:<uuid> key"
 
 echo "Testing full-chain rerun on fresh schema..."
 apply_migrations "$FRESH_DB"

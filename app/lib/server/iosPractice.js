@@ -198,11 +198,11 @@ export function practiceFailure(error) {
   return practiceJSON({ code: 'UNEXPECTED', message: '服务暂时不可用，请稍后重试。' }, 500)
 }
 
-export async function readBoundedJSON(request) {
+export async function readBoundedJSON(request, maxBytes = MAX_BYTES) {
   if (!request.headers.get('content-type')?.startsWith('application/json')) {
     throw new PracticeAPIError(415, 'JSON_REQUIRED', '请求格式不正确。')
   }
-  if (Number(request.headers.get('content-length')) > MAX_BYTES) {
+  if (Number(request.headers.get('content-length')) > maxBytes) {
     throw new PracticeAPIError(413, 'TOO_LARGE', '练习内容过长。')
   }
   const reader = request.body?.getReader()
@@ -214,7 +214,7 @@ export async function readBoundedJSON(request) {
       const { done, value } = await reader.read()
       if (done) break
       size += value.byteLength
-      if (size > MAX_BYTES) {
+      if (size > maxBytes) {
         await reader.cancel()
         throw new PracticeAPIError(413, 'TOO_LARGE', '练习内容过长。')
       }

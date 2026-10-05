@@ -44,7 +44,7 @@ final class AIConnectionTests: XCTestCase {
         } catch {
             XCTAssertEqual(error.localizedDescription, PracticeNetworkError.signedOut.localizedDescription)
         }
-        let expired = AccountSession(token: "header.payload.signature", expiresAt: Date(timeIntervalSinceNow: -60),
+        let expired = AccountSession(token: "header.payload.signature", userID: "u", expiresAt: Date(timeIntervalSinceNow: -60),
                                      email: "a@example.com", isPrivateEmail: false, appleUserID: "apple")
         do {
             _ = try await PracticeAPIClient(configuration: nil, accountSession: { expired }).createScenario(from: "点咖啡")
@@ -55,13 +55,13 @@ final class AIConnectionTests: XCTestCase {
     }
 
     func testSignInResponseBecomesUsableSession() throws {
-        let json = #"{"sessionToken":"header.payload.signature","expiresAt":"2099-01-01T00:00:00.000Z","account":{"email":"x@privaterelay.appleid.com","isPrivateEmail":true}}"#
+        let json = #"{"sessionToken":"header.payload.signature","expiresAt":"2099-01-01T00:00:00.000Z","account":{"id":"11111111-2222-4333-8444-555555555555","email":"x@privaterelay.appleid.com","isPrivateEmail":true}}"#
         let response = try JSONDecoder().decode(AccountSignInResponse.self, from: Data(json.utf8))
         let session = try XCTUnwrap(response.session(appleUserID: "001.apple"))
         XCTAssertTrue(session.isUsable())
         XCTAssertEqual(session.displayEmail, "Apple 隐藏邮箱")
         XCTAssertEqual(session.appleUserID, "001.apple")
-        let bad = #"{"sessionToken":"has space","expiresAt":"2099-01-01T00:00:00.000Z","account":{"email":"x@example.com","isPrivateEmail":false}}"#
+        let bad = #"{"sessionToken":"has space","expiresAt":"2099-01-01T00:00:00.000Z","account":{"id":"u","email":"x@example.com","isPrivateEmail":false}}"#
         XCTAssertNil(try JSONDecoder().decode(AccountSignInResponse.self, from: Data(bad.utf8)).session(appleUserID: "a"))
     }
 }

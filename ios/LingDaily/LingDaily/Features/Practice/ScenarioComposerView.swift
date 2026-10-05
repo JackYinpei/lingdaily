@@ -77,7 +77,7 @@ struct ScenarioComposerView: View {
                 .buttonStyle(SolidButtonStyle())
                 .disabled(trimmed.isEmpty || isLoading)
                 .accessibilityIdentifier("generate-scenario")
-                Text("描述会发送给 Gemini 生成场景；场景只保存在这台设备。")
+                Text("描述会发送给 Gemini 生成场景；场景会同步到你的账号。")
                     .font(.caption2).foregroundColor(Brand.secondary).multilineTextAlignment(.center)
             }
             .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8)

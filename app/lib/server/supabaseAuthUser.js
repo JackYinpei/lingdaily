@@ -35,16 +35,32 @@ export async function ensureAuthUser({ email, name, image }) {
   }
 
   // User already exists (422) — look up by email
+  return findAuthUserIdByEmail(email)
+}
+
+/** Looks up an existing Supabase auth user without creating one. */
+export async function findAuthUserIdByEmail(email) {
+  const url = supabaseUrl()
+  const key = serviceRoleKey()
+  if (!url || !key || !email) return null
   const listRes = await fetch(
     `${url}/auth/v1/admin/users?filter=${encodeURIComponent(email)}&page=1&per_page=10`,
-    { method: 'GET', headers },
+    { method: 'GET', headers: { apikey: key, Authorization: `Bearer ${key}` } },
   )
-  if (listRes.ok) {
-    const listData = await listRes.json()
-    const users = listData.users || []
-    const match = users.find(u => u.email === email)
-    if (match) return match.id
-  }
+  if (!listRes.ok) return null
+  const listData = await listRes.json()
+  const users = listData.users || []
+  const match = users.find(u => u.email?.toLowerCase() === email.toLowerCase())
+  return match?.id || null
+}
 
-  return null
+/** Permanently deletes the Supabase auth user; owned rows cascade via FKs. */
+export async function deleteAuthUser(userId) {
+  const url = supabaseUrl()
+  const key = serviceRoleKey()
+  if (!url || !key) return false
+  const res = await fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'DELETE', headers: { apikey: key, Authorization: `Bearer ${key}` },
+  })
+  return res.ok || res.status === 404
 }

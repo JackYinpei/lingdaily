@@ -86,6 +86,22 @@ flowchart LR
 
 `npm run ios:dev` 仍可用于调试服务端改动：只在该进程运行期间生成配对文件，Debug 构建打包后改连 Mac 且免登录；进程退出即删除配对文件。生产拒绝配对 token。
 
+## 云同步与删除账号（2026-10-05）
+
+iOS 不另建存储，**复用网页已有的 Supabase 表**，同一账号在网页与 App 看到同一份数据（迁移 `202610050001_native_practice_sync.sql`）：
+
+| iOS 本机 | Supabase | 网页可见性 |
+| --- | --- | --- |
+| 练习 `PracticeSession` | `chat_history`，`source_type='practice'`，`news_key='practice:<session uuid>'`；`news.session` 存完整会话，`history` 派生为网页消息格式 | 历史列表显示“App 练习”（只读，不能在网页续聊），计入进度与连续天数 |
+| 词库/收藏 `SavedExpression` | `unfamiliar_english`，每条一行，id 由用户与文本确定性派生；收藏句 `type='other'` | 网页生词本可见；网页 Live 收集的生词也会同步到 App |
+| 自建场景 | `scenarios` 私有用户行 + `practice_plan`（完整三步计划），并生成英文 `system_prompt` | 网页场景列表可用 |
+
+`/api/ios/sync`：`POST { sessions/expressions/scenarios: { upsert, delete } }` 先应用改动再返回快照；`GET` 只取快照。会话以 `updatedAt` 防旧覆盖新；单条无效/过大的会话放进 `rejectedSessions`，不让整批卡死。只同步 en/zh-CN 学习项。缓存/限流按用户，单次请求 ≤4MB。
+
+App 端 `SyncLedger`（Core/Persistence/CloudSync.swift，纯逻辑有单测）显式记录 synced/dirty/deleted，不靠时间戳比较；`SyncEngine` 在登录、回到前台和本地修改后 4 秒同步。首次登录把本机已有记录上传进该账号；本机数据属于另一个账号时先清空再下载，绝不跨账号上传。退出登录先尝试上传，仍有未同步内容时提示，确认后清除本机记录（重新登录从云端恢复）。
+
+删除账号（审核指南 5.1.1(v)）：「我的」→ 删除账号 → 说明后用 Apple 再确认一次；服务端核对确认的 Apple 邮箱属于当前账号，再删除 `chat_history / unfamiliar_english / scenarios / user_preferences` 中该用户的行并删除 Supabase auth 用户（网页账号同时删除），最后清空本机。配置 `APPLE_TEAM_ID / APPLE_SIGNIN_KEY_ID / APPLE_SIGNIN_PRIVATE_KEY` 后会用确认时的 authorization code 撤销 Apple 授权；未配置时跳过撤销，不阻塞删除。
+
 ## HTTP 契约 v1
 
 `GET /api/ios/practice` 检查配对与服务配置，返回 `ok / model`；它不调用模型，不能作为供应商在线证明。

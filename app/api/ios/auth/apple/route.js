@@ -28,6 +28,6 @@ export async function POST(request) {
     catch { /* Reported below without upstream details. */ }
     if (!userId) throw new PracticeAPIError(503, 'ACCOUNT_UNAVAILABLE', '暂时无法完成登录，请稍后重试。')
     const session = await issueIOSSession(userId)
-    return practiceJSON({ ...session, account: { email: apple.email, isPrivateEmail: apple.isPrivateEmail } })
+    return practiceJSON({ ...session, account: { id: userId, email: apple.email, isPrivateEmail: apple.isPrivateEmail } })
   } catch (error) { return practiceFailure(error) }
 }

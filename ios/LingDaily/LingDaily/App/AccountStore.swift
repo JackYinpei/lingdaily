@@ -4,7 +4,7 @@ import CryptoKit
 import SwiftUI
 
 /// Signed-in state for the production service. The session token lives in the
-/// Keychain; practice records stay on device and are not tied to the account yet.
+/// Keychain; practice data syncs to this account through `SyncEngine`.
 @MainActor
 final class AccountStore: ObservableObject {
     @Published private(set) var session: AccountSession?
@@ -18,7 +18,8 @@ final class AccountStore: ObservableObject {
     init() {
         session = AccountKeychain.load().flatMap { $0.isUsable() ? $0 : nil }
         rejected = NotificationCenter.default.addObserver(forName: .accountSessionRejected, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.session = nil }
+            guard let self else { return }
+            Task { @MainActor in self.session = nil }
         }
         verifyAppleCredential()
     }
@@ -75,12 +76,33 @@ final class AccountStore: ObservableObject {
         session = nil
     }
 
+    /// Permanently deletes the account after a fresh Apple confirmation of the same Apple ID.
+    func confirmDeletion(_ result: Result<ASAuthorization, Error>) async throws {
+        let nonce = pendingNonce
+        pendingNonce = nil
+        let authorization: ASAuthorization
+        switch result {
+        case .failure(let error):
+            if (error as? ASAuthorizationError)?.code == .canceled { throw CancellationError() }
+            throw PracticeNetworkError.server("Apple 确认没有完成，请重试。")
+        case .success(let value): authorization = value
+        }
+        guard let nonce, let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+              let tokenData = credential.identityToken, let identityToken = String(data: tokenData, encoding: .utf8) else {
+            throw PracticeNetworkError.server("Apple 确认没有返回凭证，请重试。")
+        }
+        let code = credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
+        try await PracticeAPIClient(configuration: nil).deleteAccount(
+            AccountDeletionRequest(identityToken: identityToken, nonce: nonce, authorizationCode: code))
+        signOut()
+    }
+
     /// Signs out locally if the user revoked LingDaily in Apple ID settings.
     func verifyAppleCredential() {
         guard let appleUserID = session?.appleUserID else { return }
-        ASAuthorizationAppleIDProvider().getCredentialState(forUserID: appleUserID) { state, _ in
-            guard state == .revoked || state == .notFound else { return }
-            Task { @MainActor [weak self] in self?.signOut() }
+        ASAuthorizationAppleIDProvider().getCredentialState(forUserID: appleUserID) { [weak self] state, _ in
+            guard state == .revoked || state == .notFound, let self else { return }
+            Task { @MainActor in self.signOut() }
         }
     }
 }

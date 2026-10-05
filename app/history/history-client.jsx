@@ -9,6 +9,7 @@ import {
   MessageCircle,
   Newspaper,
   RefreshCw,
+  Smartphone,
   Trash2,
   Users,
 } from 'lucide-react'
@@ -20,11 +21,13 @@ const FILTERS = [
   { value: '', label: '全部' },
   { value: 'news', label: '新闻' },
   { value: 'scenario', label: '场景' },
+  { value: 'practice', label: 'App 练习' },
 ]
 
 const SOURCE_META = {
   news: { label: '新闻对话', icon: Newspaper },
   scenario: { label: '场景练习', icon: Users },
+  practice: { label: 'App 练习', icon: Smartphone },
 }
 
 function formatDate(value) {
@@ -213,9 +216,13 @@ export default function HistoryClient() {
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
-                        <Button size="sm" asChild>
-                          <Link href={{ pathname: '/talk', query: { conversation: item.id } }}>继续对话</Link>
-                        </Button>
+                        {item.sourceType === 'practice' ? (
+                          <span className="text-xs text-muted-foreground">在 App 中继续</span>
+                        ) : (
+                          <Button size="sm" asChild>
+                            <Link href={{ pathname: '/talk', query: { conversation: item.id } }}>继续对话</Link>
+                          </Button>
+                        )}
                         <Button
                           type="button"
                           size="icon"

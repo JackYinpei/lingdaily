@@ -1,4 +1,4 @@
--- Read-only verification after all seven LingDaily migrations have completed.
+-- Read-only verification after all eight LingDaily migrations have completed.
 -- Run with "No limit" and require every non-INFO row to report PASS.
 
 with acl_expectations(role_name, table_name, allowed_privileges) as (
@@ -170,6 +170,21 @@ metrics as (
     (select count(*) from acl_mismatches) as table_acl_mismatches,
     (
       select count(*)
+      from pg_constraint
+      where conrelid = 'public.chat_history'::regclass
+        and conname in ('chat_history_source_type_check', 'chat_history_practice_key_check')
+        and pg_get_constraintdef(oid) like '%practice%'
+    ) as practice_chat_constraints,
+    (
+      select count(*)
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'scenarios'
+        and column_name = 'practice_plan'
+        and data_type = 'jsonb'
+    ) as scenario_practice_plan_column,
+    (
+      select count(*)
       from pg_proc function_row
       where function_row.oid in (
         to_regprocedure('public.claim_podcast_generation(text,boolean,uuid)'),
@@ -213,6 +228,8 @@ cross join lateral (
     (case when unexpected_policies = 0 then 'PASS' else 'FAIL' end, 'unexpected_policies', unexpected_policies::text, '0'),
     (case when table_acl_mismatches = 0 then 'PASS' else 'FAIL' end, 'anon_authenticated_table_acl_mismatches', table_acl_mismatches::text, '0'),
     (case when security_definer_rpcs = 2 then 'PASS' else 'FAIL' end, 'security_definer_rpcs', security_definer_rpcs::text, '2'),
+    (case when practice_chat_constraints = 2 then 'PASS' else 'FAIL' end, 'practice_chat_constraints', practice_chat_constraints::text, '2'),
+    (case when scenario_practice_plan_column = 1 then 'PASS' else 'FAIL' end, 'scenario_practice_plan_column', scenario_practice_plan_column::text, '1'),
     (case when canonical_triggers = 5 then 'PASS' else 'FAIL' end, 'canonical_triggers', canonical_triggers::text, '5'),
     (case when not has_function_privilege('anon', 'public.claim_podcast_generation(text,boolean,uuid)', 'EXECUTE') then 'PASS' else 'FAIL' end, 'anon_cannot_claim_podcast', has_function_privilege('anon', 'public.claim_podcast_generation(text,boolean,uuid)', 'EXECUTE')::text, 'false'),
     (case when not has_function_privilege('authenticated', 'public.save_chat_history(uuid,text,text,jsonb,jsonb,text,text,integer)', 'EXECUTE') then 'PASS' else 'FAIL' end, 'authenticated_cannot_call_chat_rpc', has_function_privilege('authenticated', 'public.save_chat_history(uuid,text,text,jsonb,jsonb,text,text,integer)', 'EXECUTE')::text, 'false'),

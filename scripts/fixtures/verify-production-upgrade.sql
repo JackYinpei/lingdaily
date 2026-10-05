@@ -356,6 +356,20 @@ begin
     raise exception 'chat RPC update revision mismatch';
   end if;
 
+  select (public.save_chat_history(
+    '00000000-0000-0000-0000-000000000001',
+    'practice:5f0c2d1e-8a7b-4c3d-9e2f-1a2b3c4d5e6f',
+    'Native rehearsal',
+    '{"_isPractice":true}'::jsonb,
+    '[{"role":"user","content":"Hello"}]'::jsonb,
+    null,
+    'practice',
+    0
+  )).revision into saved_revision;
+  if saved_revision <> 1 then
+    raise exception 'chat RPC practice insert revision mismatch';
+  end if;
+
   begin
     perform public.save_chat_history(
       '00000000-0000-0000-0000-000000000001',

@@ -85,7 +85,7 @@ describe('iOS session boundary', () => {
     expect(response.status).toBe(200)
     const result = await response.json()
     expect(ensureAuthUser).toHaveBeenCalledWith({ email: 'learner@privaterelay.appleid.com', name: 'Synthetic Learner', image: null })
-    expect(result.account).toEqual({ email: 'learner@privaterelay.appleid.com', isPrivateEmail: true })
+    expect(result.account).toEqual({ id: '11111111-2222-4333-8444-555555555555', email: 'learner@privaterelay.appleid.com', isPrivateEmail: true })
     expect(JSON.stringify(result)).not.toContain('001234.synthetic.apple.user')
     const practice = await PRACTICE(json('https://lingdaily.test/api/ios/practice', practiceBody(), result.sessionToken))
     expect(practice.status).toBe(200)

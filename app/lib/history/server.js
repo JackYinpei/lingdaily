@@ -1,6 +1,9 @@
 import "server-only"
 
+// Sources the web app itself writes. Native iOS rehearsals ("practice") are
+// written only through /api/ios/sync and are read-only on the web.
 export const CHAT_SOURCE_TYPES = new Set(["news", "scenario"])
+export const CHAT_LIST_SOURCE_TYPES = new Set(["news", "scenario", "practice"])
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
@@ -149,8 +152,10 @@ function normalizePreview(value, maxLength = 180) {
 }
 
 function inferSourceType(row) {
-  if (CHAT_SOURCE_TYPES.has(row?.source_type)) return row.source_type
-  return String(row?.news_key || "").startsWith("scenario:") ? "scenario" : "news"
+  if (CHAT_LIST_SOURCE_TYPES.has(row?.source_type)) return row.source_type
+  const key = String(row?.news_key || "")
+  if (key.startsWith("practice:")) return "practice"
+  return key.startsWith("scenario:") ? "scenario" : "news"
 }
 
 function normalizedRevision(value) {

@@ -93,13 +93,13 @@ npm start
 2. 在 SQL Editor 选择 `No limit`，执行
    [`scripts/preflight-production.sql`](scripts/preflight-production.sql)。只有所有
    `BLOCKER` 都为零时才能继续；`REVIEW` 项需人工确认。
-3. 按文件名顺序逐个、整份执行下列七个迁移，每个文件成功后再进入下一个。
+3. 按文件名顺序逐个、整份执行下列八个迁移，每个文件成功后再进入下一个。
    每个文件自带 `BEGIN`/`COMMIT`；不要去掉事务边界，也不要只执行其中一段。
 4. 执行 [`scripts/postflight-production.sql`](scripts/postflight-production.sql)，确认
    所有非 `INFO` 项均为 `PASS`，并将各表行数与 preflight 结果对比。
 5. 再验证登录、生词、对话历史、场景与播客 cron。
 
-七个迁移为：
+八个迁移为：
 
 1. `202607110001_create_user_preferences.sql`：语言偏好；兼容旧的 text `user_id` 和缺列，异常重复行会中止。
 2. `202607110002_create_unfamiliar_english.sql`：学习项事件表与 RLS。
@@ -108,6 +108,7 @@ npm start
 5. `202607110005_multilingual_learning_items.sql`：学习项和偏好的多语言升级。
 6. `202607110006_multilingual_scenarios.sql`：兼容旧两表/新单表的多语言场景升级。
 7. `202607110007_seed_scenarios.sql`：幂等系统场景 seed；发现相同语言对的重复场景时中止，不自动删除或合并。
+8. `202610050001_native_practice_sync.sql`：iOS 云同步复用现有表——`chat_history` 新增 `practice` 来源（含 key 约束与 RPC 校验），`scenarios` 新增可空 `practice_plan`；发现未知来源时中止。
 
 迁移不会自动删除重复偏好、重复场景或非数组对话正文；发现这些
 异常时显式事务会使整个文件回滚并要求先人工处理。失败后不要单独执行该文件的

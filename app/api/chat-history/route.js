@@ -1,5 +1,6 @@
 import { auth } from "@/app/auth"
 import {
+  CHAT_LIST_SOURCE_TYPES,
   CHAT_SOURCE_TYPES,
   UUID_PATTERN,
   createHistoryCursor,
@@ -416,8 +417,8 @@ export async function GET(req) {
     if (limit === null) return jsonResponse({ error: "'limit' must be an integer from 1 to 50" }, 400)
 
     const sourceType = searchParams.get("sourceType")
-    if (sourceType !== null && !CHAT_SOURCE_TYPES.has(sourceType)) {
-      return jsonResponse({ error: "'sourceType' must be 'news' or 'scenario'" }, 400)
+    if (sourceType !== null && !CHAT_LIST_SOURCE_TYPES.has(sourceType)) {
+      return jsonResponse({ error: "'sourceType' must be 'news', 'scenario' or 'practice'" }, 400)
     }
 
     const rawCursor = searchParams.get("before")

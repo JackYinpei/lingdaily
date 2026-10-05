@@ -1,12 +1,21 @@
 import SwiftUI
 import Combine
 
+/// A user-visible change to the local archive, recorded so cloud sync can upload it.
+enum ArchiveChange {
+    case session(UUID), sessionDeleted(UUID)
+    case expression(String), expressionDeleted(String)
+    case scenario(String), scenarioDeleted(String)
+}
+
 @MainActor
 final class PracticeStore: ObservableObject {
     @Published private(set) var archive = PracticeArchive()
     @Published private(set) var storageError: String?
+    /// Set by `SyncEngine`; called after each local edit (never for merged cloud data).
+    var onChange: ((ArchiveChange) -> Void)?
     private let file: ArchiveFile
-    private var canWrite = true
+    private(set) var canWrite = true
 
     init() {
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -19,24 +28,30 @@ final class PracticeStore: ObservableObject {
     }
 
     func save(_ session: PracticeSession, collecting items: [AILearningItem] = []) {
+        let knownExpressions = Set(archive.expressions.map(\.id))
         archive.upsert(session)
         archive.collect(items, source: session.scenario.title)
         persist()
+        if archive.sessions.contains(where: { $0.id == session.id }) { onChange?(.session(session.id)) }
+        for item in archive.expressions where !knownExpressions.contains(item.id) { onChange?(.expression(item.id)) }
     }
 
     func addScenario(_ scenario: PracticeScenario) {
         archive.scenarios.insert(scenario, at: 0)
         persist()
+        onChange?(.scenario(scenario.id))
     }
 
     func removeScenario(_ id: String) {
         archive.scenarios.removeAll { $0.id == id }
         persist()
+        onChange?(.scenarioDeleted(id))
     }
 
     func removeSession(_ id: UUID) {
         archive.sessions.removeAll { $0.id == id }
         persist()
+        onChange?(.sessionDeleted(id))
     }
 
     func isSaved(_ text: String) -> Bool {
@@ -46,10 +61,26 @@ final class PracticeStore: ObservableObject {
     func toggleExpression(_ text: String, meaning: String, source: String) {
         archive.toggleExpression(text: text, meaning: meaning, source: source)
         persist()
+        let key = SavedExpression.key(text)
+        onChange?(isSaved(text) ? .expression(key) : .expressionDeleted(key))
     }
 
     func removeExpression(_ id: String) {
         archive.expressions.removeAll { $0.id == id }
+        persist()
+        onChange?(.expressionDeleted(id))
+    }
+
+    /// Replaces local data with the merged cloud copy; not reported as a local edit.
+    func replaceArchive(_ merged: PracticeArchive) {
+        guard canWrite, merged != archive else { return }
+        archive = merged
+        persist()
+    }
+
+    /// Removes this account's data from the device (sign-out or account deletion).
+    func clearAll() {
+        archive = PracticeArchive()
         persist()
     }
 

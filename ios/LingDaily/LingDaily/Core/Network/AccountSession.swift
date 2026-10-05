@@ -5,6 +5,8 @@ import Security
 /// credential; email is kept to show which account is signed in.
 struct AccountSession: Codable, Equatable {
     let token: String
+    /// Supabase user id shared with the web app; cloud data on this device belongs to it.
+    let userID: String
     let expiresAt: Date
     let email: String
     let isPrivateEmail: Bool

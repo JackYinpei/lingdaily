@@ -54,7 +54,10 @@ function shiftDateKey(dateKey, days) {
 function sourceTypeForRow(row) {
   if (row?.source_type === "scenario") return "scenario"
   if (row?.source_type === "news") return "news"
-  return String(row?.news_key || "").startsWith("scenario:") ? "scenario" : "news"
+  if (row?.source_type === "practice") return "practice"
+  const key = String(row?.news_key || "")
+  if (key.startsWith("practice:")) return "practice"
+  return key.startsWith("scenario:") ? "scenario" : "news"
 }
 
 async function loadAllHistoryRows(config, userId) {
@@ -117,6 +120,7 @@ export async function GET(req) {
     const bySource = {
       news: { conversations: 0, userTurns: 0 },
       scenario: { conversations: 0, userTurns: 0 },
+      practice: { conversations: 0, userTurns: 0 },
     }
     let totalConversations = 0
     let totalUserTurns = 0

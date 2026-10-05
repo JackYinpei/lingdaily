@@ -24,8 +24,15 @@ struct AccountSignInRequest: Encodable {
     let fullName: String?
 }
 
+/// Fresh Sign in with Apple confirmation for permanently deleting the account.
+struct AccountDeletionRequest: Encodable {
+    let identityToken: String
+    let nonce: String
+    let authorizationCode: String?
+}
+
 struct AccountSignInResponse: Decodable {
-    struct Account: Decodable { let email: String; let isPrivateEmail: Bool }
+    struct Account: Decodable { let id: String; let email: String; let isPrivateEmail: Bool }
     let sessionToken: String
     let expiresAt: String
     let account: Account
@@ -34,7 +41,7 @@ struct AccountSignInResponse: Decodable {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         guard let expiry = formatter.date(from: expiresAt) ?? ISO8601DateFormatter().date(from: expiresAt) else { return nil }
-        let session = AccountSession(token: sessionToken, expiresAt: expiry, email: account.email,
+        let session = AccountSession(token: sessionToken, userID: account.id, expiresAt: expiry, email: account.email,
                                      isPrivateEmail: account.isPrivateEmail, appleUserID: appleUserID)
         return session.isUsable() ? session : nil
     }
@@ -129,6 +136,22 @@ final class PracticeAPIClient: PracticeServing {
         try await send("api/ios/auth/apple", request, baseURL: LingDailyService.baseURL, bearer: nil)
     }
 
+    /// Uploads pending local changes and returns the account's cloud copy.
+    func sync(_ changes: SyncChanges) async throws -> SyncSnapshot {
+        guard configuration == nil else { throw PracticeNetworkError.notConfigured }
+        guard let account = accountSession(), account.isUsable() else { throw PracticeNetworkError.signedOut }
+        return try await send("api/ios/sync", changes, baseURL: LingDailyService.baseURL, bearer: account.token,
+                              encoder: CloudSyncCoding.encoder, decoder: CloudSyncCoding.decoder, maxBytes: 64 * 1024 * 1024)
+    }
+
+    /// Permanently deletes the account and its cloud data (web data included).
+    func deleteAccount(_ request: AccountDeletionRequest) async throws {
+        guard let account = accountSession(), account.isUsable() else { throw PracticeNetworkError.signedOut }
+        struct Deleted: Decodable { let deleted: Bool }
+        let result: Deleted = try await send("api/ios/account/delete", request, baseURL: LingDailyService.baseURL, bearer: account.token)
+        guard result.deleted else { throw PracticeNetworkError.invalidReply }
+    }
+
     func respond(to request: AIPracticeRequest) async throws -> AIPracticeResponse {
         let result: AIPracticeResponse = try await post("api/ios/practice", request)
         guard result.requestId == request.requestId, result.data.isValid(for: request.action) else {
@@ -165,17 +188,18 @@ final class PracticeAPIClient: PracticeServing {
         return try await send(path, body, baseURL: LingDailyService.baseURL, bearer: account.token)
     }
 
-    private func send<Body: Encodable, Result: Decodable>(_ path: String, _ body: Body,
-                                                          baseURL: URL, bearer: String?) async throws -> Result {
+    private func send<Body: Encodable, Result: Decodable>(_ path: String, _ body: Body, baseURL: URL, bearer: String?,
+                                                          encoder: JSONEncoder = JSONEncoder(), decoder: JSONDecoder = JSONDecoder(),
+                                                          maxBytes: Int = 24 * 1024) async throws -> Result {
         var urlRequest = URLRequest(url: baseURL.appendingPathComponent(path))
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let bearer { urlRequest.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
-        urlRequest.httpBody = try JSONEncoder().encode(body)
+        urlRequest.httpBody = try encoder.encode(body)
         do {
             let (data, response) = try await session.data(for: urlRequest)
             try Task.checkCancellation()
-            guard let http = response as? HTTPURLResponse, data.count <= 24 * 1024 else { throw PracticeNetworkError.invalidReply }
+            guard let http = response as? HTTPURLResponse, data.count <= maxBytes else { throw PracticeNetworkError.invalidReply }
             guard http.statusCode == 200 else {
                 if http.statusCode == 401, configuration == nil, bearer != nil {
                     // The production session expired or was rejected: sign out on this device.
@@ -188,7 +212,7 @@ final class PracticeAPIClient: PracticeServing {
                 }
                 throw PracticeNetworkError.unavailable
             }
-            return try JSONDecoder().decode(Result.self, from: data)
+            return try decoder.decode(Result.self, from: data)
         } catch is CancellationError { throw CancellationError() }
         catch let error as PracticeNetworkError { throw error }
         catch let error as URLError where error.code == .cancelled { throw CancellationError() }

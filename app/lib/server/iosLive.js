@@ -6,6 +6,17 @@ import { buildLiveInstruction, LIVE_TOOLS } from '../ios/live'
 import { DEFAULT_LIVE_WS_URL, liveWebSocketEndpoint } from '../ios/liveEndpoint.mjs'
 
 export const IOS_LIVE_WS_URL = DEFAULT_LIVE_WS_URL
+// Gemini's defaults (START_SENSITIVITY_HIGH, ~20 ms prefix) treat a brief burst
+// of loudspeaker echo as the learner starting to talk, which cut the partner
+// off mid-sentence. Require clearer and longer speech before interrupting;
+// a learner who really talks over the partner still interrupts (barge-in kept).
+// https://ai.google.dev/api/live#automaticactivitydetection
+export const LIVE_ACTIVITY_DETECTION = Object.freeze({
+  disabled: false,
+  startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
+  prefixPaddingMs: 300,
+})
+
 export const liveModel = () => process.env.GEMINI_LIVE_MODEL?.trim() || 'gemini-3.1-flash-live-preview'
 
 export async function issueLiveToken(body) {
@@ -33,7 +44,7 @@ export async function issueLiveToken(body) {
         responseModalities: ['AUDIO'], systemInstruction: buildLiveInstruction(body), tools: LIVE_TOOLS,
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } },
         inputAudioTranscription: {}, outputAudioTranscription: {},
-        realtimeInputConfig: { automaticActivityDetection: { disabled: false } },
+        realtimeInputConfig: { automaticActivityDetection: LIVE_ACTIVITY_DETECTION },
       } },
       // Omitted lockAdditionalFields locks the entire config (SDK Case 2),
       // including unspecified fields. Never fall back to an unconstrained token.

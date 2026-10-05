@@ -96,6 +96,8 @@ Live 建立后的开场信号由 `LiveKickoff` 决定：新会话请对方开场
 
 真机截图确认了回声（用户全程未说话，学习者气泡是纯回声）：扬声器外放时 Voice Processing 消不净 Alex 的声音，残余被 Gemini 服务端语音检测当成学习者说话——开场被打断（停在“about”），回声被转写成学习者气泡（“AlexYou want something”）。`LiveEchoGate` 只在输出为机身扬声器/听筒、且对方音频排队/播放中（及之后 0.35 秒余音）时工作：低于语音门槛的帧视为回声残余，替换为等长静音；门槛 = max(0.02, 实测回声底噪 × 6)，底噪只用被判为回声的帧做指数平滑自动校准；连续 3 帧（60ms）高于门槛即判定学习者在说话，按顺序放出这 3 帧并在其后 300ms 内持续放行，保留打断能力。耳机/蓝牙完全不处理。门槛数值未经真机采样验证：Debug 加 `LINGDAILY_LIVE_DIAGNOSTICS=1` 时诊断行会输出 `echoLevel / speechThreshold / speaker` 供调参。
 
+服务端同时调整了 Gemini 自带的语音活动检测（[官方字段](https://ai.google.dev/api/live#automaticactivitydetection)）：默认 `START_SENSITIVITY_HIGH`、`prefixPaddingMs≈20ms` 会把一小段回声当成“用户开始说话”并打断模型；iOS token 现锁定 `startOfSpeechSensitivity: START_SENSITIVITY_LOW`、`prefixPaddingMs: 300`，需要更明确、持续 0.3 秒以上的人声才打断。`activityHandling` 保持默认（允许打断）。该配置在服务端签发 token 时锁定，调参无需重装 App；默认/调整后各两次真实连接对照均正常完成一轮。
+
 同一截图里模型开场就说学习者的台词（“Hey Alex, do you have a minute…”）。原因是背景用中文写给学习者、称其为“你”，开场信号又没说明身份。现在 `LiveKickoff` 的开场与续聊信号都写明“You are <partner>; I am the learner”，Live 与文字的系统指令都说明背景里的“你”永远指学习者。
 
 ## 云同步与删除账号（2026-10-05）

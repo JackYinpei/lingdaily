@@ -112,6 +112,10 @@ describe('iOS Live development token', () => {
       'record_language_correction', 'record_unfamiliar_learning_items', 'mark_task_complete',
     ])
     expect(locked.config.inputAudioTranscription).toEqual({})
+    expect(locked.config.realtimeInputConfig).toEqual({ automaticActivityDetection: {
+      disabled: false, startOfSpeechSensitivity: 'START_SENSITIVITY_LOW', prefixPaddingMs: 300,
+    } })
+    expect(locked.config.realtimeInputConfig.activityHandling).toBeUndefined() // barge-in stays on
     expect(locked.config.outputAudioTranscription).toEqual({})
   })
   it('sanitizes upstream failures and never falls back to unconstrained tokens', async () => {

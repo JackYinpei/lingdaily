@@ -122,7 +122,7 @@ iOS 不另建存储，**复用网页已有的 Supabase 表**，同一账号在�
 
 App 端 `SyncLedger`（Core/Persistence/CloudSync.swift，纯逻辑有单测）显式记录 synced/dirty/deleted，不靠时间戳比较；`SyncEngine` 在登录、回到前台和本地修改后 4 秒同步。首次登录把本机已有记录上传进该账号；本机数据属于另一个账号时先清空再下载，绝不跨账号上传。退出登录先尝试上传，仍有未同步内容时提示，确认后清除本机记录（重新登录从云端恢复）。
 
-删除账号（审核指南 5.1.1(v)）：「我的」→ 删除账号 → 说明后用 Apple 再确认一次；服务端核对确认的 Apple 邮箱属于当前账号，再删除 `chat_history / unfamiliar_english / scenarios / user_preferences` 中该用户的行并删除 Supabase auth 用户（网页账号同时删除），最后清空本机。配置 `APPLE_TEAM_ID / APPLE_SIGNIN_KEY_ID / APPLE_SIGNIN_PRIVATE_KEY` 后会用确认时的 authorization code 撤销 Apple 授权；未配置时跳过撤销，不阻塞删除。
+删除账号（审核指南 5.1.1(v) 要求 App 内可找到，不能只靠邮件/网页）：「我的」→ 账号卡片「账号与数据」→ 页面底部灰色「删除账号」→ 展开说明后用 Apple 再确认一次；服务端核对确认的 Apple 邮箱属于当前账号，再删除 `chat_history / unfamiliar_english / scenarios / user_preferences` 中该用户的行并删除 Supabase auth 用户（网页账号同时删除），最后清空本机。配置 `APPLE_TEAM_ID / APPLE_SIGNIN_KEY_ID / APPLE_SIGNIN_PRIVATE_KEY` 后会用确认时的 authorization code 撤销 Apple 授权；未配置时跳过撤销，不阻塞删除。
 
 ## HTTP 契约 v1
 

@@ -8,7 +8,7 @@ struct SettingsView: View {
     @AppStorage("autoReadAIReplies") private var autoReadReplies = true
     @State private var signingOut = false
     @State private var unsyncedOnSignOut = false
-    @State private var confirmingDeletion = false
+    @State private var showingAccountData = false
 
     var body: some View {
         ZStack {
@@ -31,12 +31,6 @@ struct SettingsView: View {
                             .font(.subheadline).foregroundColor(Brand.ink).tint(Brand.accent)
                     }.surfaceCard()
                     if account.canPractice { AIModelCard() }
-                    if account.session != nil && !account.usesLocalDevelopment {
-                        Button("删除账号") { confirmingDeletion = true }
-                            .font(.subheadline).foregroundColor(Brand.accent)
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .accessibilityIdentifier("delete-account")
-                    }
                     Text("LingDaily 体验版 0.3.0 · iOS 15+")
                         .font(.caption).foregroundColor(Brand.secondary).frame(maxWidth: .infinity)
                 }
@@ -50,7 +44,7 @@ struct SettingsView: View {
         } message: {
             Text("有 \(sync.pendingCount) 项改动还没上传到账号。退出会移除本机记录，这些改动会丢失。")
         }
-        .sheet(isPresented: $confirmingDeletion) { DeleteAccountSheet() }
+        .sheet(isPresented: $showingAccountData) { AccountDataSheet() }
     }
 
     private var accountCard: some View {
@@ -69,6 +63,15 @@ struct SettingsView: View {
                 Button(signingOut ? "正在同步…" : "退出登录") { signOut() }
                     .font(.subheadline).foregroundColor(Brand.ink).frame(minHeight: 44)
                     .disabled(signingOut)
+                Brand.line.frame(height: 1)
+                // Account deletion (App Store 5.1.1(v)) lives one level down, in 账号与数据.
+                Button { showingAccountData = true } label: {
+                    HStack {
+                        Text("账号与数据").font(.subheadline).foregroundColor(Brand.ink)
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundColor(Brand.secondary)
+                    }.frame(minHeight: 44).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityIdentifier("account-data")
             } else {
                 Text("登录后才能和对方对话。练习记录、词库和自建场景会同步到你的账号，网页版用同一个账号也能看到。")
                     .font(.subheadline).foregroundColor(Brand.secondary)
@@ -115,56 +118,79 @@ struct SettingsView: View {
     }()
 }
 
-/// Account deletion (App Store Review Guideline 5.1.1(v)): explain, then confirm with Apple.
-private struct DeleteAccountSheet: View {
+/// 账号与数据: where the learner's data lives, and — one step further — account
+/// deletion (App Store Review Guideline 5.1.1(v)): explain, then confirm with Apple.
+private struct AccountDataSheet: View {
     @EnvironmentObject private var account: AccountStore
     @EnvironmentObject private var sync: SyncEngine
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @State private var showsDeletion = false
     @State private var deleting = false
     @State private var errorMessage: String?
 
     var body: some View {
         ZStack {
             PageBackground()
-            VStack(alignment: .leading, spacing: 20) {
-                Text("删除账号").font(.title2.bold()).foregroundColor(Brand.ink)
-                Text("将永久删除这个 LingDaily 账号，以及它在云端和这台设备上的全部练习记录、词库和自建场景。网页版使用的是同一个账号，网页上的对话和生词也会一起删除。此操作无法撤销。")
-                    .font(.subheadline).foregroundColor(Brand.secondary).lineSpacing(4)
-                Text("请用 Apple 再确认一次身份。")
-                    .font(.subheadline).foregroundColor(Brand.ink)
-                Spacer(minLength: 0)
-                if let errorMessage {
-                    Text(errorMessage).font(.caption).foregroundColor(Brand.accent)
-                }
-                SignInWithAppleButton(.continue) { account.prepare($0) } onCompletion: { result in
-                    deleting = true
-                    errorMessage = nil
-                    Task {
-                        do {
-                            try await account.confirmDeletion(result)
-                            sync.resetLocalData()
-                            dismiss()
-                        } catch is CancellationError {
-                        } catch {
-                            errorMessage = error.localizedDescription
-                        }
-                        deleting = false
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("账号与数据").font(.title2.bold()).foregroundColor(Brand.ink)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(account.session?.displayEmail ?? "").font(.subheadline).foregroundColor(Brand.ink)
+                        Text("练习记录、词库和自建场景保存在你的账号里，换手机或重装 App 后登录即可恢复；网页版用同一个账号也能看到。")
+                            .font(.subheadline).foregroundColor(Brand.secondary).lineSpacing(4)
+                    }.surfaceCard()
+                    if showsDeletion { deletion } else {
+                        Button("删除账号") { showsDeletion = true }
+                            .font(.footnote).foregroundColor(Brand.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .accessibilityIdentifier("delete-account")
                     }
                 }
-                .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
-                .frame(height: 50).clipShape(Capsule())
-                .disabled(deleting).opacity(deleting ? 0.6 : 1)
-                .accessibilityIdentifier("confirm-delete-account")
-                Button("取消") { dismiss() }
-                    .font(.subheadline).foregroundColor(Brand.ink)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .disabled(deleting)
+                .padding(24).readableColumn()
             }
-            .padding(24)
-            .readableColumn()
+            Button("完成") { dismiss() }
+                .font(.subheadline).foregroundColor(Brand.ink).frame(minWidth: 44, minHeight: 44)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(.trailing, 16).padding(.top, 8)
+                .disabled(deleting)
         }
         .interactiveDismissDisabled(deleting)
+    }
+
+    private var deletion: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("删除账号").font(.headline).foregroundColor(Brand.ink)
+            Text("将永久删除这个 LingDaily 账号，以及它在云端和这台设备上的全部练习记录、词库和自建场景。网页版使用的是同一个账号，网页上的对话和生词也会一起删除。此操作无法撤销。")
+                .font(.subheadline).foregroundColor(Brand.secondary).lineSpacing(4)
+            Text("请用 Apple 再确认一次身份。").font(.subheadline).foregroundColor(Brand.ink)
+            if let errorMessage {
+                Text(errorMessage).font(.caption).foregroundColor(Brand.accent)
+            }
+            SignInWithAppleButton(.continue) { account.prepare($0) } onCompletion: { result in
+                deleting = true
+                errorMessage = nil
+                Task {
+                    do {
+                        try await account.confirmDeletion(result)
+                        sync.resetLocalData()
+                        dismiss()
+                    } catch is CancellationError {
+                    } catch {
+                        errorMessage = error.localizedDescription
+                    }
+                    deleting = false
+                }
+            }
+            .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+            .frame(height: 50).clipShape(Capsule())
+            .disabled(deleting).opacity(deleting ? 0.6 : 1)
+            .accessibilityIdentifier("confirm-delete-account")
+            Button("不删了") { showsDeletion = false }
+                .font(.subheadline).foregroundColor(Brand.ink)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .disabled(deleting)
+        }.surfaceCard()
     }
 }
 
@@ -184,12 +210,13 @@ private struct AIModelCard: View {
                 }
                 Text("只影响这台设备，换模型不会影响已有记录。").font(.caption).foregroundColor(Brand.secondary)
             } else if failed {
-                Button("暂时读不到可选模型，点此重试") { Task { await load() } }
+                Button("暂时读不到可选模型（服务可能正在更新），点此重试") { Task { await load() } }
                     .font(.caption).foregroundColor(Brand.secondary).frame(minHeight: 44)
             } else {
                 ProgressView().frame(maxWidth: .infinity, minHeight: 44)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .surfaceCard()
         .task { if catalog == nil { await load() } }
     }

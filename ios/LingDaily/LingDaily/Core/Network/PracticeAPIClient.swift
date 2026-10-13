@@ -196,6 +196,7 @@ final class PracticeAPIClient: PracticeServing {
     func liveToken(for session: PracticeSession) async throws -> LiveToken {
         var request = LiveTokenRequest(session: session)
         request.model = AIModelPreference.model(for: .live)
+        request.pauseMs = LivePause.milliseconds()
         return try await post("api/ios/live-token", request)
     }
 

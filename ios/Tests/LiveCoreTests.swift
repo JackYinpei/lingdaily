@@ -143,7 +143,6 @@ final class LiveCoreTests: XCTestCase {
         XCTAssertTrue(session.liveTranscript(id: id, role: .user, text: "I go yesterday"))
         XCTAssertTrue(session.liveTranscript(id: id, role: .user, text: "I go yesterday."))
         XCTAssertEqual(session.userTurns, 1)
-        XCTAssertFalse(session.liveComplete(taskIndex: 2))
         let feedback = AIFeedback(revised: "I went yesterday.", meaning: "", note: "用过去时。")
         XCTAssertFalse(session.liveCorrection(original: "A different sentence", feedback: feedback))
         XCTAssertTrue(session.liveCorrection(original: "I go yesterday.", feedback: feedback))

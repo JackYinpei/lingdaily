@@ -2,7 +2,7 @@ import 'server-only'
 import { GoogleGenAI } from '@google/genai'
 import { getServerGeminiApiKey } from './geminiConfig'
 import { PracticeAPIError, createUserLimiter } from './iosPractice'
-import { buildLiveInstruction, LIVE_TOOLS } from '../ios/live'
+import { buildLiveInstruction, LIVE_TOOLS, livePauseMs } from '../ios/live'
 import { resolveModel } from '../ios/models'
 import { DEFAULT_LIVE_WS_URL, liveWebSocketEndpoint } from '../ios/liveEndpoint.mjs'
 
@@ -11,11 +11,15 @@ export const IOS_LIVE_WS_URL = DEFAULT_LIVE_WS_URL
 // of loudspeaker echo as the learner starting to talk, which cut the partner
 // off mid-sentence. Require clearer and longer speech before interrupting;
 // a learner who really talks over the partner still interrupts (barge-in kept).
+// Ending a turn is equally conservative: learners pause mid-sentence to find a
+// word, so low end sensitivity plus the learner's chosen silence length.
 // https://ai.google.dev/api/live#automaticactivitydetection
-export const LIVE_ACTIVITY_DETECTION = Object.freeze({
+export const liveActivityDetection = pauseMs => ({
   disabled: false,
   startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
   prefixPaddingMs: 300,
+  endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
+  silenceDurationMs: livePauseMs(pauseMs),
 })
 
 export const liveModel = () => process.env.GEMINI_LIVE_MODEL?.trim() || 'gemini-3.1-flash-live-preview'
@@ -30,7 +34,7 @@ export async function issueLiveToken(body) {
   const apiKey = getServerGeminiApiKey()
   if (!apiKey) throw new PracticeAPIError(503, 'NOT_CONFIGURED', '服务端尚未配置语音通话。')
   // The learner may pick a listed Live model; the scenario JSON in the prompt never carries it.
-  const { model: requestedModel, ...scenarioBody } = body
+  const { model: requestedModel, pauseMs, ...scenarioBody } = body
   const model = resolveModel('live', requestedModel, liveModel())
   if (!/^[a-zA-Z0-9._-]{1,100}$/.test(model)) throw new PracticeAPIError(503, 'NOT_CONFIGURED', '语音模型配置无效。')
   const now = Date.now()
@@ -47,7 +51,7 @@ export async function issueLiveToken(body) {
         responseModalities: ['AUDIO'], systemInstruction: buildLiveInstruction(scenarioBody), tools: LIVE_TOOLS,
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } },
         inputAudioTranscription: {}, outputAudioTranscription: {},
-        realtimeInputConfig: { automaticActivityDetection: LIVE_ACTIVITY_DETECTION },
+        realtimeInputConfig: { automaticActivityDetection: liveActivityDetection(pauseMs) },
       } },
       // Omitted lockAdditionalFields locks the entire config (SDK Case 2),
       // including unspecified fields. Never fall back to an unconstrained token.

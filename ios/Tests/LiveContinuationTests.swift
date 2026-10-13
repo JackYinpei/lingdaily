@@ -88,6 +88,20 @@ final class LiveContinuationTests: XCTestCase {
         XCTAssertEqual(tools.count, 0); XCTAssertEqual(session.stepIndex, 1)
         tools.flush(to: &session); XCTAssertEqual(session.live?.completedTasks, [0])
     }
+    func testLaterTaskIndexCompletesTasksInBetweenOnlyAfterTheLearnerSpoke() {
+        var session = PracticeSession(scenario: scenario, useAI: true); session.beginLive()
+        var tools = LivePendingTools()
+        _ = session.liveTranscript(id: UUID(), role: .user, text: "Explain the delay.")
+        _ = tools.apply(completion("first", index: 0), to: &session)
+        XCTAssertEqual(session.stepIndex, 1)
+        // The partner wraps up early: one call with the final index closes the rest.
+        _ = tools.apply(completion("early", index: 2), to: &session)
+        XCTAssertEqual(tools.count, 0); XCTAssertEqual(session.stepIndex, 1)
+        _ = session.liveTranscript(id: UUID(), role: .user, text: "Do you have any other questions?")
+        _ = tools.apply(completion("wrap", index: 2), to: &session)
+        XCTAssertEqual(tools.count, 0); XCTAssertEqual(session.phase, .completed)
+        XCTAssertEqual(session.live?.completedTasks, [0, 1, 2])
+    }
     func testCancellationRemovesQueuedCorrectionsAndTaskEffects() {
         var session = PracticeSession(scenario: scenario, useAI: true); session.beginLive()
         var tools = LivePendingTools()

@@ -91,6 +91,19 @@ describe('iOS Live development token', () => {
     expect(unlisted).toMatchObject({ status: 200, model: 'gemini-3.1-flash-live-preview', locked: 'gemini-3.1-flash-live-preview' })
     expect(unlisted.prompt).not.toContain('gemini-ultra-expensive')
   })
+  it('lets the learner pick only a listed pause length, kept out of the prompt', async () => {
+    const issued = async pauseMs => {
+      delete globalThis[Symbol.for('lingdaily.iosLiveToken.v2')]
+      expect((await POST(request({ ...body(), pauseMs }))).status).toBe(200)
+      return create.mock.calls.at(-1)[0].config.liveConnectConstraints.config
+    }
+    expect((await issued(4000)).realtimeInputConfig.automaticActivityDetection.silenceDurationMs).toBe(4000)
+    const unlisted = await issued(60_000)
+    expect(unlisted.realtimeInputConfig.automaticActivityDetection.silenceDurationMs).toBe(1500)
+    expect(unlisted.systemInstruction).not.toContain('pauseMs')
+    delete globalThis[Symbol.for('lingdaily.iosLiveToken.v2')]
+    expect((await POST(request({ ...body(), pauseMs: '4000' }))).status).toBe(400)
+  })
   it('keeps HTTP body and media limits', async () => {
     expect((await POST(request(body(), pairing, { 'Content-Type': 'text/plain' }))).status).toBe(415)
     expect((await POST(request({ huge: 'a'.repeat(49 * 1024) }))).status).toBe(413)
@@ -127,7 +140,9 @@ describe('iOS Live development token', () => {
     expect(locked.config.inputAudioTranscription).toEqual({})
     expect(locked.config.realtimeInputConfig).toEqual({ automaticActivityDetection: {
       disabled: false, startOfSpeechSensitivity: 'START_SENSITIVITY_LOW', prefixPaddingMs: 300,
+      endOfSpeechSensitivity: 'END_SENSITIVITY_LOW', silenceDurationMs: 1500,
     } })
+    expect(locked.config.systemInstruction).toContain('Never wrap up')
     expect(locked.config.realtimeInputConfig.activityHandling).toBeUndefined() // barge-in stays on
     expect(locked.config.outputAudioTranscription).toEqual({})
   })

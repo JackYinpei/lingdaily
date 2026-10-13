@@ -108,7 +108,7 @@ Live 通话中，对方一句结束（服务端 turnComplete，通常早于播�
 
 真机截图确认了回声（用户全程未说话，学习者气泡是纯回声）：扬声器外放时 Voice Processing 消不净 Alex 的声音，残余被 Gemini 当成学习者说话，打断对方并被转写成学习者气泡。曾尝试按音量区分回声与人声（门槛自校准、连续 60ms 放行）：真机上回声不再被转写，但对方仍在第一句“really”处被自己的回声打断——外放时传到麦克风的回声本来就比学习者的声音大，回声消除只能衰减一部分，且通话开头尚未收敛，残余与人声音量相当，音量判断不可靠，已撤回。现行方案（`LiveEchoGate`）是确定性的：输出为机身扬声器/听筒时，对方音频排队/播放中及之后 0.35 秒上传等长静音；学习者点「打断」时先停播并丢弃该轮尚未播放的音频与字幕（服务端已发完 turnComplete 的轮次不丢后续回复），然后立即放开麦克风直到对方下一轮开始，此时扬声器无声，麦克风只有学习者的声音。耳机/蓝牙不做处理，仍可直接开口打断。
 
-服务端同时调整了 Gemini 自带的语音活动检测（[官方字段](https://ai.google.dev/api/live#automaticactivitydetection)）：默认 `START_SENSITIVITY_HIGH`、`prefixPaddingMs≈20ms` 会把一小段回声当成“用户开始说话”并打断模型；iOS token 现锁定 `startOfSpeechSensitivity: START_SENSITIVITY_LOW`、`prefixPaddingMs: 300`，需要更明确、持续 0.3 秒以上的人声才打断。`activityHandling` 保持默认（允许打断）。该配置在服务端签发 token 时锁定，调参无需重装 App；默认/调整后各两次真实连接对照均正常完成一轮。
+服务端同时调整了 Gemini 自带的语音活动检测（[官方字段](https://ai.google.dev/api/live#automaticactivitydetection)）：默认 `START_SENSITIVITY_HIGH`、`prefixPaddingMs≈20ms` 会把一小段回声当成“用户开始说话”并打断模型；iOS token 现锁定 `startOfSpeechSensitivity: START_SENSITIVITY_LOW`、`prefixPaddingMs: 300`，需要更明确、持续 0.3 秒以上的人声才打断。`activityHandling` 保持默认（允许打断）。结束一轮同样保守：`endOfSpeechSensitivity: END_SENSITIVITY_LOW`，`silenceDurationMs` 由「我的 → 停顿多久算说完」选择（0.8/1.5/2.5/4 秒，默认 1.5 秒，请求字段 `pauseMs`，非白名单值回退默认），学习者中途想词不会被提前截断；下次连接生效。该配置在服务端签发 token 时锁定，调参无需重装 App；默认/调整后各两次真实连接对照均正常完成一轮。
 
 同一截图里模型开场就说学习者的台词（“Hey Alex, do you have a minute…”）。原因是背景用中文写给学习者、称其为“你”，开场信号又没说明身份。现在 `LiveKickoff` 的开场与续聊信号都写明“You are <partner>; I am the learner”，Live 与文字的系统指令都说明背景里的“你”永远指学习者。
 
@@ -182,7 +182,7 @@ App 端 `SyncLedger`（Core/Persistence/CloudSync.swift，纯逻辑有单测）�
 - `Core/Audio/LiveAudioController.swift`：按钮内同步准备输出；`.playAndRecord + .voiceChat`，采集启用 Voice Processing。只有 setupComplete 后装输入 tap。tap仅try-lock复制到8个预分配4096帧缓冲；LiveMicrophonePipeline把超过4096帧的硬件回调拆成多个槽，转换、分帧放串行worker。上传PCM队列≤50帧（约1秒），每帧640 bytes；上传泵每次唤醒排空等待帧，再等20ms。采集/上传压力丢弃有界音频并提示，不结束通话；网络队列优先保留控制和工具ack。
 - 播放24 kHz PCM16，由 AVAudioPlayerNode 顺序调度；预留字节包含尚未dispatch和已调度音频，总计≤480000 bytes（10秒）且≤256块；超过上限丢弃新音频块并提示，空块忽略，不结束通话。输出不可用先排队，prepare/startCapture后补播。interrupted立即清队列并增加playbackGeneration，旧completion也不能修改新队列。
 - `Features/Practice/LivePracticeController.swift`：ObservableObject/MainActor，连接/静音/播放分开；connectionGeneration覆盖token等待、socket事件、错误和异步工具；旧close使用expectedGeneration，不能关闭新socket。
-- 工具仅 `record_language_correction / record_unfamiliar_learning_items / mark_task_complete`，参数≤8 KiB。通过白名单/类型/长度校验后先排队ack accepted，再异步处理；未知/无效工具ack rejected。重复id不重复执行，toolCallCancellation失效未执行工作。任务只能推进当前index且必须已有该任务用户句，不能跳步。
+- 工具仅 `record_language_correction / record_unfamiliar_learning_items / mark_task_complete`，参数≤8 KiB。通过白名单/类型/长度校验后先排队ack accepted，再异步处理；未知/无效工具ack rejected。重复id不重复执行，toolCallCancellation失效未执行工作。推进任务时用户必须已在当前任务开口；更大的index一次完成当前到该index之间的全部任务（对方提前收尾时进度也能走完），否则直接丢弃、不排队。prompt要求每完成一个任务先调用工具再问下一个，任务未完成前不得收尾告别。
 - 字幕按角色/轮次UUID更新同一气泡；保留重复增量词，finished封存文字；打断后的旧partner turnComplete保留正在进行的用户字幕。空白字幕不进入历史，请求也过滤旧空白记录。纠错忽略标点，支持句中引用和小幅STT差异，近12句择优关联用户UUID；转录未到时有界等待，无关引用不挂错句。完成Live任务后切文字用advance请求当前任务，避免把上一步原句当当前回答。归档在最终字幕/轮次/工具事件合并400ms写入，结束立即保存；收词只调用一次 `store.save(_:collecting:)`，去重且不覆盖手动收藏。磁盘写入仍在MainActor，未改整体持久化架构。
 - 静音仅停止麦克风帧，清已排队输入并发送audioStreamEnd，输出继续播放。后台、来电/Siri中断、设备断开或无可用路由、媒体服务重置停止采集/连接、保存已有内容；新增耳机/蓝牙或路由配置变化只在采集中重新检查格式并重建converter/tap，categoryChange忽略，保持连接和静音状态；回前台不自动开麦。用户点重新连接才重新检查权限和硬件格式。麦克风拒绝有中文提示，可切文字。
 

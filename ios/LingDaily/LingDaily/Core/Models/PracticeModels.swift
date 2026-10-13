@@ -233,13 +233,16 @@ struct PracticeSession: Codable, Equatable, Identifiable {
         return true
     }
     @discardableResult
+    /// Completes every task from the current one through `taskIndex`, so a partner that
+    /// covered the rest in one go (or wraps up early) still closes the progress bar.
+    /// The learner must have spoken in the current task.
     mutating func liveComplete(taskIndex: Int, now: Date = Date()) -> Bool {
-        guard live != nil, phase != .completed, taskIndex == stepIndex,
-              messages.contains(where: { $0.role == .user && $0.stepIndex == taskIndex }) else { return false }
-        live?.completedTasks.append(taskIndex)
+        guard live != nil, phase != .completed, taskIndex >= stepIndex, taskIndex < scenario.steps.count,
+              messages.contains(where: { $0.role == .user && $0.stepIndex == stepIndex }) else { return false }
+        live?.completedTasks.append(contentsOf: stepIndex...taskIndex)
         ai?.turn = nil
-        if stepIndex + 1 == scenario.steps.count { phase = .completed }
-        else { stepIndex += 1; phase = .speaking }
+        if taskIndex + 1 == scenario.steps.count { phase = .completed }
+        else { stepIndex = taskIndex + 1; phase = .speaking }
         updatedAt = now
         return true
     }

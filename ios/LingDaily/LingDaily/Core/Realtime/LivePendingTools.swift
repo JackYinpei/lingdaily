@@ -28,10 +28,11 @@ struct LivePendingTools {
         case .correction(let original, let feedback):
             return session.liveCorrection(original: original, feedback: feedback)
         case .complete(let index):
-            // Invalid/future/obsolete requests are discarded, never queued to
-            // advance a later task without a new model decision.
-            guard session.phase != .completed, index == session.stepIndex else { return true }
-            return session.liveComplete(taskIndex: index)
+            // Obsolete requests are discarded. A later index completes the tasks in
+            // between only if the learner already spoke in the current one; it is
+            // never queued to advance without a new model decision.
+            guard session.phase != .completed, index >= session.stepIndex else { return true }
+            return session.liveComplete(taskIndex: index) || index > session.stepIndex
         case .items: return true
         }
     }

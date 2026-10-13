@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject private var sync: SyncEngine
     @AppStorage("appearance") private var appearance = "system"
     @AppStorage("autoReadAIReplies") private var autoReadReplies = true
+    @AppStorage(LivePause.key) private var pauseMs = LivePause.standard
     @State private var signingOut = false
     @State private var unsyncedOnSignOut = false
     @State private var showingAccountData = false
@@ -29,6 +30,16 @@ struct SettingsView: View {
                         Brand.line.frame(height: 1)
                         Toggle("自动朗读对方的话", isOn: $autoReadReplies)
                             .font(.subheadline).foregroundColor(Brand.ink).tint(Brand.accent)
+                        Brand.line.frame(height: 1)
+                        HStack {
+                            Text("停顿多久算说完").font(.subheadline).foregroundColor(Brand.ink)
+                            Spacer(minLength: 8)
+                            Picker("停顿多久算说完", selection: $pauseMs) {
+                                ForEach(LivePause.options, id: \.self) { Text(LivePause.label($0)).tag($0) }
+                            }
+                            .pickerStyle(.menu).tint(Brand.secondary)
+                            .accessibilityIdentifier("live-pause")
+                        }
                     }.surfaceCard()
                     if account.canPractice { AIModelCard() }
                     if account.session != nil && !account.usesLocalDevelopment { UsageCard() }

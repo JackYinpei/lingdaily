@@ -87,6 +87,7 @@ struct ConversationView: View {
             } else { model.requestPending(store: store) }
         }
         .navigationBack(title: "", requiresConfirmation: live.state != .disconnected, onReturn: saveAndStop, action: requestClose)
+        .toolbar { toolbar }
         .alert("离开这次通话？", isPresented: $showsLeaveConfirmation) {
             Button("结束并返回", role: .destructive, action: leavePractice)
             Button("继续练习", role: .cancel) {}
@@ -116,37 +117,48 @@ struct ConversationView: View {
         if session.userTurns > 0 { store.save(session) }
     }
 
-    // MARK: Header — who you're talking to and which step you're on, always visible.
+    // MARK: Header — partner and mode live in the navigation bar; one thin progress row below.
+
+    @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .principal) {
+            if session.phase != .completed {
+                HStack(spacing: 8) {
+                    Avatar(scenario: session.scenario, size: 28)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(session.scenario.partner).font(.subheadline.weight(.semibold)).foregroundColor(Brand.ink)
+                        Text(session.scenario.partnerRole).font(.caption2).foregroundColor(Brand.secondary)
+                    }
+                }.accessibilityElement(children: .combine)
+            }
+        }
+        ToolbarItemGroup(placement: .navigationBarTrailing) {
+            if session.phase != .completed {
+                if !voiceMode {
+                    Button {
+                        autoReadReplies.toggle()
+                        if !autoReadReplies { speech.stopAll() }
+                    } label: {
+                        Image(systemName: autoReadReplies ? "speaker.wave.2" : "speaker.slash").foregroundColor(Brand.ink)
+                    }.accessibilityLabel(autoReadReplies ? "关闭自动朗读" : "开启自动朗读")
+                }
+                Picker("对话模式", selection: $voiceMode) {
+                    Image(systemName: "keyboard").accessibilityLabel("文字").tag(false)
+                    Image(systemName: "phone").accessibilityLabel("语音通话").tag(true)
+                }
+                .pickerStyle(.segmented).frame(width: 88)
+                .accessibilityIdentifier("conversation-mode")
+            }
+        }
+    }
 
     private var header: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                Avatar(scenario: session.scenario, size: 34)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(session.scenario.partner).font(.subheadline.weight(.semibold))
-                    Text(session.scenario.partnerRole).font(.caption2).foregroundColor(Brand.secondary)
-                }
-                Spacer()
-                if !voiceMode { Button {
-                    autoReadReplies.toggle()
-                    if !autoReadReplies { speech.stopAll() }
-                } label: {
-                    Image(systemName: autoReadReplies ? "speaker.wave.2" : "speaker.slash").frame(width: 44, height: 44)
-                }.accessibilityLabel(autoReadReplies ? "关闭自动朗读" : "开启自动朗读") }
-            }
-            .font(.body).foregroundColor(Brand.ink)
-            Picker("对话模式", selection: $voiceMode) {
-                Text("文字").tag(false)
-                Text("语音通话").tag(true)
-            }.pickerStyle(.segmented).padding(.horizontal, 16)
-                .accessibilityIdentifier("conversation-mode")
-            VStack(alignment: .leading, spacing: 6) {
-                StepProgress(current: session.stepIndex, total: session.scenario.steps.count)
-                Text("第 \(session.stepIndex + 1) 步 · \(session.step.goal)")
-                    .font(.caption.weight(.medium)).foregroundColor(Brand.secondary)
-            }.padding(.horizontal, 16)
+        HStack(spacing: 12) {
+            Text("\(session.stepIndex + 1)/\(session.scenario.steps.count) · \(session.step.goal)")
+                .font(.caption.weight(.medium)).foregroundColor(Brand.secondary).lineLimit(1)
+            Spacer(minLength: 8)
+            StepProgress(current: session.stepIndex, total: session.scenario.steps.count).frame(width: 96)
         }
-        .padding(.horizontal, 4).padding(.bottom, 10)
+        .padding(.horizontal, 20).padding(.vertical, 8)
         .background(Brand.page)
         .overlay(alignment: .bottom) { Brand.line.frame(height: 1) }
     }

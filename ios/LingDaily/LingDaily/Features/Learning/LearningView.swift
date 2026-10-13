@@ -7,32 +7,30 @@ struct LearningView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        NavigationView {
-            ZStack {
-                PageBackground()
-                // A List (not a ScrollView) so practice records get the system swipe-to-delete.
-                List {
-                    VStack(alignment: .leading, spacing: 20) {
-                        PageTitle(title: "学习",
-                                  subtitle: "练习 \(store.archive.sessions.count) 次 · 词库 \(store.archive.expressions.count) 条")
-                        Picker("学习内容", selection: $section) {
-                            Text("练习记录").tag(0)
-                            Text("词库").tag(1)
-                        }.pickerStyle(.segmented).accessibilityIdentifier("learning-sections")
-                    }
-                    .padding(.top, 20).padding(.bottom, 4)
-                    .pageRow()
-                    if section == 0 { sessions } else { expressions }
-                    Color.clear.frame(height: 24).pageRow()
+        ZStack {
+            PageBackground()
+            // A List (not a ScrollView) so practice records get the system swipe-to-delete.
+            List {
+                VStack(alignment: .leading, spacing: 20) {
+                    PageTitle(title: "学习",
+                              subtitle: "练习 \(store.archive.sessions.count) 次 · 词库 \(store.archive.expressions.count) 条")
+                    Picker("学习内容", selection: $section) {
+                        Text("练习记录").tag(0)
+                        Text("词库").tag(1)
+                    }.pickerStyle(.segmented).accessibilityIdentifier("learning-sections")
                 }
-                .listStyle(.plain)
-                .clearListBackground()
+                .padding(.top, 20).padding(.bottom, 4)
+                .pageRow()
+                if section == 0 { sessions } else { expressions }
+                Color.clear.frame(height: 24).pageRow()
             }
-            .navigationTitle("学习").navigationBarHidden(true)
-        }.navigationViewStyle(.stack)
-            .onDisappear { speech.stopAll() }
-            .onChange(of: section) { _ in speech.stopAll() }
-            .onChange(of: scenePhase) { if $0 != .active { speech.stopAll() } }
+            .listStyle(.plain)
+            .clearListBackground()
+        }
+        .navigationTitle("学习").navigationBarHidden(true)
+        .onDisappear { speech.stopAll() }
+        .onChange(of: section) { _ in speech.stopAll() }
+        .onChange(of: scenePhase) { if $0 != .active { speech.stopAll() } }
     }
 
     @ViewBuilder private var sessions: some View {
@@ -196,14 +194,15 @@ struct SessionDetailView: View {
             Button("取消", role: .cancel) {}
         } message: { Text("删除后不能恢复。收藏的句子会保留。") }
         .onDisappear { speech.stopAll() }
-        .fullScreenCover(item: $activeSession) { session in
+        .pushDestination(item: $activeSession) { session in
             ConversationView(initialSession: session, onClose: { activeSession = nil })
         }
-        .fullScreenCover(isPresented: $showReview) {
+        .pushDestination(isPresented: $showReview) {
             ZStack {
                 PageBackground()
                 PracticeSummaryView(session: session, onClose: { showReview = false })
             }
+            .navigationBack(title: "练习复盘") { showReview = false }
         }
     }
 }

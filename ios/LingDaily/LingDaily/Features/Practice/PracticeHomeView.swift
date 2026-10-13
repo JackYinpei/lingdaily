@@ -29,7 +29,7 @@ struct PracticeHomeView: View {
                         HStack {
                             Text(Self.greeting()).font(.largeTitle.bold()).foregroundColor(Brand.ink)
                             Spacer(minLength: 12)
-                            Button { composing = true } label: {
+                            Button { created = nil; composing = true } label: {
                                 Label("新场景", systemImage: "plus")
                                     .font(.subheadline.weight(.semibold)).foregroundColor(Brand.onInk)
                                     .padding(.horizontal, 16).frame(minHeight: 44)
@@ -71,14 +71,15 @@ struct PracticeHomeView: View {
                 .readableColumn()
             }
         }
-        .sheet(isPresented: $composing, onDismiss: {
-            // Open the new scenario only after the sheet is gone; two presentations cannot overlap.
-            if let created { selectedScenario = created; self.created = nil }
-        }) {
-            ScenarioComposerView { created = $0 }
+        .pushDestination(isPresented: $composing) {
+            if let created {
+                PreparationFlowView(scenario: created)
+            } else {
+                ScenarioComposerView { created = $0 }
+            }
         }
-        .fullScreenCover(item: $selectedScenario) { PreparationFlowView(scenario: $0) }
-        .fullScreenCover(item: $resumed) { session in
+        .pushDestination(item: $selectedScenario) { PreparationFlowView(scenario: $0) }
+        .pushDestination(item: $resumed) { session in
             ConversationView(initialSession: session, onClose: { resumed = nil })
         }
     }
@@ -173,10 +174,7 @@ struct SceneCard: View {
                 .font(Brand.english(.title3)).foregroundColor(Brand.ink)
                 .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(scenario.title).font(.headline).foregroundColor(Brand.ink)
-                    Text(scenario.subtitle).font(.caption).foregroundColor(Brand.inkOnTone)
-                }
+                Text(scenario.title).font(.headline).foregroundColor(Brand.ink)
                 Spacer(minLength: 8)
                 Image(systemName: "arrow.right").font(.headline).foregroundColor(Brand.ink)
             }

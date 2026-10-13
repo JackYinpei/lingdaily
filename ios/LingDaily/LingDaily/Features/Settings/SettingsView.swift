@@ -45,7 +45,7 @@ struct SettingsView: View {
         } message: {
             Text("有 \(sync.pendingCount) 项改动还没上传到账号。退出会移除本机记录，这些改动会丢失。")
         }
-        .sheet(isPresented: $showingAccountData) { AccountDataSheet() }
+        .pushDestination(isPresented: $showingAccountData) { AccountDataView() }
     }
 
     private var accountCard: some View {
@@ -121,7 +121,7 @@ struct SettingsView: View {
 
 /// 账号与数据: where the learner's data lives, and — one step further — account
 /// deletion (App Store Review Guideline 5.1.1(v)): explain, then confirm with Apple.
-private struct AccountDataSheet: View {
+private struct AccountDataView: View {
     @EnvironmentObject private var account: AccountStore
     @EnvironmentObject private var sync: SyncEngine
     @Environment(\.dismiss) private var dismiss
@@ -135,7 +135,6 @@ private struct AccountDataSheet: View {
             PageBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Text("账号与数据").font(.title2.bold()).foregroundColor(Brand.ink)
                     VStack(alignment: .leading, spacing: 8) {
                         Text(account.session?.displayEmail ?? "").font(.subheadline).foregroundColor(Brand.ink)
                         Text("练习记录、词库和自建场景保存在你的账号里，换手机或重装 App 后登录即可恢复；网页版用同一个账号也能看到。")
@@ -150,13 +149,8 @@ private struct AccountDataSheet: View {
                 }
                 .padding(24).readableColumn()
             }
-            Button("完成") { dismiss() }
-                .font(.subheadline).foregroundColor(Brand.ink).frame(minWidth: 44, minHeight: 44)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                .padding(.trailing, 16).padding(.top, 8)
-                .disabled(deleting)
         }
-        .interactiveDismissDisabled(deleting)
+        .navigationBack(title: "账号与数据", isEnabled: !deleting) { dismiss() }
     }
 
     private var deletion: some View {

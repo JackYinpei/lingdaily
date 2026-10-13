@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LingDaily · 准备页三个方案</title>
+  <style>
+    :root { color-scheme: light; --page:#F6F2EA; --surface:#FFFDF8; --ink:#1E1C19; --on-ink:#FFFDF8; --secondary:#6F6A62; --line:#E6DFD3; --accent:#C2451E; --tone:#F1D8CA; --tone-ink:#595149; --accent-soft:#F4E6DE; --canvas:#EDE8E0; }
+    :root[data-theme="dark"] { color-scheme:dark; --page:#151412; --surface:#211F1B; --ink:#F2EEE6; --on-ink:#151412; --secondary:#A39D93; --line:#35322C; --accent:#F08A64; --tone:#3A2A23; --tone-ink:#D9C9BE; --accent-soft:#37251E; --canvas:#0D0C0B; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--canvas); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif; -webkit-font-smoothing:antialiased; }
+    button,input,textarea { font:inherit; }
+    button { color:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+    button:focus-visible,input:focus-visible,textarea:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+    button { border:0; }
+    button svg { pointer-events:none; }
+    svg { width:20px; height:20px; flex:none; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+    .site-header { max-width:1260px; padding:42px 30px 0; margin:auto; }
+    .topline { display:flex; align-items:center; justify-content:space-between; gap:20px; }
+    .wordmark { font-size:16px; font-weight:650; letter-spacing:-.4px; display:flex; gap:9px; align-items:center; }
+    .wordmark svg { color:var(--accent); }
+    .theme { border:1px solid var(--line); border-radius:30px; padding:10px 16px; background:transparent; font-size:13px; display:flex; align-items:center; gap:7px; }
+    .theme svg { width:16px; height:16px; }
+    h1 { font-size:clamp(28px,3.2vw,40px); font-weight:650; letter-spacing:-1.5px; margin:25px 0 10px; }
+    .intro { color:var(--secondary); font-size:15px; line-height:1.8; margin:0; }
+    .demo-note { margin:9px 0 0; font-size:12px; color:var(--secondary); }
+    .mobile-nav { display:none; gap:8px; margin:24px 0 0; }
+    .mobile-nav button { flex:1; border-radius:30px; background:var(--surface); padding:12px 8px; border:1px solid var(--line); font-size:14px; }
+    .mobile-nav button[aria-pressed="true"] { color:var(--on-ink); background:var(--ink); border-color:var(--ink); }
+    .options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:32px; max-width:1260px; padding:32px 30px 48px; margin:auto; }
+    .option-header { display:flex; align-items:center; gap:9px; margin-bottom:10px; }
+    .letter { width:28px; height:28px; border:1px solid var(--line); border-radius:50%; display:grid; place-items:center; font-family:Georgia,serif; font-size:15px; }
+    .option-header h2 { font-size:17px; font-weight:650; margin:0; letter-spacing:-.5px; }
+    .option-caption { margin:0 0 21px; color:var(--secondary); font-size:13px; line-height:1.65; min-height:43px; }
+    .phone { position:relative; overflow:hidden; border:6px solid var(--ink); border-radius:44px; background:var(--page); height:828px; width:100%; max-width:390px; margin:auto; box-shadow:0 16px 40px #00000010; }
+    .screen { height:100%; display:flex; flex-direction:column; position:relative; }
+    .status { height:49px; padding:14px 23px 9px; flex:none; display:flex; align-items:center; justify-content:space-between; font-size:13px; font-weight:650; }
+    .island { position:absolute; width:90px; height:23px; background:var(--ink); border-radius:40px; left:50%; transform:translateX(-50%); top:8px; }
+    .status-icons { display:flex; align-items:center; gap:4px; }
+    .status-icons svg { width:16px; height:16px; }
+    .navbar { padding:0 15px 6px; display:flex; align-items:center; gap:4px; flex:none; height:47px; }
+    .back { width:40px; min-height:40px; display:grid; place-items:center; background:transparent; margin-left:-5px; border-radius:50%; }
+    .navtitle { font-size:14px; color:var(--secondary); }
+    .scroll-area { flex:1; min-height:0; overflow:auto; scrollbar-width:none; padding:0 19px 24px; }
+    .scroll-area::-webkit-scrollbar { display:none; }
+    .scene { padding:18px; border-radius:24px; background:var(--tone); }
+    .person { display:flex; align-items:center; gap:10px; }
+    .avatar { width:40px; height:40px; border-radius:50%; border:1px solid color-mix(in srgb,var(--ink) 9%,transparent); display:grid; place-items:center; font:600 24px Georgia,serif; flex:none; }
+    .person-name { font-size:16px; font-weight:650; }
+    .person-role { font-size:12px; color:var(--tone-ink); margin-top:3px; }
+    .scene h3 { font-size:23px; letter-spacing:-.7px; margin:16px 0 10px; line-height:1.35; }
+    .scene p { margin:0; font-size:14px; line-height:1.7; color:var(--tone-ink); }
+    .tasks { margin:23px 0 26px; }
+    .section-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px; }
+    .section-heading h3,.field-title { font-size:16px; font-weight:650; margin:0; }
+    .optional { font-weight:400; font-size:12px; color:var(--secondary); margin-left:5px; }
+    .step-list { list-style:none; margin:0; padding:0; display:flex; gap:8px; }
+    .step-list li { display:flex; align-items:center; gap:5px; font-size:12px; white-space:nowrap; }
+    .step-list span { font:14px Georgia,serif; color:var(--secondary); }
+    .step-list li + li { border-left:1px solid var(--line); padding-left:8px; }
+    .fields { display:grid; gap:16px; }
+    .field-label { display:flex; justify-content:space-between; align-items:center; gap:8px; margin:0 0 9px; }
+    .field-label label { font-size:14px; font-weight:550; }
+    .field-label .optional { margin:0; }
+    .input { width:100%; min-height:48px; resize:none; border:1px solid var(--line); border-radius:15px; color:var(--ink); background:var(--surface); padding:13px 14px; font-size:14px; line-height:1.5; }
+    .input::placeholder { color:var(--secondary); opacity:.75; }
+    .helper { font-size:12px; color:var(--secondary); line-height:1.7; margin:11px 0 0; }
+    .ai-label { color:var(--accent); font-size:12px; font-weight:550; }
+    .small-action { background:transparent; padding:3px 0; min-height:32px; display:flex; gap:5px; align-items:center; color:var(--accent); font-size:12px; }
+    .small-action svg { width:14px; height:14px; }
+    .suggestion-label { display:flex; align-items:center; gap:5px; margin-top:10px; font-size:12px; color:var(--secondary); }
+    .chips { display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; }
+    .chip { border:1px solid var(--line); background:transparent; padding:10px 11px; border-radius:30px; font-size:12px; line-height:1.3; min-height:36px; }
+    .chip[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+    .dock { flex:none; padding:12px 19px 0; background:var(--page); border-top:1px solid var(--line); }
+    .main-cta { background:var(--ink); color:var(--on-ink); border-radius:30px; min-height:51px; width:100%; display:flex; align-items:center; justify-content:center; gap:8px; font-size:16px; font-weight:650; }
+    .main-cta svg { width:19px; height:19px; }
+    .privacy { font-size:10px; line-height:1.6; color:var(--secondary); text-align:center; margin:10px 0 0; }
+    .home-indicator { height:5px; width:108px; background:var(--ink); border-radius:8px; margin:14px auto 7px; }
+    .mode-pills { display:flex; gap:8px; margin-bottom:11px; }
+    .mode-pill { display:flex; justify-content:center; align-items:center; gap:7px; flex:1; min-height:45px; background:transparent; border:1px solid var(--line); border-radius:30px; font-size:13px; }
+    .mode-pill[aria-pressed="true"] { border-color:var(--ink); background:var(--surface); font-weight:650; }
+    .mode-pill .selection-dot { width:5px; height:5px; background:var(--accent); border-radius:50%; display:none; }
+    .mode-pill[aria-pressed="true"] .selection-dot { display:block; }
+    .mode-pill svg { width:17px; height:17px; }
+    .b .scene { background:transparent; padding:0 0 18px; border-bottom:1px solid var(--line); border-radius:0; }
+    .b .avatar { background:var(--tone); }
+    .b .scene h3 { font-size:26px; margin-top:16px; }
+    .b .scene p { color:var(--secondary); }
+    .b .tasks { margin-bottom:24px; }
+    .b .step-list { display:grid; gap:8px; }
+    .b .step-list li { font-size:13px; gap:10px; }
+    .b .step-list li + li { border:0; padding:0; }
+    .b .step-list span { width:14px; }
+    .recommend-list { padding:0; margin:0 0 12px; border-top:1px solid var(--line); }
+    .recommend-row { display:flex; text-align:left; width:100%; gap:10px; align-items:center; padding:12px 0; border-bottom:1px solid var(--line); background:transparent; font-size:13px; line-height:1.5; min-height:44px; }
+    .recommend-row .plus { width:21px; height:21px; border:1px solid var(--line); border-radius:50%; display:grid; place-items:center; flex:none; color:var(--secondary); }
+    .recommend-row .plus svg { width:12px; height:12px; }
+    .recommend-row[aria-pressed="true"] { color:var(--accent); }
+    .recommend-row[aria-pressed="true"] .plus { color:var(--accent); border-color:var(--accent); }
+    .mode-cards { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin:0 0 11px; }
+    .mode-card { position:relative; min-height:79px; padding:12px; border:1px solid var(--line); border-radius:17px; background:transparent; display:flex; flex-direction:column; align-items:flex-start; gap:6px; text-align:left; }
+    .mode-card[aria-pressed="true"] { border-color:var(--ink); background:var(--surface); }
+    .mode-card .mode-top { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:650; }
+    .mode-card .mode-description { font-size:11px; color:var(--secondary); }
+    .radio { position:absolute; right:10px; top:13px; width:12px; height:12px; border:1px solid var(--line); border-radius:50%; }
+    .mode-card[aria-pressed="true"] .radio { border:4px solid var(--accent); }
+    .c .scene { padding:0 0 20px; border-radius:0; background:transparent; }
+    .c .person { gap:11px; }
+    .c .avatar { background:var(--tone); width:46px; height:46px; }
+    .c .scene h3 { font-size:27px; }
+    .scene-quote { font:20px/1.5 Georgia,"Times New Roman",serif; margin:16px 0 0; letter-spacing:-.4px; }
+    .c .tasks { margin:0 0 25px; padding:14px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+    .c .tasks .section-heading { margin-bottom:9px; }
+    .suggestion-editor { background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:14px; }
+    .suggestion-editor textarea { background:transparent; border:0; padding:0; min-height:71px; border-radius:0; margin:10px 0 0; font-size:15px; }
+    .editor-footer { display:flex; align-items:center; justify-content:space-between; margin-top:6px; gap:10px; }
+    .editor-footer span { font-size:11px; color:var(--secondary); }
+    .insert-button { display:flex; align-items:center; justify-content:center; gap:5px; background:transparent; border:1px solid var(--line); border-radius:20px; padding:7px 10px; min-height:34px; font-size:12px; color:var(--accent); }
+    .insert-button svg { width:14px; height:14px; }
+    .c .fields { gap:20px; }
+    .c .helper { margin-top:11px; }
+    .quiet-context { display:block; margin-bottom:9px; }
+    .quiet-context summary { color:var(--secondary); font-size:13px; min-height:32px; display:flex; align-items:center; gap:6px; cursor:pointer; }
+    .quiet-context summary::after { content:"＋"; margin-left:auto; font-size:16px; }
+    .quiet-context[open] summary::after { content:"−"; }
+    .quiet-context .input { margin-top:8px; }
+    .mode-link { display:flex; align-items:center; justify-content:center; gap:6px; min-height:42px; width:100%; font-size:13px; color:var(--secondary); background:transparent; }
+    .mode-link svg { width:16px; height:16px; }
+    .current-mode { display:flex; align-items:center; justify-content:center; gap:6px; margin:0 0 11px; color:var(--secondary); font-size:12px; }
+    .current-mode svg { width:15px; height:15px; }
+    .preview-overlay { position:absolute; inset:49px 0 0; z-index:3; background:color-mix(in srgb,var(--ink) 22%,transparent); display:flex; align-items:flex-end; padding:15px; }
+    .preview-overlay[hidden] { display:none; }
+    .summary-sheet { padding:23px; border-radius:26px; width:100%; background:var(--surface); }
+    .summary-sheet h3 { font-size:22px; margin:0 0 5px; }
+    .summary-sheet p { font-size:13px; color:var(--secondary); line-height:1.7; }
+    .summary-sheet dl { margin:20px 0; }
+    .summary-sheet dt { color:var(--secondary); font-size:11px; margin-top:14px; }
+    .summary-sheet dd { font-size:14px; margin:5px 0 0; line-height:1.6; overflow-wrap:anywhere; }
+    .screen-notice { min-height:20px; font-size:12px; color:var(--accent); margin:14px 0 0; line-height:1.5; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    @media (max-width:1050px) { .options { gap:18px; padding-left:20px; padding-right:20px; } .site-header { padding-left:20px; padding-right:20px; } .phone { border-width:5px; } .scroll-area { padding-left:15px; padding-right:15px; } .dock { padding-left:15px; padding-right:15px; } .mode-card { padding:11px 9px; } .radio { right:7px; } }
+    @media (max-width:860px) { .options { display:block; max-width:480px; padding:26px 20px 36px; } .option { display:none; } .option.active { display:block; } .mobile-nav { display:flex; } .phone { max-width:390px; height:844px; } .site-header { max-width:480px; padding-top:25px; } .option-caption { min-height:0; margin-bottom:17px; } .scroll-area { padding-left:20px; padding-right:20px; } .dock { padding-left:20px; padding-right:20px; } }
+    @media (max-width:370px) { .phone { border-width:3px; border-radius:32px; height:810px; } .scroll-area,.dock { padding-left:14px; padding-right:14px; } .step-list { gap:5px; } .step-list li + li { padding-left:5px; } .scene { padding:16px; } .scene h3 { font-size:21px; } .site-header { padding-left:16px; padding-right:16px; } .options { padding-left:12px; padding-right:12px; } .mode-card .mode-top { font-size:12px; gap:5px; } .mode-card .mode-top svg { width:16px; } }
+    @media (prefers-reduced-motion:no-preference) { button { transition:background .16s,border-color .16s,color .16s; } }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="topline"><div class="wordmark"><span data-icon="chat"></span>LingDaily <span style="font-weight:400;color:var(--secondary)">/ 准备页</span></div><button class="theme" type="button" aria-pressed="false"><span data-icon="moon"></span><span>深色预览</span></button></div>
+    <h1>三个方案，同一场对话。</h1>
+    <p class="intro">点击推荐填入目标，修改自己的话，再试试文字与语音的不同入口。</p>
+    <p class="demo-note">推荐内容为咖啡场景示例；三个方案独立操作。桌面并排比较，手机切换查看。</p>
+    <nav class="mobile-nav" aria-label="切换设计方案"><button aria-pressed="true" data-variant="a">A · 轻量标签</button><button aria-pressed="false" data-variant="b">B · 明确选择</button><button aria-pressed="false" data-variant="c">C · 语音优先</button></nav>
+  </header>
+  <main class="options" aria-label="准备页设计方案"></main>
+  <script>
+    const paths = {
+      back:'<path d="m14 6-6 6 6 6"/>',
+      chat:'<path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3v-3H3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M6 9h10M6 13h7"/>',
+      mic:'<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/>',
+      text:'<path d="M4 5h16M12 5v15M8 20h8"/>',
+      plus:'<path d="M12 5v14M5 12h14"/>',
+      check:'<path d="m5 12 4 4L19 6"/>',
+      arrow:'<path d="M5 12h14m-5-5 5 5-5 5"/>',
+      refresh:'<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-2l2 7M4 12l2 7a7 7 0 0 0 12-2"/>',
+      moon:'<path d="M20 15.8A9 9 0 0 1 8.2 4 9 9 0 1 0 20 15.8Z"/>',
+      sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/>',
+      wifi:'<path d="M3 9a14 14 0 0 1 18 0M6 12a9 9 0 0 1 12 0M9 15a4 4 0 0 1 6 0"/><circle cx="12" cy="18" r=".6"/>',
+      battery:'<rect x="2" y="6" width="18" height="12" rx="3"/><path d="M22 10v4M6 9h10v6H6Z" fill="currentColor"/>'
+    };
+    const icon = name => '<svg viewBox="0 0 24 24" aria-hidden="true">'+paths[name]+'</svg>';
+    const recommendations = [
+      ['问清楚替代选项，再完成点单','用自然的语气，不要太正式'],
+      ['确认价格和容量，再做选择','店里有点忙，表达简短一点'],
+      ['礼貌说明偏好，并提出替代要求','我不喝牛奶，想确认植物奶选项']
+    ];
+    const variants = [
+      {id:'a',title:'轻量标签',caption:'目标旁放可点的推荐；底部用带图标的胶囊切换。'},
+      {id:'b',title:'明确选择',caption:'推荐目标直接列出来；模式卡解释各自怎么练。'},
+      {id:'c',title:'语音优先',caption:'推荐句就地填入、随手改写；文字入口降为次级。'}
+    ];
+    const state = Object.fromEntries(variants.map(v=>[v.id,{mode:'voice',goal:'',context:'',index:0}]));
+    const escape = s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const goals = ['问清楚替代选项，再完成点单','确认价格和容量，再做选择','礼貌说明偏好，并提出替代要求'];
+    const field = (id,target,placeholder)=>`<textarea class="input" id="${id}-${target}" data-field="${target}" rows="2" maxlength="${target==='goal'?100:500}" placeholder="${placeholder}"></textarea>`;
+    const chip = (text,target)=>`<button class="chip" type="button" data-fill="${target}" data-value="${text}" aria-pressed="false">${text}</button>`;
+    const goalChips = ()=>`<div class="suggestion-label"><span class="ai-label">AI 推荐</span><span>· 点一下填入</span></div><div class="chips">${goals.slice(0,2).map(g=>chip(g,'goal')).join('')}</div>`;
+    const contextChips = ()=>`<div class="chips">${['语气轻松一点','店里有点忙'].map(g=>chip(g,'context')).join('')}</div>`;
+    const scene = id=>`<section class="scene" aria-label="咖啡场景"><div class="person"><div class="avatar" aria-hidden="true">S</div><div><div class="person-name">Sam</div><div class="person-role">咖啡师 · 日常</div></div></div><h3>点单，多一点变化</h3>${id==='c'?'<div class="scene-quote">“Hi there! What can I get<br>for you today?”</div>':'<p>你想点一杯燕麦奶拿铁，不过今天有个小变化。问清楚还有哪些选择，再完成点单。</p>'}</section>`;
+    const tasks = id=>`<section class="tasks"><div class="section-heading"><h3>这次要说到</h3></div><ol class="step-list"><li><span>1</span>表达需要</li><li><span>2</span>应对变化</li><li><span>3</span>完成点单</li></ol></section>`;
+    function fields(id) {
+      if(id==='a') return `<section><div class="section-heading"><h3>你的目标 <span class="optional">可选</span></h3></div><div class="fields"><div><label class="sr-only" for="a-goal">你的目标</label>${field(id,'goal','这次想练什么？')}${goalChips()}</div><div><div class="field-label"><label for="a-context">补充背景</label><span class="optional">可选</span></div>${field(id,'context','比如：语气自然一点')}${contextChips()}</div></div><p class="helper">Sam 会按你的目标调整对话和追问。</p></section>`;
+      if(id==='b') return `<section><div class="section-heading"><h3>你的目标 <span class="optional">可选</span></h3><span class="ai-label">AI 推荐</span></div><div class="recommend-list">${goals.map(g=>`<button class="recommend-row" data-fill="goal" data-value="${g}" aria-pressed="false"><span class="plus">${icon('plus')}</span><span>${g}</span></button>`).join('')}</div><label class="sr-only" for="b-goal">你的目标</label>${field(id,'goal','也可以写下自己的目标')}<div class="field-label" style="margin-top:17px"><label for="b-context">补充背景 <span class="optional">可选</span></label><button class="small-action" data-fill="context" data-value="用自然的语气，不要太正式">AI 推荐填入 ${icon('plus')}</button></div>${field(id,'context','比如：语气自然一点')}<p class="helper">推荐填入后，可以改成你自己的话。</p></section>`;
+      return `<section><div class="section-heading"><h3>带着一个目标开口 <span class="optional">可选</span></h3></div><div class="fields"><div class="suggestion-editor"><div class="field-label"><label for="c-goal">你的目标</label><span class="ai-label">AI 推荐</span></div><p class="recommended-sentence" style="font-size:14px;line-height:1.65;margin:9px 0 0">${recommendations[0][0]}</p><label class="sr-only" for="c-goal">编辑你的目标</label>${field(id,'goal','点「填入」，或写自己的目标')}<div class="editor-footer"><button class="small-action" data-action="cycle">${icon('refresh')}换一个</button><button class="insert-button" data-action="insert">${icon('plus')}填入</button></div></div><details class="quiet-context"><summary>补充一点背景 <span class="optional">可选</span></summary><label class="sr-only" for="c-context">补充背景</label>${field(id,'context','比如：语气自然一点')}<button class="small-action" data-action="context">AI 推荐填入 ${icon('plus')}</button></details></div><p class="helper">Sam 会顺着你的目标展开这场对话。</p></section>`;
+    }
+    function modeControls(id) {
+      if(id==='a') return `<div class="mode-pills" role="group" aria-label="对话模式"><button class="mode-pill" data-mode="voice" aria-pressed="true">${icon('mic')}语音通话<span class="selection-dot"></span></button><button class="mode-pill" data-mode="text" aria-pressed="false">${icon('text')}文字对话<span class="selection-dot"></span></button></div>`;
+      if(id==='b') return `<div class="mode-cards" role="group" aria-label="对话模式"><button class="mode-card" data-mode="voice" aria-pressed="true"><span class="mode-top">${icon('mic')}语音通话</span><span class="mode-description">直接开口，像打电话</span><span class="radio"></span></button><button class="mode-card" data-mode="text" aria-pressed="false"><span class="mode-top">${icon('text')}文字对话</span><span class="mode-description">慢慢想，打字回答</span><span class="radio"></span></button></div>`;
+      return `<div class="current-mode">${icon('mic')}<span>语音通话 · 直接开口聊</span></div>`;
+    }
+    document.querySelector('.options').innerHTML = variants.map(v=>`<article class="option ${v.id==='a'?'active':''}" data-option="${v.id}"><div class="option-header"><span class="letter">${v.id.toUpperCase()}</span><h2>${v.title}</h2></div><p class="option-caption">${v.caption}</p><div class="phone ${v.id}"><div class="screen"><div class="status" aria-hidden="true"><span>9:41</span><div class="island"></div><span class="status-icons">${icon('wifi')}${icon('battery')}</span></div><div class="navbar"><button class="back" aria-label="返回（预览）">${icon('back')}</button><span class="navtitle">准备对话</span></div><div class="scroll-area">${scene(v.id)}${tasks(v.id)}${fields(v.id)}<p class="screen-notice" role="status" aria-live="polite"></p></div><footer class="dock">${modeControls(v.id)}<button class="main-cta" data-action="start">${icon('mic')}<span>进入语音通话</span></button>${v.id==='c'?`<button class="mode-link" data-action="toggle-mode">${icon('text')}改用文字对话</button>`:''}<p class="privacy">目标、背景和对话会发送给 Gemini。<br>语音模式还会发送语音，原始录音不保存。</p><div class="home-indicator" aria-hidden="true"></div></footer><div class="preview-overlay" hidden><section class="summary-sheet" role="dialog" aria-modal="true" aria-label="所选练习设置"><h3>准备好了</h3><p>这是交互预览，以下是你刚才选好的设置。</p><dl></dl><button class="main-cta" data-action="close-summary">返回准备页</button></section></div></div></div></article>`).join('');
+    const announce = (article,text)=>article.querySelector('.screen-notice').textContent=text;
+    function synchronize(article) {
+      const s = state[article.dataset.option];
+      article.querySelectorAll('[data-fill]').forEach(b=>{
+        const selected = s[b.dataset.fill] === b.dataset.value;
+        b.setAttribute('aria-pressed',String(selected));
+        if(b.classList.contains('recommend-row')) b.querySelector('.plus').innerHTML = icon(selected?'check':'plus');
+      });
+      article.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===s.mode)));
+      const cta = article.querySelector('[data-action="start"]');
+      cta.innerHTML = icon(s.mode==='voice'?'mic':'text') + '<span>'+(s.mode==='voice'?'进入语音通话':'开始文字对话')+'</span>';
+      const current = article.querySelector('.current-mode');
+      if(current) {
+        current.innerHTML = icon(s.mode==='voice'?'mic':'text')+'<span>'+(s.mode==='voice'?'语音通话 · 直接开口聊':'文字对话 · 慢慢想再回答')+'</span>';
+        article.querySelector('[data-action="toggle-mode"]').innerHTML = icon(s.mode==='voice'?'text':'mic') + (s.mode==='voice'?'改用文字对话':'改用语音通话');
+        const inserted=s.goal===recommendations[s.index][0];
+        article.querySelector('.recommended-sentence').hidden=inserted;
+        const insert=article.querySelector('[data-action="insert"]');
+        insert.innerHTML=icon(inserted?'check':'plus')+(inserted?'已填入':'填入');
+        insert.disabled=inserted;
+      }
+    }
+    function fill(article,target,value) {
+      state[article.dataset.option][target]=value;
+      const input=article.querySelector('[data-field="'+target+'"]');
+      input.value=value; input.dispatchEvent(new Event('input',{bubbles:true}));
+      announce(article,(target==='goal'?'目标':'背景')+'已填入，可以继续修改。');
+    }
+    document.querySelectorAll('.option').forEach(article=>{
+      article.addEventListener('input',event=>{
+        if(!event.target.dataset.field) return;
+        state[article.dataset.option][event.target.dataset.field]=event.target.value;
+        synchronize(article);
+      });
+      article.addEventListener('click',event=>{
+        const button=event.target.closest('button'); if(!button) return;
+        const s=state[article.dataset.option];
+        if(button.dataset.fill) fill(article,button.dataset.fill,button.dataset.value);
+        if(button.dataset.mode) {s.mode=button.dataset.mode; synchronize(article);}
+        switch(button.dataset.action) {
+          case 'toggle-mode': s.mode=s.mode==='voice'?'text':'voice'; synchronize(article); break;
+          case 'cycle': s.index=(s.index+1)%recommendations.length; article.querySelector('.recommended-sentence').textContent=recommendations[s.index][0]; synchronize(article); break;
+          case 'insert': fill(article,'goal',recommendations[s.index][0]); break;
+          case 'context': fill(article,'context',recommendations[s.index][1]); break;
+          case 'start':
+            article.querySelector('.summary-sheet dl').innerHTML='<dt>对话模式</dt><dd>'+ (s.mode==='voice'?'语音通话':'文字对话')+'</dd><dt>你的目标</dt><dd>'+escape(s.goal||'使用场景默认目标')+'</dd><dt>补充背景</dt><dd>'+escape(s.context||'未填写')+'</dd>';
+            article.querySelector('.preview-overlay').hidden=false;
+            article.querySelector('[data-action="close-summary"]').focus(); break;
+          case 'close-summary': article.querySelector('.preview-overlay').hidden=true; article.querySelector('[data-action="start"]').focus(); break;
+        }
+        if(button.classList.contains('back')) announce(article,'可从左边缘滑动返回；当前停留在方案预览。');
+      });
+      article.addEventListener('keydown',event=>{
+        const overlay=article.querySelector('.preview-overlay');
+        if(overlay.hidden) return;
+        if(event.key==='Escape') {overlay.hidden=true; article.querySelector('[data-action="start"]').focus();}
+        if(event.key==='Tab') {event.preventDefault(); article.querySelector('[data-action="close-summary"]').focus();}
+      });
+    });
+    document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=icon(el.dataset.icon));
+    document.querySelector('.theme').addEventListener('click',event=>{
+      const dark=document.documentElement.dataset.theme!=='dark';
+      document.documentElement.dataset.theme=dark?'dark':'light';
+      event.currentTarget.setAttribute('aria-pressed',String(dark));
+      event.currentTarget.innerHTML=icon(dark?'sun':'moon')+'<span>'+(dark?'浅色预览':'深色预览')+'</span>';
+    });
+    document.querySelector('.mobile-nav').addEventListener('click',event=>{
+      const button=event.target.closest('[data-variant]'); if(!button)return;
+      document.querySelectorAll('[data-variant]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));
+      document.querySelectorAll('.option').forEach(a=>a.classList.toggle('active',a.dataset.option===button.dataset.variant));
+    });
+  </script>
+</body>
+</html>

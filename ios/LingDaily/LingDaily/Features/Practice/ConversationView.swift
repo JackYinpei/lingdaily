@@ -13,6 +13,8 @@ struct ConversationView: View {
     @State private var dictationPrefix = ""
     @State private var dictationActive = false
     @State private var submittingDictation = false
+    @State private var showsLeaveConfirmation = false
+    @State private var hasSavedOnExit = false
     @AppStorage("preferVoicePractice") private var preferVoicePractice = true
     @State private var hintLevel = 0
     @StateObject private var translations = BubbleTranslations()
@@ -75,6 +77,7 @@ struct ConversationView: View {
             else { live.stop(); model.enterText(store: store) }
         }
         .onAppear {
+            hasSavedOnExit = false
             if voiceMode {
                 model.enterLive()
                 if autoStartVoice && !autoStarted && live.state == .disconnected {
@@ -83,7 +86,34 @@ struct ConversationView: View {
                 }
             } else { model.requestPending(store: store) }
         }
-        .onDisappear { dictationActive = false; live.stop(); speech.stopAll(); model.pause() }
+        .navigationBack(title: "", requiresConfirmation: live.state != .disconnected, onReturn: saveAndStop, action: requestClose)
+        .alert("离开这次通话？", isPresented: $showsLeaveConfirmation) {
+            Button("结束并返回", role: .destructive, action: leavePractice)
+            Button("继续练习", role: .cancel) {}
+        } message: { Text("已说的内容和未发送的草稿会保留。") }
+    }
+
+    private func requestClose() {
+        if live.state != .disconnected { showsLeaveConfirmation = true }
+        else { leavePractice() }
+    }
+
+    private func leavePractice() {
+        saveAndStop()
+        onClose()
+    }
+
+    private func saveAndStop() {
+        guard !hasSavedOnExit else { return }
+        hasSavedOnExit = true
+        live.stop()
+        dictationActive = false
+        speech.stopAll()
+        model.pause()
+        inputFocused = false
+        // Native navigation pops and the visible back button both preserve the unsent draft.
+        model.keepDraft(draft)
+        if session.userTurns > 0 { store.save(session) }
     }
 
     // MARK: Header — who you're talking to and which step you're on, always visible.
@@ -91,18 +121,6 @@ struct ConversationView: View {
     private var header: some View {
         VStack(spacing: 10) {
             HStack(spacing: 10) {
-                Button {
-                    live.stop()
-                    dictationActive = false
-                    speech.stopAll()
-                    model.pause()
-                    inputFocused = false
-                    // Leaving always saves, including any unsent draft.
-                    model.keepDraft(draft)
-                    if session.userTurns > 0 { store.save(session) }
-                    onClose()
-                } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
-                    .accessibilityLabel("离开练习")
                 Avatar(scenario: session.scenario, size: 34)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(session.scenario.partner).font(.subheadline.weight(.semibold))

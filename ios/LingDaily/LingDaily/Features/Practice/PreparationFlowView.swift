@@ -47,13 +47,9 @@ struct PreparationFlowView: View {
                                 .font(.caption).foregroundColor(Brand.secondary)
                         }
                     }
-                    .padding(.horizontal, 20).padding(.top, 64).padding(.bottom, 24)
+                    .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 24)
                     .readableColumn()
                 }
-                Button { dismiss() } label: {
-                    Image(systemName: "xmark").font(.headline).foregroundColor(Brand.ink)
-                        .frame(width: 44, height: 44)
-                }.padding(.leading, 10).accessibilityLabel("关闭")
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 10) {
@@ -72,6 +68,7 @@ struct PreparationFlowView: View {
                 .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8)
                 .readableColumn().background(Brand.page)
             }
+            .navigationBack(title: "准备对话") { dismiss() }
         }
     }
 

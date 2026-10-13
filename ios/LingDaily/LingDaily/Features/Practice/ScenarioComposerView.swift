@@ -76,12 +76,9 @@ struct ScenarioComposerView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 20).padding(.top, 64).padding(.bottom, 24)
+                .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 24)
                 .readableColumn()
             }
-            Button { dismiss() } label: {
-                Image(systemName: "xmark").font(.headline).foregroundColor(Brand.ink).frame(width: 44, height: 44)
-            }.padding(.leading, 10).padding(.top, 8).accessibilityLabel("关闭")
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 10) {
@@ -104,7 +101,7 @@ struct ScenarioComposerView: View {
             .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8)
             .readableColumn().background(Brand.page)
         }
-        .interactiveDismissDisabled(isLoading)
+        .navigationBack(title: "新场景", isEnabled: !isLoading) { dismiss() }
         .onDisappear { task?.cancel() }
     }
 
@@ -137,7 +134,6 @@ struct ScenarioComposerView: View {
                 guard !Task.isCancelled else { return }
                 store.addScenario(scenario)
                 onCreated(scenario)
-                dismiss()
             } catch is CancellationError {
             } catch {
                 guard !Task.isCancelled else { return }

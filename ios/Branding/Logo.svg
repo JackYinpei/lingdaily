@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>LingDaily — two people in conversation</title>
+  <rect width="1024" height="1024" fill="#F6F2EA"/>
+  <path d="M264.0 210.0 L550.0 210.0 C601.0 210.0 642.0 251.0 642.0 302.0 L642.0 472.0 C642.0 523.0 601.0 564.0 550.0 564.0 L354.0 564.0 L258.0 640.0 L258.0 564.0 C209.0 561.0 172.0 523.0 172.0 472.0 L172.0 302.0 C172.0 251.0 213.0 210.0 264.0 210.0 Z" fill="#1E1C19"/>
+  <path d="M474.0 426.0 L760.0 426.0 C811.0 426.0 852.0 467.0 852.0 518.0 L852.0 688.0 C852.0 739.0 818.0 777.0 770.0 780.0 L770.0 852.0 L674.0 780.0 L474.0 780.0 C423.0 780.0 382.0 739.0 382.0 688.0 L382.0 518.0 C382.0 467.0 423.0 426.0 474.0 426.0 Z" fill="#C2451E" stroke="#F6F2EA" stroke-width="22" stroke-linejoin="round"/>
+  <path d="M486 550H744 M486 640H670" fill="none" stroke="#FFFDF8" stroke-width="30" stroke-linecap="round"/>
+</svg>

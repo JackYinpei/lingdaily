@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LingDaily · 图标胶囊切换</title>
+  <style>
+    :root{color-scheme:light;--page:#F6F2EA;--surface:#FFFDF8;--ink:#1E1C19;--on-ink:#FFFDF8;--secondary:#6F6A62;--line:#E6DFD3;--accent:#C2451E;--tone:#F1D8CA;--tone-ink:#595149;--canvas:#EDE8E0}
+    :root[data-theme="dark"]{color-scheme:dark;--page:#151412;--surface:#211F1B;--ink:#F2EEE6;--on-ink:#151412;--secondary:#A39D93;--line:#35322C;--accent:#F08A64;--tone:#3A2A23;--tone-ink:#D9C9BE;--canvas:#0D0C0B}
+    *{box-sizing:border-box}body{margin:0;background:var(--canvas);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}button,input,textarea{font:inherit}button{cursor:pointer;color:inherit;border:0;-webkit-tap-highlight-color:transparent}button:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:3px}svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;width:20px;height:20px;flex:none;pointer-events:none}
+    .preview-header{max-width:580px;margin:0 auto;padding:32px 24px 24px}.topline{display:flex;align-items:center;justify-content:space-between;gap:16px}.brand{font-size:14px;font-weight:650;display:flex;align-items:center;gap:8px}.brand svg{width:18px;color:var(--accent)}.theme{display:flex;align-items:center;gap:6px;border:1px solid var(--line);padding:8px 12px;border-radius:25px;background:transparent;font-size:12px}.theme svg{width:15px;height:15px}h1{font-size:28px;letter-spacing:-1px;line-height:1.3;font-weight:650;margin:22px 0 9px}.preview-header p{font-size:14px;line-height:1.8;color:var(--secondary);margin:0}
+    .phone{width:390px;max-width:calc(100% - 32px);height:850px;border:6px solid var(--ink);border-radius:46px;overflow:hidden;margin:0 auto 34px;background:var(--page);box-shadow:0 16px 40px #00000010;position:relative}.screen{height:100%;display:flex;flex-direction:column}.status{height:48px;padding:14px 23px 8px;font-weight:650;font-size:13px;display:flex;justify-content:space-between;align-items:center;flex:none}.island{position:absolute;width:90px;height:23px;top:8px;left:50%;transform:translateX(-50%);border-radius:20px;background:var(--ink)}.status-icons{display:flex;gap:4px}.status-icons svg{width:16px;height:16px}.nav{height:40px;flex:none;display:flex;align-items:center;gap:3px;padding:0 14px 5px}.back{background:transparent;width:35px;height:35px;display:grid;place-items:center;margin-left:-3px}.nav span{font-size:13px;color:var(--secondary)}
+    .content{overflow:auto;min-height:0;flex:1;padding:0 20px 22px;scrollbar-width:none}.content::-webkit-scrollbar{display:none}.scene{background:var(--tone);border-radius:24px;padding:17px 19px}.person{display:flex;gap:11px;align-items:center}.avatar{width:43px;height:43px;border:1px solid color-mix(in srgb,var(--ink) 9%,transparent);border-radius:50%;display:grid;place-items:center;font:600 25px Georgia,serif}.person strong{font-size:17px;letter-spacing:-.3px}.person small{display:block;color:var(--tone-ink);font-size:12px;margin-top:3px}.scene h2{font-size:24px;letter-spacing:-.7px;line-height:1.4;margin:14px 0 9px}.scene p{font-size:14px;line-height:1.75;color:var(--tone-ink);margin:0}.tasks{margin:17px 0 17px}.tasks h3,.goal-label{font-size:16px;font-weight:650;margin:0}.tasks ol{padding:0;margin:11px 0 0;list-style:none;display:grid;gap:7px}.tasks li{display:flex;align-items:center;gap:12px;font-size:14px}.tasks li span{width:14px;color:var(--secondary);font:16px Georgia,serif}.optional{font-size:12px;font-weight:400;color:var(--secondary);margin-left:6px}.field-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 9px}.recommend{background:transparent;display:flex;align-items:center;gap:5px;color:var(--accent);font-size:12px;min-height:32px;padding:0 1px}.recommend svg{width:14px;height:14px}.input{font-size:14px;line-height:1.5;width:100%;resize:none;background:var(--surface);color:var(--ink);border:1px solid var(--line);padding:11px 14px;min-height:65px;border-radius:15px}.input::placeholder{color:var(--secondary);opacity:.8}.fill-note{color:var(--accent);font-size:11px;line-height:1.5;min-height:17px;margin:3px 0 0}.background-toggle{display:flex;align-items:center;gap:6px;min-height:37px;color:var(--secondary);font-size:13px;background:transparent;padding:0}.background-toggle svg{width:14px;height:14px}.background-field{padding:7px 0 0}.background-field label{font-size:14px}.background-field[hidden]{display:none}
+    .dock{flex:none;padding:13px 20px 0;border-top:1px solid var(--line);background:var(--page)}
+    /* Two equal buttons share one capsule; the selected half slides under the icons. */
+    .mode-capsule{position:relative;isolation:isolate;display:flex;border:1px solid var(--line);border-radius:999px;background:var(--surface);padding:4px;height:77px;overflow:hidden}
+    .mode-capsule::before{content:"";position:absolute;z-index:-1;inset:4px auto 4px 4px;width:calc(50% - 4px);border-radius:999px;background:var(--ink);transform:translateX(0);transition:transform .2s ease,background .2s ease,opacity .2s ease}
+    .mode-capsule[data-mode="text"]::before{transform:translateX(100%)}
+    .mode-capsule[data-state="connecting"]::before{opacity:.72}
+    .mode-capsule[data-state="active"]::before{background:var(--accent)}
+    .mode-button{flex:1;background:transparent;border-radius:999px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:var(--secondary);padding:7px 0;min-width:0;transition:color .2s ease}
+    .mode-button svg{width:27px;height:27px;stroke-width:1.65}.mode-button span{font-size:11px;font-weight:500;line-height:1.2;letter-spacing:.2px}.mode-button[aria-pressed="true"]{color:var(--on-ink)}.mode-button:focus-visible{outline-offset:-3px}
+    .mode-note{text-align:center;color:var(--secondary);font-size:11px;line-height:1.5;margin:9px 0 12px;min-height:17px}.sheet-close{width:100%;min-height:50px;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:999px;background:var(--ink);color:var(--on-ink);font-size:16px;font-weight:650}.privacy{font-size:10px;line-height:1.6;text-align:center;color:var(--secondary);margin:9px 0 0}.home-indicator{height:5px;width:108px;border-radius:8px;background:var(--ink);margin:13px auto 7px}.overlay{position:absolute;inset:48px 0 0;padding:15px;display:flex;align-items:flex-end;background:color-mix(in srgb,var(--ink) 22%,transparent);z-index:3}.overlay[hidden]{display:none}.sheet{background:var(--surface);padding:24px;width:100%;border-radius:26px}.sheet h2{font-size:22px;margin:0}.sheet p{font-size:12px;line-height:1.7;color:var(--secondary);margin:8px 0 18px}.sheet dt{font-size:11px;color:var(--secondary);margin-top:15px}.sheet dd{font-size:14px;line-height:1.7;overflow-wrap:anywhere;margin:5px 0 0}.sheet dl{margin-bottom:24px}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+    .mode-capsule[data-state="connecting"] .mode-button[data-mode="voice"] svg{animation:connecting 1s linear infinite}
+    @keyframes connecting{to{transform:rotate(360deg)}}
+    @media(max-width:420px){.preview-header{padding:24px 20px 22px}h1{font-size:25px}.phone{border-width:4px;border-radius:38px}.content,.dock{padding-left:18px;padding-right:18px}.phone{max-width:calc(100% - 24px)}}
+    @media(max-width:340px){.phone{height:810px}.content,.dock{padding-left:14px;padding-right:14px}.scene{padding:16px}.scene h2{font-size:22px}.preview-header{padding-left:16px;padding-right:16px}.theme{padding:8px 9px}.mode-capsule{height:74px}}
+    @media(prefers-reduced-motion:reduce){.mode-capsule::before,.mode-button{transition:none}.mode-capsule[data-state="connecting"] .mode-button svg{animation:none}}
+  </style>
+</head>
+<body>
+  <header class="preview-header"><div class="topline"><div class="brand"><span data-icon="chat"></span>LingDaily / 准备页</div><button class="theme" type="button" aria-pressed="false"><span data-icon="moon"></span><span>深色预览</span></button></div><h1>点语音，就开始连接。</h1><p>点未选中的一侧切换，点选中的一侧开始。黑色待连接、灰色连接中、朱红通话中。连接状态为交互演示。</p></header>
+  <main class="phone" aria-label="准备页交互预览">
+    <div class="screen">
+      <div class="status" aria-hidden="true"><span>9:41</span><div class="island"></div><div class="status-icons"><span data-icon="wifi"></span><span data-icon="battery"></span></div></div>
+      <div class="nav"><button class="back" aria-label="返回（预览）" type="button"><span data-icon="back"></span></button><span>准备对话</span></div>
+      <div class="content">
+        <section class="scene"><div class="person"><div class="avatar" aria-hidden="true">S</div><div><strong>Sam</strong><small>咖啡师 · 日常</small></div></div><h2>点单，多一点变化</h2><p>你想点一杯燕麦奶拿铁，不过今天有个小变化。问清楚有哪些选择，再完成点单。</p></section>
+        <section class="tasks"><h3>这次要说到</h3><ol><li><span>1</span>表达需要</li><li><span>2</span>应对变化</li><li><span>3</span>完成点单</li></ol></section>
+        <section class="goal"><div class="field-head"><label class="goal-label" for="goal">你的目标<span class="optional">可选</span></label><button class="recommend" data-fill="goal" type="button"><span data-icon="refresh"></span>AI 推荐</button></div><textarea id="goal" class="input" rows="2" maxlength="100" placeholder="比如：问清楚替代选项，再完成点单"></textarea><p class="fill-note" aria-live="polite" role="status"></p><button class="background-toggle" type="button" aria-expanded="false" aria-controls="background"><span data-icon="plus"></span>补充一点背景<span class="optional">可选</span></button><div class="background-field" id="background" hidden><div class="field-head"><label for="context">补充背景</label><button class="recommend" data-fill="context" type="button"><span data-icon="refresh"></span>AI 推荐</button></div><textarea id="context" class="input" rows="2" maxlength="500" placeholder="比如：语气自然一点，不要太正式"></textarea></div></section>
+      </div>
+      <footer class="dock">
+        <div class="mode-capsule" data-mode="voice" data-state="idle" role="group" aria-label="选择并开始交流">
+          <button class="mode-button" data-mode="voice" type="button" aria-pressed="true" aria-label="开始语音交互"><span data-icon="mic"></span><span class="mode-label">语音交互</span></button>
+          <button class="mode-button" data-mode="text" type="button" aria-pressed="false" aria-label="切换到文字交互"><span data-icon="chat"></span><span class="mode-label">文字交互</span></button>
+        </div>
+        <p class="mode-note" aria-live="polite" role="status">点击语音开始连接</p>
+        <p class="privacy">目标、背景和对话会发送给 Gemini。<br>语音模式还会发送语音，原始录音不保存。</p>
+        <div class="home-indicator" aria-hidden="true"></div>
+      </footer>
+      <div class="overlay" hidden><section class="sheet" role="dialog" aria-modal="true" aria-label="文字交互预览"><h2>文字交互</h2><p>已直接进入文字交互预览。<br>AI 推荐为场景示例。</p><dl></dl><button class="sheet-close" type="button" data-action="close">返回准备页</button></section></div>
+    </div>
+  </main>
+  <script>
+    const paths={
+      mic:'<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/>',
+      chat:'<path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3v-3H3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M6 9h10M6 13h7"/>',
+      back:'<path d="m14 6-6 6 6 6"/>',plus:'<path d="M12 5v14M5 12h14"/>',
+      arrow:'<path d="M5 12h14m-5-5 5 5-5 5"/>',
+      refresh:'<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-2l2 7M4 12l2 7a7 7 0 0 0 12-2"/>',
+      moon:'<path d="M20 15.8A9 9 0 0 1 8.2 4 9 9 0 1 0 20 15.8Z"/>',
+      sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/>',
+      wifi:'<path d="M3 9a14 14 0 0 1 18 0M6 12a9 9 0 0 1 12 0M9 15a4 4 0 0 1 6 0"/><circle cx="12" cy="18" r=".6"/>',
+      battery:'<rect x="2" y="6" width="18" height="12" rx="3"/><path d="M22 10v4M6 9h10v6H6Z" fill="currentColor"/>'
+    };
+    const icon=name=>'<svg viewBox="0 0 24 24" aria-hidden="true">'+paths[name]+'</svg>';
+    document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=icon(el.dataset.icon));
+    let mode='voice';
+    let voiceState='idle';
+    let connectionTimer=null;
+    const goalIdeas=['问清楚替代选项，再完成点单','确认价格和容量，再做选择','礼貌说明偏好，并提出替代要求'];
+    const contextIdeas=['用自然的语气，不要太正式','店里有点忙，表达简短一点','我不喝牛奶，想确认植物奶选项'];
+    const indices={goal:0,context:0};
+    const note=document.querySelector('.fill-note');
+    const overlay=document.querySelector('.overlay');
+    const capsule=document.querySelector('.mode-capsule');
+    const modeNote=document.querySelector('.mode-note');
+    const escape=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    function renderMode(){
+      capsule.dataset.mode=mode;capsule.dataset.state=voiceState;
+      document.querySelectorAll('.mode-button').forEach(button=>{
+        const selected=button.dataset.mode===mode;
+        const voice=button.dataset.mode==='voice';
+        button.setAttribute('aria-pressed',String(selected));
+        button.setAttribute('aria-busy',String(voice && voiceState==='connecting'));
+        button.disabled=voiceState==='connecting';
+        button.setAttribute('aria-label',voice?(selected?(voiceState==='active'?'结束语音通话':voiceState==='connecting'?'正在连接语音':'开始语音交互'):'切换到语音交互'):(selected?'开始文字交互':'切换到文字交互'));
+        if(voice){button.querySelector('[data-icon]').innerHTML=icon(voiceState==='connecting'?'refresh':'mic');button.querySelector('.mode-label').textContent=voiceState==='connecting'?'连接中':voiceState==='active'?'通话中':'语音交互'}
+      });
+      modeNote.textContent=voiceState==='connecting'?'正在连接 Sam…':voiceState==='active'?'已连接 · 再点可结束':mode==='voice'?'点击语音开始连接':'再点文字，进入文字对话';
+    }
+    function stopVoice(){clearTimeout(connectionTimer);connectionTimer=null;voiceState='idle'}
+    function enterText(){
+      document.querySelector('.sheet dl').innerHTML='<dt>交流方式</dt><dd>文字交互</dd><dt>你的目标</dt><dd>'+escape(document.getElementById('goal').value||'使用场景默认目标')+'</dd><dt>补充背景</dt><dd>'+escape(document.getElementById('context').value||'未填写')+'</dd>';
+      overlay.hidden=false;document.querySelector('[data-action="close"]').focus();
+    }
+    document.querySelectorAll('.mode-button').forEach(button=>button.addEventListener('click',()=>{
+      if(voiceState==='connecting')return;
+      if(mode!==button.dataset.mode){stopVoice();mode=button.dataset.mode;renderMode();return}
+      if(mode==='text'){enterText();return}
+      if(voiceState==='active'){stopVoice();renderMode();modeNote.textContent='通话已结束 · 点击重新连接';return}
+      voiceState='connecting';renderMode();
+      connectionTimer=setTimeout(()=>{connectionTimer=null;voiceState='active';renderMode()},1400);
+    }));
+    document.querySelectorAll('[data-fill]').forEach(button=>button.addEventListener('click',()=>{
+      const target=button.dataset.fill,ideas=target==='goal'?goalIdeas:contextIdeas;
+      document.getElementById(target).value=ideas[indices[target]++%ideas.length];
+      note.textContent=(target==='goal'?'目标':'背景')+'已填入，可以继续修改';
+    }));
+    document.querySelector('.background-toggle').addEventListener('click',event=>{
+      const expanded=event.currentTarget.getAttribute('aria-expanded')!=='true';
+      event.currentTarget.setAttribute('aria-expanded',String(expanded));
+      document.getElementById('background').hidden=!expanded;
+    });
+    document.querySelector('.theme').addEventListener('click',event=>{
+      const dark=document.documentElement.dataset.theme!=='dark';
+      document.documentElement.dataset.theme=dark?'dark':'light';
+      event.currentTarget.setAttribute('aria-pressed',String(dark));
+      event.currentTarget.innerHTML=icon(dark?'sun':'moon')+'<span>'+(dark?'浅色预览':'深色预览')+'</span>';
+    });
+    function close(){overlay.hidden=true;document.querySelector('.mode-button[data-mode="text"]').focus()}
+    document.querySelector('[data-action="close"]').addEventListener('click',close);
+    document.addEventListener('keydown',event=>{if(overlay.hidden)return;if(event.key==='Escape')close();if(event.key==='Tab'){event.preventDefault();document.querySelector('[data-action="close"]').focus()}});
+    document.querySelector('.back').addEventListener('click',()=>{note.textContent='当前停留在准备页预览'});
+  </script>
+</body>
+</html>

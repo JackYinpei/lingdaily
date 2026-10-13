@@ -67,9 +67,12 @@
 | `surfaceCard()` / `readableColumn()` | Brand.swift | 卡片容器；阅读宽度 |
 | `EmptyState` / `StorageBanner` | Brand.swift | 空状态；本机保存失败提示与重试 |
 | `SceneCard` / `StepProgress` | PracticeHomeView.swift | 场景卡（人 + 第一句 + 任务）；三段进度 |
+| `pushDestination()` / `navigationBack()` | Navigation.swift | 二级页面横向导航、可取消的边缘返回与退出保护 |
 | `MessageBubble` / `FeedbackNote` / `TypingDots` | ConversationView.swift | 对话气泡（单条可译、可听）；贴在原句下的改写批注（含“已加入词库”）；正在回复 |
 
 历史记录详情复用 `MessageBubble` + `FeedbackNote`，与对话页同构。新组件的门槛：至少两个页面要用，或者现有组件改参数做不到。
+
+二级页面统一通过 `NavigationLink` 推入根导航栈（`NavigationView`，兼容 iOS 15），从左边缘向右滑动时使用 UIKit 原生交互式横向返回，途中可以取消；普通二级页面不用 `sheet` / `fullScreenCover` 的向下关闭动画。`Navigation.swift` 统一返回按钮和手势的保护条件：场景生成和账号删除进行中禁用返回，正在连接或通话时先确认。真正退出对话后停止音频，并保存已有用户内容与未发送草稿。
 
 ## 当前页面
 

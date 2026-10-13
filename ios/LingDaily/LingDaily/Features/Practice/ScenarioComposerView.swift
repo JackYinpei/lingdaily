@@ -28,11 +28,7 @@ struct ScenarioComposerView: View {
             PageBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("想练哪一场对话？").font(.title.bold()).foregroundColor(Brand.ink)
-                        Text("说说对方是谁、什么时候、你想达成什么。会生成一个三步的专属场景。")
-                            .font(.subheadline).foregroundColor(Brand.secondary).lineSpacing(3)
-                    }
+                    Text("想练哪一场对话？").font(.title.bold()).foregroundColor(Brand.ink)
                     ZStack(alignment: .topLeading) {
                         TextEditor(text: $description)
                             .font(.body).foregroundColor(Brand.ink).focused($focused)
@@ -95,8 +91,6 @@ struct ScenarioComposerView: View {
                 .buttonStyle(SolidButtonStyle())
                 .disabled(trimmed.isEmpty || isLoading)
                 .accessibilityIdentifier("generate-scenario")
-                Text("描述会发送给 Gemini 生成场景；场景会同步到你的账号。")
-                    .font(.caption2).foregroundColor(Brand.secondary).multilineTextAlignment(.center)
             }
             .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8)
             .readableColumn().background(Brand.page)

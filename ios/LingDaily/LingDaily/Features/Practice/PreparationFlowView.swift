@@ -43,8 +43,6 @@ struct PreparationFlowView: View {
                                     Label("补充一点背景", systemImage: "plus")
                                 }.font(.subheadline).foregroundColor(Brand.secondary).frame(minHeight: 44)
                             }
-                            Text("\(scenario.partner) 会按你的目标调整对话和追问。")
-                                .font(.caption).foregroundColor(Brand.secondary)
                         }
                     }
                     .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 24)
@@ -62,8 +60,6 @@ struct PreparationFlowView: View {
                         session = PracticeSession(scenario: scenario, goal: goal, context: context, useAI: true)
                     } label: { Text(voiceMode ? "进入语音通话" : "开始文字对话") }
                         .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("start-rehearsal")
-                    Text("目标、背景和对话文字会发送给 Gemini；进入语音通话后语音也会发送，原始录音不保存。")
-                        .font(.caption2).foregroundColor(Brand.secondary).multilineTextAlignment(.center)
                 }
                 .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8)
                 .readableColumn().background(Brand.page)

@@ -35,7 +35,7 @@ struct LearningView: View {
 
     @ViewBuilder private var sessions: some View {
         if store.archive.sessions.isEmpty {
-            EmptyState(title: "还没有练习记录", message: "去「练习」选一位对话对象。\n说出第一句后，记录会出现在这里。").pageRow()
+            EmptyState(title: "还没有练习记录").pageRow()
         } else {
             ForEach(store.archive.sessions) { session in
                 HStack(spacing: 14) {
@@ -69,7 +69,7 @@ struct LearningView: View {
 
     @ViewBuilder private var expressions: some View {
         if store.archive.expressions.isEmpty {
-            EmptyState(title: "词库还是空的", message: "对话中你没掌握的词和短语会自动收进来，\n想记住的整句可以点「收藏」。").pageRow()
+            EmptyState(title: "词库还是空的").pageRow()
         } else {
             if let error = speech.errorMessage {
                 Text(error).font(.caption).foregroundColor(Brand.secondary).pageRow()

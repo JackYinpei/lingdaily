@@ -90,7 +90,7 @@ struct ConversationView: View {
         .alert("离开这次通话？", isPresented: $showsLeaveConfirmation) {
             Button("结束并返回", role: .destructive, action: leavePractice)
             Button("继续练习", role: .cancel) {}
-        } message: { Text("已说的内容和未发送的草稿会保留。") }
+        }
     }
 
     private func requestClose() {
@@ -213,8 +213,10 @@ struct ConversationView: View {
                 LiveSuggestionCard(suggestion: suggestion, partner: session.scenario.partner) { live.dismissSuggestion() }
             }
             HStack(spacing: 12) {
-                Text(live.status).font(.caption.weight(.medium)).foregroundColor(Brand.secondary)
-                    .accessibilityIdentifier("live-status")
+                if !live.status.isEmpty {
+                    Text(live.status).font(.caption.weight(.medium)).foregroundColor(Brand.secondary)
+                        .accessibilityIdentifier("live-status")
+                }
                 if live.state == .active && live.playing {
                     // On the loudspeaker this is how to talk over the partner without echo.
                     Button("打断") { live.interruptPartner() }
@@ -347,7 +349,7 @@ struct ConversationView: View {
                 .overlay(Capsule().stroke(Brand.line))
             }
             if speech.isRecording {
-                Text("正在听写 · 点停止后可以修改").font(.caption2).foregroundColor(Brand.accent)
+                Text("正在听写").font(.caption2).foregroundColor(Brand.accent)
                     .frame(maxWidth: .infinity)
             } else if speech.isFinalizing || submittingDictation {
                 Text("正在整理最后一句…").font(.caption2).foregroundColor(Brand.secondary)

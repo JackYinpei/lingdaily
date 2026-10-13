@@ -94,13 +94,9 @@ struct PageTitle: View {
 
 struct EmptyState: View {
     let title: String
-    let message: String
     var body: some View {
-        VStack(spacing: 8) {
-            Text(title).font(.headline).foregroundColor(Brand.ink)
-            Text(message).font(.subheadline).foregroundColor(Brand.secondary)
-                .multilineTextAlignment(.center).lineSpacing(4)
-        }.frame(maxWidth: .infinity).padding(.vertical, 56).padding(.horizontal, 24)
+        Text(title).font(.subheadline).foregroundColor(Brand.secondary)
+            .frame(maxWidth: .infinity).padding(.vertical, 56).padding(.horizontal, 24)
     }
 }
 

@@ -43,7 +43,7 @@ final class LivePracticeController: ObservableObject {
     var status: String {
         switch state {
         case .connecting: return "连接中"
-        case .disconnected: return hasStarted ? "已断开 · 重新连接" : "点开始通话，直接开口，字幕会自动显示"
+        case .disconnected: return hasStarted ? "已断开" : ""
         case .active:
             if playing { return "\(model?.session.scenario.partner ?? "对方") 正在说" }
             return muted ? "麦克风已静音" : "在听"

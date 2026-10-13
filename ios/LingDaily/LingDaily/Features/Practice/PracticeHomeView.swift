@@ -36,7 +36,6 @@ struct PracticeHomeView: View {
                                     .background(Brand.ink).clipShape(Capsule())
                             }.accessibilityIdentifier("create-scenario")
                         }
-                        Text("今天想和谁聊聊？").font(.subheadline).foregroundColor(Brand.secondary)
                     }
                     if !account.canPractice { signInCard }
                     if let unfinished { continueCard(unfinished) }
@@ -110,11 +109,7 @@ struct PracticeHomeView: View {
 
     private var signInCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("先登录，再开口").font(.headline).foregroundColor(Brand.ink)
-                Text("用 Apple 登录后就能和场景里的人对话，练习记录会同步到你的账号。")
-                    .font(.subheadline).foregroundColor(Brand.secondary)
-            }
+            Text("先登录，再开口").font(.headline).foregroundColor(Brand.ink)
             AppleSignInButton()
         }.surfaceCard()
     }
@@ -200,7 +195,6 @@ struct CompactSceneCard: View {
                     .font(.caption).foregroundColor(Brand.inkOnTone).lineLimit(1)
             }
             Spacer(minLength: 8)
-            Label("已练完", systemImage: "checkmark").font(.caption.weight(.medium)).foregroundColor(Brand.inkOnTone)
             Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundColor(Brand.inkOnTone)
         }
         .padding(.horizontal, 16).padding(.vertical, 12)

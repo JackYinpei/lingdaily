@@ -1,0 +1,30 @@
+{
+  "build": "1.0 (2)",
+  "source": "Release simulator UI; scenario and preparation screens, unchanged between builds 1 and 2; unedited native PNGs",
+  "screenshots": [
+    {
+      "path": "screenshots/ipad-13/01-scenarios.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "df8530828a44d5902db1899df9f5321009cc32aabc89084af09537f1c48adcff"
+    },
+    {
+      "path": "screenshots/ipad-13/02-preparation.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "cf5d2d10e851814254b9bfa9a581db679cb029b6477fdaf46e946997bc1ca877"
+    },
+    {
+      "path": "screenshots/iphone-6.3/01-scenarios.png",
+      "width": 1206,
+      "height": 2622,
+      "sha256": "f79c92fce2e344536b224a15ce4bbd40da61e6be86ad82bc02f1589a37d3e047"
+    },
+    {
+      "path": "screenshots/iphone-6.3/02-preparation.png",
+      "width": 1206,
+      "height": 2622,
+      "sha256": "bff8424587d2578eb0ec4df1bac181cf531f398fbca02ce3d3d12e2becb8f4e1"
+    }
+  ]
+}

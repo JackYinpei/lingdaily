@@ -1,10 +1,10 @@
 # LingDaily iOS
 
-当前为 **SwiftUI AI 首发准备版 1.0**，最低支持 **iOS 15.0**。工程入口是 [LingDaily.xcodeproj](LingDaily/LingDaily.xcodeproj)。用 **Sign in with Apple** 登录后，App 直接调用线上服务 `https://lingdaily.yasobi.xyz`，实时语音经东京中转 `lingdailyapi-jp.yasobi.xyz` 连接 Gemini；练习记录、词库和自建场景同步到与网页共用的 Supabase 表（见 10 的“云同步与删除账号”）。
+当前为 **SwiftUI 原生版 1.0（已送审）**，最低支持 **iOS 15.0**。工程入口是 [LingDaily.xcodeproj](LingDaily/LingDaily.xcodeproj)。用 **Sign in with Apple** 登录后，App 直接调用线上服务 `https://lingdaily.yasobi.xyz`，实时语音经东京中转 `lingdailyapi-jp.yasobi.xyz` 连接 Gemini；练习记录、词库和自建场景同步到与网页共用的 Supabase 表（见 10 的“云同步与删除账号”）。
 
 已实现：Apple 登录、4 个场景与用户描述生成的新场景、自动收词到词库、目标/背景驱动的 AI 对话、动态提示、针对原句的 AI 反馈、一句话重来、设备端听写、AI 回复自动朗读、本机历史/续练/收藏、明暗主题、Gemini Live 实时语音。支持云同步与删除账号；尚未接入新闻或付费。
 
-App Store 商店记录和构建 2 已上传，尚待完成提交验证；状态见 [发布记录](AppStore/SUBMISSION.md)。
+App Store 版本 **1.0（构建 2）已于 2026-10-20 12:56 正式送审，当前等待审核，通过后自动发布**；回执、审核链接与发布配置见 [发布记录](AppStore/SUBMISSION.md)。
 
 ## 怎么试
 

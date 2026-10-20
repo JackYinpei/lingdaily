@@ -97,7 +97,7 @@ final class LiveAudioSoakTests: XCTestCase {
             symbol: "mic", partner: "Alex", partnerRole: "Colleague", setting: "A fictional conversation about moving a deadline to Thursday",
             steps: (0..<3).map { .init(id: "\($0)", goal: ["Explain delay", "Propose Thursday", "Confirm"][ $0 ], prompt: "Test",
                                      translation: "测试", hint: "测试", keywords: "test", expression: "Test", meaning: "测试") })
-        let token = try await PracticeAPIClient(configuration: config).liveToken(for: PracticeSession(scenario: scenario, useAI: true))
+        let token = try await PracticeAPIClient(configuration: config, aiConsent: { true }).liveToken(for: PracticeSession(scenario: scenario, useAI: true))
         let client = LiveWebSocketClient()
         var continuation: AsyncStream<LiveEvent>.Continuation!
         let stream = AsyncStream<LiveEvent>(bufferingPolicy: .bufferingNewest(256)) { continuation = $0 }

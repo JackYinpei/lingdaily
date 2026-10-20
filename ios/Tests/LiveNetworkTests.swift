@@ -17,7 +17,7 @@ final class LiveNetworkTests: XCTestCase {
                 .init(id: "\(index)", goal: ["Explain delay", "Propose Thursday", "Confirm agreement"][index], prompt: "Test",
                       translation: "测试", hint: "测试", keywords: "test", expression: "Test", meaning: "测试")
             })
-        let token = try await PracticeAPIClient(configuration: config).liveToken(for: PracticeSession(scenario: scenario, useAI: true))
+        let token = try await PracticeAPIClient(configuration: config, aiConsent: { true }).liveToken(for: PracticeSession(scenario: scenario, useAI: true))
         let client = LiveWebSocketClient()
         var continuation: AsyncStream<LiveEvent>.Continuation!
         let stream = AsyncStream<LiveEvent> { continuation = $0 }

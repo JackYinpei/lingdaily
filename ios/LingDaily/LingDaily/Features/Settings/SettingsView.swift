@@ -7,6 +7,7 @@ struct SettingsView: View {
     @AppStorage("appearance") private var appearance = "system"
     @AppStorage("autoReadAIReplies") private var autoReadReplies = true
     @AppStorage(LivePause.key) private var pauseMs = LivePause.standard
+    @AppStorage(AIDataConsent.key) private var aiConsentVersion = ""
     @State private var signingOut = false
     @State private var unsyncedOnSignOut = false
     @State private var showingAccountData = false
@@ -43,7 +44,23 @@ struct SettingsView: View {
                     }.surfaceCard()
                     if account.canPractice { AIModelCard() }
                     if account.session != nil && !account.usesLocalDevelopment { UsageCard() }
-                    Text("LingDaily 0.3.0")
+                    VStack(alignment: .leading, spacing: 12) {
+                        Link("隐私政策", destination: LingDailyService.baseURL.appendingPathComponent("privacy"))
+                            .frame(minHeight: 44)
+                        Brand.line.frame(height: 1)
+                        Link("帮助与联系", destination: LingDailyService.baseURL.appendingPathComponent("support"))
+                            .frame(minHeight: 44)
+                        Brand.line.frame(height: 1)
+                        if aiConsentVersion == AIDataConsent.version {
+                            Button("撤回 AI 数据使用授权") { AIDataConsent.revoke() }
+                                .frame(minHeight: 44)
+                        } else {
+                            Button("AI 数据使用") {
+                                NotificationCenter.default.post(name: AIDataConsent.requested, object: nil)
+                            }.frame(minHeight: 44)
+                        }
+                    }.font(.subheadline).foregroundColor(Brand.ink).surfaceCard()
+                    Text("LingDaily \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
                         .font(.caption).foregroundColor(Brand.secondary).frame(maxWidth: .infinity)
                 }
                 .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 32)

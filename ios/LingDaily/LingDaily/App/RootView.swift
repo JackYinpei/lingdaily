@@ -1,6 +1,9 @@
+import Combine
 import SwiftUI
 
 struct RootView: View {
+    @EnvironmentObject private var account: AccountStore
+    @State private var showsAIConsent = false
     var body: some View {
         NavigationView {
             TabView {
@@ -17,5 +20,15 @@ struct RootView: View {
         .navigationViewStyle(.stack)
         .tint(Brand.accent)
         .accentColor(Brand.accent)
+        .sheet(isPresented: $showsAIConsent) { AIDataConsentView() }
+        .onAppear { offerAIConsent() }
+        .onChange(of: account.canPractice) { _ in offerAIConsent() }
+        .onReceive(NotificationCenter.default.publisher(for: AIDataConsent.requested).receive(on: RunLoop.main)) { _ in
+            showsAIConsent = true
+        }
+    }
+
+    private func offerAIConsent() {
+        if account.canPractice && !AIDataConsent.isGranted() { showsAIConsent = true }
     }
 }

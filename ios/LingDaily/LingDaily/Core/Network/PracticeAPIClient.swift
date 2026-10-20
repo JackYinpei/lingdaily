@@ -1,11 +1,12 @@
 import Foundation
 
 enum PracticeNetworkError: LocalizedError {
-    case notConfigured, signedOut, invalidReply, unavailable, server(String)
+    case notConfigured, signedOut, aiConsentRequired, invalidReply, unavailable, server(String)
     var errorDescription: String? {
         switch self {
         case .notConfigured: return "本机开发服务配置无效。请重新运行 npm run ios:dev（真机加 -- --device），再从 Xcode 重新运行。"
         case .signedOut: return "请先在「我的」用 Apple 登录，再开始对话。"
+        case .aiConsentRequired: return "请先阅读并允许 AI 数据使用，再重试。也可以继续查看已有记录。"
         case .invalidReply: return "AI 回复不完整，请重试。你的回答已保留。"
         case .unavailable: return "暂时连不上服务，请检查网络后重试。"
         case .server(let message): return message
@@ -112,11 +113,14 @@ final class PracticeAPIClient: PracticeServing {
     let configuration: AIConnectionConfiguration?
     private let session: URLSession
     private let accountSession: () -> AccountSession?
+    private let aiConsent: () -> Bool
 
     init(configuration: AIConnectionConfiguration? = .bundled(),
-         accountSession: @escaping () -> AccountSession? = { AccountKeychain.load() }) {
+         accountSession: @escaping () -> AccountSession? = { AccountKeychain.load() },
+         aiConsent: @escaping () -> Bool = { AIDataConsent.isGranted() }) {
         self.configuration = configuration
         self.accountSession = accountSession
+        self.aiConsent = aiConsent
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 35
         config.timeoutIntervalForResource = 40
@@ -243,6 +247,13 @@ final class PracticeAPIClient: PracticeServing {
     private func send<Body: Encodable, Result: Decodable>(_ path: String, _ body: Body, baseURL: URL, bearer: String?,
                                                           encoder: JSONEncoder = JSONEncoder(), decoder: JSONDecoder = JSONDecoder(),
                                                           maxBytes: Int = 24 * 1024, method: String = "POST") async throws -> Result {
+        // Account, sync, usage and model-list requests do not send content to Gemini.
+        let aiPaths: Set<String> = ["api/ios/practice", "api/ios/scenario", "api/ios/scenario-ideas",
+                                    "api/ios/translate", "api/ios/suggest", "api/ios/live-token"]
+        if aiPaths.contains(path), !aiConsent() {
+            NotificationCenter.default.post(name: AIDataConsent.requested, object: nil)
+            throw PracticeNetworkError.aiConsentRequired
+        }
         var urlRequest = URLRequest(url: baseURL.appendingPathComponent(path))
         urlRequest.httpMethod = method
         if let bearer { urlRequest.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }

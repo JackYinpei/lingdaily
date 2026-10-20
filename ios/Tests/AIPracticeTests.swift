@@ -177,7 +177,7 @@ final class AIPracticeTests: XCTestCase {
             throw XCTSkip("Set LINGDAILY_AI_TEST_CONFIG only for a real model smoke test")
         }
         let config = try JSONDecoder().decode(AIConnectionConfiguration.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
-        let api = PracticeAPIClient(configuration: config)
+        let api = PracticeAPIClient(configuration: config, aiConsent: { true })
         var session = PracticeSession(scenario: scenario, goal: "Ask Alex to move our deadline to Thursday", context: "The supplier will send the data on Wednesday. Be friendly.", useAI: true)
         for action in 0..<4 {
             if action == 1 { XCTAssertTrue(session.submit("I need more time because the supplier data arrives Wednesday.")) }

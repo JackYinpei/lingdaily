@@ -18,6 +18,8 @@ struct ConversationView: View {
     @AppStorage("preferVoicePractice") private var preferVoicePractice = true
     @State private var hintLevel = 0
     @StateObject private var translations = BubbleTranslations()
+    @StateObject private var meanings = FeedbackMeanings()
+    @AppStorage("speakerTipShown") private var speakerTipShown = false
     @FocusState private var inputFocused: Bool
     let onClose: () -> Void
     /// Set when the learner already chose 进入语音通话: the call starts without a second tap.
@@ -44,7 +46,7 @@ struct ConversationView: View {
         ZStack {
             PageBackground()
             if session.phase == .completed && live.state == .disconnected {
-                PracticeSummaryView(session: session, onClose: onClose)
+                PracticeSummaryView(session: session, onRestart: restart, onClose: onClose)
             } else {
                 conversation
             }
@@ -114,7 +116,22 @@ struct ConversationView: View {
         inputFocused = false
         // Native navigation pops and the visible back button both preserve the unsent draft.
         model.keepDraft(draft)
-        if session.userTurns > 0 { store.save(session) }
+        if session.userTurns > 0 {
+            store.save(session)
+            // A day with practice gets no "today" reminder.
+            ReminderCenter.shared.rescheduleDaily(practicedToday: PracticeStats.spokeToday(store.archive.sessions))
+        }
+    }
+
+    /// 再练一次 from the summary: same scenario, goal and level; this tap also starts the call.
+    private func restart() {
+        speech.stopAll()
+        draft = ""
+        hintLevel = 0
+        hasSavedOnExit = false
+        let review = UserDefaults.standard.object(forKey: ReviewPicker.enabledKey) as? Bool ?? true
+        model.restart(reviewItems: review ? ReviewPicker.pick(from: store.archive, for: session.scenario) : [])
+        if voiceMode { live.start(model: model, store: store) } else { model.requestPending(store: store) }
     }
 
     // MARK: Header — partner and mode live in the navigation bar; one thin progress row below.
@@ -214,7 +231,13 @@ struct ConversationView: View {
                                       },
                                       onListen: onListen)
                         if let feedback = session.feedback(for: message.id) {
-                            FeedbackNote(feedback: feedback, source: session.scenario.title, onListen: onListen)
+                            FeedbackNote(feedback: feedback, source: session.scenario.title, onListen: onListen,
+                                         meaningLoading: meanings.loading.contains(message.id)) {
+                                meanings.fill(message.id, revised: feedback.revised) { meaning in
+                                    model.applyFeedbackMeaning(meaning, to: message.id, store: store)
+                                    store.fillMeaning(of: feedback.revised, with: meaning)
+                                }
+                            }
                         }
                     }
     }
@@ -224,6 +247,19 @@ struct ConversationView: View {
             if let suggestion = live.suggestion {
                 LiveSuggestionCard(suggestion: suggestion, partner: session.scenario.partner) { live.dismissSuggestion() }
             }
+            if live.state == .active && live.usesSpeaker && !speakerTipShown {
+                // Without this the learner talks over the partner, hears no reaction and thinks the call is broken.
+                HStack(spacing: 4) {
+                    Text("外放时，想插话请先点「打断」；戴耳机可以直接说。")
+                        .font(.caption).foregroundColor(Brand.ink).lineSpacing(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button { speakerTipShown = true } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                        .font(.caption).foregroundColor(Brand.secondary).accessibilityLabel("知道了")
+                }
+                .padding(.leading, 14).background(Brand.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .accessibilityIdentifier("speaker-tip")
+            }
             HStack(spacing: 12) {
                 if !live.status.isEmpty {
                     Text(live.status).font(.caption.weight(.medium)).foregroundColor(Brand.secondary)
@@ -231,13 +267,16 @@ struct ConversationView: View {
                 }
                 if live.state == .active && live.playing {
                     // On the loudspeaker this is how to talk over the partner without echo.
-                    Button("打断") { live.interruptPartner() }
-                        .font(.caption.weight(.semibold)).foregroundColor(Brand.accent)
-                        .frame(minHeight: 32).accessibilityIdentifier("live-interrupt")
+                    Button { speakerTipShown = true; live.interruptPartner() } label: {
+                        Label("打断", systemImage: "hand.raised").font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 16).frame(minHeight: 44)
+                            .overlay(Capsule().stroke(Brand.ink, lineWidth: 1.5))
+                    }
+                    .foregroundColor(Brand.ink).accessibilityIdentifier("live-interrupt")
                 } else if live.state == .active && live.suggestion == nil {
                     Button(live.suggesting ? "正在想…" : "卡住了？") { live.requestSuggestion() }
-                        .font(.caption.weight(.medium)).foregroundColor(Brand.accent)
-                        .frame(minHeight: 32).disabled(live.suggesting)
+                        .font(.subheadline.weight(.medium)).foregroundColor(Brand.accent)
+                        .frame(minHeight: 44).disabled(live.suggesting)
                         .accessibilityIdentifier("live-suggest")
                 }
             }
@@ -586,6 +625,9 @@ struct FeedbackNote: View {
     let feedback: AIFeedback
     let source: String
     var onListen: ((String) -> Void)? = nil
+    var meaningLoading = false
+    /// Live notes arrive without Chinese; asked for once when the note appears.
+    var onNeedsMeaning: (() -> Void)? = nil
 
     var body: some View {
         let saved = store.isSaved(feedback.revised)
@@ -595,7 +637,11 @@ struct FeedbackNote: View {
                 Text("更自然的说法").font(.caption.weight(.semibold)).foregroundColor(Brand.accent)
                 Text(feedback.revised).font(Brand.english(.title3)).foregroundColor(Brand.ink).lineSpacing(3)
                     .textSelection(.enabled)
-                Text(feedback.meaning).font(.subheadline).foregroundColor(Brand.secondary)
+                if !feedback.meaning.isEmpty {
+                    Text(feedback.meaning).font(.subheadline).foregroundColor(Brand.secondary)
+                } else if meaningLoading {
+                    Text("正在翻译…").font(.caption).foregroundColor(Brand.secondary)
+                }
             }
             if let items = feedback.items, !items.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -625,6 +671,24 @@ struct FeedbackNote: View {
         .overlay(alignment: .leading) { Brand.accent.frame(width: 3) }
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .padding(.leading, 36)
+        .task { if feedback.meaning.isEmpty { onNeedsMeaning?() } }
+    }
+}
+
+/// Chinese for Live notes, translated once per note and saved with it. Never asks for
+/// AI consent from a history page: without consent the note simply stays English-only.
+@MainActor
+final class FeedbackMeanings: ObservableObject {
+    @Published private(set) var loading: Set<UUID> = []
+    private var attempted: Set<UUID> = []
+
+    func fill(_ id: UUID, revised: String, save: @escaping (String) -> Void) {
+        guard AIDataConsent.isGranted(), attempted.insert(id).inserted else { return }
+        loading.insert(id)
+        Task {
+            if let meaning = try? await PracticeAPIClient().translate(revised) { save(meaning) }
+            loading.remove(id)
+        }
     }
 }
 

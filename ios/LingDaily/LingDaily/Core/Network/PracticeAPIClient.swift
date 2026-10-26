@@ -230,7 +230,23 @@ final class PracticeAPIClient: PracticeServing {
         try await post("api/ios/models", Optional<String>.none, method: "GET")
     }
 
-    private func post<Body: Encodable, Result: Decodable>(_ path: String, _ body: Body, method: String = "POST") async throws -> Result {
+    /// Built-in scenarios. Public editorial content, so it also loads before signing in.
+    func scenarioCatalog() async throws -> [PracticeScenario] {
+        let response: ScenarioCatalogResponse = try await post("api/ios/scenarios", Optional<String>.none, method: "GET",
+                                                               maxBytes: 512 * 1024, requiresAccount: false)
+        let scenarios = response.validScenarios
+        guard !scenarios.isEmpty else { throw PracticeNetworkError.invalidReply }
+        return scenarios
+    }
+
+    /// The latest daily podcast and a rehearsal about it; nil when there is no recent episode.
+    func today() async throws -> TodayEpisode? {
+        let response: TodayResponse = try await post("api/ios/today", Optional<String>.none, method: "GET", maxBytes: 128 * 1024)
+        return response.today
+    }
+
+    private func post<Body: Encodable, Result: Decodable>(_ path: String, _ body: Body, method: String = "POST",
+                                                          maxBytes: Int = 24 * 1024, requiresAccount: Bool = true) async throws -> Result {
         #if os(iOS) && !targetEnvironment(simulator)
         let physicalDevice = true
         #else
@@ -238,10 +254,13 @@ final class PracticeAPIClient: PracticeServing {
         #endif
         if let config = configuration {
             guard config.isValidForDevelopment(physicalDevice: physicalDevice) else { throw PracticeNetworkError.notConfigured }
-            return try await send(path, body, baseURL: config.baseURL, bearer: config.accessToken, method: method)
+            return try await send(path, body, baseURL: config.baseURL, bearer: config.accessToken, maxBytes: maxBytes, method: method)
+        }
+        guard requiresAccount else {
+            return try await send(path, body, baseURL: LingDailyService.baseURL, bearer: nil, maxBytes: maxBytes, method: method)
         }
         guard let account = accountSession(), account.isUsable() else { throw PracticeNetworkError.signedOut }
-        return try await send(path, body, baseURL: LingDailyService.baseURL, bearer: account.token, method: method)
+        return try await send(path, body, baseURL: LingDailyService.baseURL, bearer: account.token, maxBytes: maxBytes, method: method)
     }
 
     private func send<Body: Encodable, Result: Decodable>(_ path: String, _ body: Body, baseURL: URL, bearer: String?,

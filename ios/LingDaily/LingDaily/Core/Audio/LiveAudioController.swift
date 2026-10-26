@@ -37,7 +37,11 @@ final class LiveAudioController {
     var onStopRequired: ((StopReason) -> Void)?
     var onBufferPressure: (() -> Void)?
     var onPlaying: ((Bool, UInt64) -> Void)?
+    /// Called on the main queue when the output moves between the phone's speaker and headphones.
+    var onRouteChanged: ((Bool) -> Void)?
     var hasOutput: Bool { lock.lock(); defer { lock.unlock() }; return playback.reservedBytes > 0 }
+    /// True when the partner plays through the phone itself, where talking over them needs 打断.
+    var usesSpeaker: Bool { lock.lock(); defer { lock.unlock() }; return speakerOutput }
     func acceptsPlayback(_ value: UInt64) -> Bool { isCurrent(value) }
     private let outputFormat = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)!
 
@@ -175,7 +179,8 @@ final class LiveAudioController {
     private func updateOutputRoute() {
         let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType)
         let speaker = outputs.isEmpty || outputs.contains { $0 == .builtInSpeaker || $0 == .builtInReceiver }
-        lock.lock(); speakerOutput = speaker; lock.unlock()
+        lock.lock(); let changed = speakerOutput != speaker; speakerOutput = speaker; lock.unlock()
+        if changed { DispatchQueue.main.async { [weak self] in self?.onRouteChanged?(speaker) } }
     }
     func setMuted(_ value: Bool) {
         worker.sync {

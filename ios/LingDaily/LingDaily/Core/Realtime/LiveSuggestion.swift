@@ -13,6 +13,8 @@ struct LiveSuggestionRequest: Encodable {
     let stepIndex: Int
     let messages: [LiveTokenRequest.Message]
     var model: String? = nil
+    let level: String?
+    let reviewItems: [ReviewTarget]?
 
     init?(session: PracticeSession) {
         let live = LiveTokenRequest(session: session)
@@ -20,6 +22,7 @@ struct LiveSuggestionRequest: Encodable {
         requestId = UUID()
         scenario = live.scenario; goal = live.goal; context = live.context
         stepIndex = live.stepIndex; messages = live.messages
+        level = live.level; reviewItems = live.reviewItems
     }
 }
 

@@ -65,6 +65,26 @@ final class PracticeStore: ObservableObject {
         onChange?(isSaved(text) ? .expression(key) : .expressionDeleted(key))
     }
 
+    /// Adds words picked by hand (e.g. the podcast's terms) with their type; existing entries stay as they are.
+    func collect(_ items: [AILearningItem], source: String) {
+        let known = Set(archive.expressions.map(\.id))
+        archive.collect(items, source: source)
+        persist()
+        for item in archive.expressions where !known.contains(item.id) { onChange?(.expression(item.id)) }
+    }
+
+    /// A sentence saved before its Chinese meaning arrived gets the meaning once it is known.
+    func fillMeaning(of text: String, with meaning: String) {
+        let key = SavedExpression.key(text)
+        guard let index = archive.expressions.firstIndex(where: { $0.id == key }),
+              archive.expressions[index].meaning.isEmpty, !meaning.isEmpty else { return }
+        let item = archive.expressions[index]
+        archive.expressions[index] = SavedExpression(id: item.id, text: item.text, meaning: meaning, source: item.source,
+                                                     createdAt: item.createdAt, kind: item.kind)
+        persist()
+        onChange?(.expression(key))
+    }
+
     func removeExpression(_ id: String) {
         archive.expressions.removeAll { $0.id == id }
         persist()

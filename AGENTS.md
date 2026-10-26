@@ -60,6 +60,7 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | `ios/` | 原生 SwiftUI AI 体验版，最低 iOS 15；Sign in with Apple 后连线上服务，真实 Gemini 逐轮文字 + Live 实时语音/重说/历史与收藏；本机存档经 `SyncEngine` 同步到与网页共用的 Supabase 表，可删除账号 |
 | `app/api/ios/auth/apple/` | 原生 Sign in with Apple：验证 Apple identity token（JWKS、bundle ID audience、nonce），按 Apple 验证邮箱复用 `ensureAuthUser()` 映射 Supabase UUID，签发 60 天 iOS 会话 JWT（AUTH_SECRET 经 HKDF 派生的独立密钥） |
 | `app/api/ios/practice/`、`app/api/ios/scenario/`、`app/api/ios/live-token/` | Gemini 逐句练习、新场景生成及受约束 Gemini Live 临时 token API；生产只接受 iOS 会话，本机配对 token 仅 development + 显式启用可用；缓存与限流按用户隔离，不读写数据库 |
+| `app/api/ios/scenarios/`、`app/api/ios/today/` | 内置场景清单（公开、无模型调用，内容在 `app/lib/ios/scenarioCatalog.js`，上新无需发版）；「今日」最新每日播客 + 按期共享生成一次的「聊聊这条新闻」场景（`app/lib/server/iosToday.js`，只用节目稿事实） |
 | `app/lib/ios/liveEndpoint.mjs`、`nginx/gemini-proxy.conf` | 原生Live服务端独立选择Google/受控JP/旧中转，严格origin与固定Constrained路径；Nginx示例透传WSS且禁用含凭据URL日志，App也检查完整endpoint白名单 |
 | `ios/.../Core/Realtime/`、`Core/Network/LiveWebSocketClient.swift`、`Core/Audio/LiveAudioController.swift` | 原生 Live 编解码/字幕/有界待转录工具/generation/PCM（共享 LiveMicrophonePipeline 大缓冲拆分、静音批次失效、采集图重启与路由重排输出、opt-in有界数字诊断），URLSession WebSocket 与 AVAudioEngine；收到 setupComplete 才开采集，后台/中断需用户手动重连 |
 | `ios/.../Core/Models/DictationTranscript.swift`、`Core/Audio/SpeechController.swift` | 文字模式设备听写按音频窗口累积，停止/发送等待末句；系统TTS仅供文字/记录朗读，Live音频直传模型，不经过本地ASR/TTS |
@@ -212,6 +213,8 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 | `POST /api/ios/practice`、`/scenario`、`/live-token` | iOS 会话 | 原生练习、场景生成、Live 临时 token |
 | `GET /api/ios/models` | iOS 会话 | App 可选模型清单（按功能：practice/suggest/translate/live），见 `app/lib/ios/models.js` |
 | `POST /api/ios/scenario-ideas` | iOS 会话 | 新建场景页「换一批」：生成 3 条不重复的场景灵感 |
+| `GET /api/ios/scenarios` | 公开 | App 内置场景清单（version + 三步练习计划），App 缓存，离线回退内置 4 个 |
+| `GET /api/ios/today` | iOS 会话 | 最近 7 天内最新一期播客（摘要、音频、8 个生词）及共享的新闻练习场景；无则 `today: null` |
 | `GET/POST /api/ios/usage` | iOS 会话 | 本人近 30 天 token 用量（不含价格）；POST 为 App 上报一次 Live 连接的用量（reportId 幂等） |
 | `GET /api/admin/usage`（页面 `/admin/usage`） | `ADMIN_EMAILS` | iOS AI 用量后台：按天/功能/模型/用户汇总 token 与估算花费 |
 | `POST /api/ios/suggest` | iOS 会话 | 通话中卡住时的回复建议：中文提示 + 关键词 + 学习者视角英文参考句及中文意思 |
@@ -384,6 +387,7 @@ completed 只有 force 可重领，进行中租约超过 30 分钟可重领。
   `GOOGLE_GEMINI_BASE_URL` 仅是旧别名。
 - Gemini 浏览器代理：`NEXT_PUBLIC_GEMINI_BASE_URL`。
 - 原生Live中转：服务端`GEMINI_LIVE_WS_BASE_URL`，独立于网页配置，默认官方直连；仅受控JP/旧代理或官方origin，签发仍官方，代理不接收API Key。
+- 原生Live音色：每个角色按名字固定一个预置音色（`app/lib/ios/live.js`），签发被拒时回退 `Aoede`；`GEMINI_LIVE_VOICE` 可强制所有角色同一音色。
 - Supabase 公开配置：`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`。
 - Supabase 服务端密钥：`SUPABASE_SERVICE_ROLE_KEY`。
 - 播客：`PODCAST_SECRET`, `PODCAST_TIMEZONE`, `PODCAST_PUBLIC_URL`, COS 配置。

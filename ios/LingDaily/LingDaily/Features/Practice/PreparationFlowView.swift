@@ -2,13 +2,21 @@ import SwiftUI
 
 struct PreparationFlowView: View {
     let scenario: PracticeScenario
+    @EnvironmentObject private var account: AccountStore
+    @EnvironmentObject private var store: PracticeStore
     @Environment(\.dismiss) private var dismiss
     @State private var session: PracticeSession?
     @State private var goal = ""
     @State private var context = ""
     @State private var addsContext = false
+    @State private var reviewItems: [ReviewTarget] = []
+    @State private var quickReview = false
     @AppStorage("preferVoicePractice") private var voiceMode = true
+    @AppStorage(PracticeLevel.key) private var levelRaw = PracticeLevel.standard.rawValue
+    @AppStorage(ReviewPicker.enabledKey) private var reviewEnabled = true
     @FocusState private var fieldFocused: Bool
+
+    private var level: PracticeLevel { PracticeLevel(rawValue: levelRaw) ?? .standard }
 
     var body: some View {
         if let session {
@@ -28,7 +36,19 @@ struct PreparationFlowView: View {
                                     Text(step.goal).font(.body).foregroundColor(Brand.ink)
                                 }
                             }
+                            Button { quickReview = true } label: {
+                                Label("先过一遍三句话", systemImage: "text.badge.checkmark")
+                            }.font(.subheadline).foregroundColor(Brand.secondary).frame(minHeight: 44)
+                                .accessibilityIdentifier("quick-review")
                         }
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("难度").font(.headline).foregroundColor(Brand.ink)
+                            Picker("难度", selection: $levelRaw) {
+                                ForEach(PracticeLevel.allCases) { Text($0.label).tag($0.rawValue) }
+                            }.pickerStyle(.segmented).accessibilityIdentifier("practice-level")
+                            Text(Self.levelNote(level)).font(.caption).foregroundColor(Brand.secondary)
+                        }
+                        if reviewEnabled && !reviewItems.isEmpty { review }
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(alignment: .firstTextBaseline) {
                                 Text("你的目标").font(.headline).foregroundColor(Brand.ink)
@@ -51,20 +71,53 @@ struct PreparationFlowView: View {
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 10) {
-                    Picker("对话模式", selection: $voiceMode) {
-                        Text("文字").tag(false)
-                        Text("语音通话").tag(true)
-                    }.pickerStyle(.segmented).accessibilityIdentifier("preparation-mode")
-                    Button {
-                        fieldFocused = false
-                        session = PracticeSession(scenario: scenario, goal: goal, context: context, useAI: true)
-                    } label: { Text(voiceMode ? "进入语音通话" : "开始文字对话") }
-                        .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("start-rehearsal")
+                    if account.canPractice {
+                        Picker("对话模式", selection: $voiceMode) {
+                            Text("文字").tag(false)
+                            Text("语音通话").tag(true)
+                        }.pickerStyle(.segmented).accessibilityIdentifier("preparation-mode")
+                        Button {
+                            fieldFocused = false
+                            session = PracticeSession(scenario: scenario, goal: goal, context: context, useAI: true,
+                                                      level: level, reviewItems: reviewEnabled ? reviewItems : [])
+                        } label: { Text(voiceMode ? "进入语音通话" : "开始文字对话") }
+                            .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("start-rehearsal")
+                    } else {
+                        // Signing in here keeps the learner on this scenario instead of sending them to 我的.
+                        AppleSignInButton()
+                    }
                 }
                 .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8)
                 .readableColumn().background(Brand.page)
             }
             .navigationBack(title: "准备对话") { dismiss() }
+            .onAppear { if reviewItems.isEmpty { reviewItems = ReviewPicker.pick(from: store.archive, for: scenario) } }
+            .pushDestination(isPresented: $quickReview) {
+                ReviewView(title: "快速过一遍", cards: scenario.steps.map {
+                    ReviewCard(id: $0.id, text: $0.expression, meaning: $0.meaning, label: $0.goal)
+                })
+            }
+        }
+    }
+
+    /// "三个词回来找你": words from 词库 the partner will make room for.
+    private var review: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("试着用上").font(.headline).foregroundColor(Brand.ink)
+            ForEach(reviewItems, id: \.self) { item in
+                (Text(item.text).font(Brand.english(.body)).foregroundColor(Brand.ink)
+                    + Text("  \(item.meaning)").font(.footnote).foregroundColor(Brand.secondary))
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("review-words")
+    }
+
+    static func levelNote(_ level: PracticeLevel) -> String {
+        switch level {
+        case .easy: return "短句、常用词，对方更有耐心。"
+        case .standard: return "日常的语速和用词。"
+        case .challenge: return "更地道，会追问，还可能出点小状况。"
         }
     }
 

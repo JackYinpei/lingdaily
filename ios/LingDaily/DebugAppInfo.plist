@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- The daily podcast keeps playing with the screen locked. Practice still stops in the background. -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>audio</string>
+    </array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>连接你 Mac 上的开发服务来进行英语练习。请让手机与 Mac 使用同一 Wi-Fi。</string>
     <key>NSAppTransportSecurity</key>

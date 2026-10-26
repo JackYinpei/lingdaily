@@ -4,6 +4,10 @@ struct LearningView: View {
     @EnvironmentObject private var store: PracticeStore
     @StateObject private var speech = SpeechController()
     @State private var section = 0
+    @State private var query = ""
+    @State private var kind: String?
+    @State private var reviewing: [ReviewCard]?
+    @State private var sourceSession: PracticeSession?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -28,9 +32,50 @@ struct LearningView: View {
             .clearListBackground()
         }
         .navigationTitle("学习").navigationBarHidden(true)
+        #if DEBUG
+        .onAppear {
+            if DebugLaunch.take("vocabulary") { section = 1 }
+            // Programmatic pushes during the first layout are dropped.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                if DebugLaunch.take("review") { section = 1; startReview() }
+                if DebugLaunch.take("session") || DebugLaunch.take("summary") {
+                    sourceSession = store.archive.sessions.first { $0.phase == .completed } ?? store.archive.sessions.first
+                }
+            }
+        }
+        #endif
         .onDisappear { speech.stopAll() }
         .onChange(of: section) { _ in speech.stopAll() }
         .onChange(of: scenePhase) { if $0 != .active { speech.stopAll() } }
+        .pushDestination(item: $sourceSession) { SessionDetailView(initialSession: $0) }
+        .pushDestination(isPresented: Binding(get: { reviewing != nil }, set: { if !$0 { reviewing = nil } })) {
+            ReviewView(title: "复习", cards: reviewing ?? []) { card, recalled in
+                var log = ReviewLog.load()
+                log.record(card.id, recalled: recalled)
+                log.save()
+            }
+        }
+    }
+
+    /// Kinds present in 词库, in a fixed order; sentences saved by hand have no kind.
+    private var kinds: [String?] {
+        let present = Set(store.archive.expressions.map(\.kind))
+        return ["word", "phrase", "grammar", "other", nil].filter { present.contains($0) }
+    }
+
+    private var filteredExpressions: [SavedExpression] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return store.archive.expressions.filter { item in
+            (kind == nil || item.kind == kind || (kind == "sentence" && item.kind == nil))
+                && (needle.isEmpty || item.text.lowercased().contains(needle) || item.meaning.lowercased().contains(needle))
+        }
+    }
+
+    private func startReview() {
+        speech.stopAll()
+        let deck = ReviewLog.load().deck(from: filteredExpressions)
+        reviewing = deck.map { ReviewCard(id: $0.id, text: $0.text, meaning: $0.meaning,
+                                          label: "\(Self.kindLabel($0.kind)) · \($0.source)") }
     }
 
     @ViewBuilder private var sessions: some View {
@@ -71,16 +116,59 @@ struct LearningView: View {
         if store.archive.expressions.isEmpty {
             EmptyState(title: "词库还是空的").pageRow()
         } else {
+            VStack(alignment: .leading, spacing: 12) {
+                if filteredExpressions.contains(where: { !$0.meaning.isEmpty }) {
+                    Button(action: startReview) { Label("开始复习", systemImage: "rectangle.stack") }
+                        .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("start-review")
+                }
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundColor(Brand.secondary)
+                    TextField("搜索词库", text: $query).disableAutocorrection(true).accessibilityIdentifier("search-vocabulary")
+                    if !query.isEmpty {
+                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill").frame(width: 32, height: 44) }
+                            .foregroundColor(Brand.secondary).accessibilityLabel("清除搜索")
+                    }
+                }
+                .font(.subheadline).padding(.horizontal, 14).frame(minHeight: 44)
+                .background(Brand.surface).clipShape(Capsule()).overlay(Capsule().stroke(Brand.line))
+                if kinds.count > 1 {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            chip("全部", selected: kind == nil) { kind = nil }
+                            ForEach(kinds, id: \.self) { value in
+                                let tag = value ?? "sentence"
+                                chip(Self.kindLabel(value), selected: kind == tag) { kind = kind == tag ? nil : tag }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.top, 4).padding(.bottom, 6)
+            .buttonStyle(.borderless)
+            .pageRow()
             if let error = speech.errorMessage {
                 Text(error).font(.caption).foregroundColor(Brand.secondary).pageRow()
             }
-            ForEach(store.archive.expressions) { expression in
+            if filteredExpressions.isEmpty { EmptyState(title: "没有找到").pageRow() }
+            ForEach(filteredExpressions) { expression in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(expression.text).font(Brand.english(.title3)).foregroundColor(Brand.ink)
                         .lineSpacing(3).textSelection(.enabled)
-                    Text(expression.meaning).font(.subheadline).foregroundColor(Brand.secondary)
+                    if !expression.meaning.isEmpty {
+                        Text(expression.meaning).font(.subheadline).foregroundColor(Brand.secondary)
+                    }
                     HStack(spacing: 0) {
-                        Text("\(Self.kindLabel(expression.kind)) · \(expression.source)").font(.caption).foregroundColor(Brand.secondary)
+                        if let session = store.archive.session(for: expression) {
+                            // Back to the conversation where this came up.
+                            Button { speech.stopAll(); sourceSession = session } label: {
+                                HStack(spacing: 4) {
+                                    Text("\(Self.kindLabel(expression.kind)) · \(expression.source)").lineLimit(1)
+                                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+                                }.frame(minHeight: 36)
+                            }.font(.caption).foregroundColor(Brand.secondary).accessibilityHint("查看出处对话")
+                        } else {
+                            Text("\(Self.kindLabel(expression.kind)) · \(expression.source)").font(.caption).foregroundColor(Brand.secondary)
+                        }
                         Spacer()
                         Button { speech.speak(expression.text) } label: {
                             Image(systemName: "speaker.wave.2").frame(width: 44, height: 36)
@@ -97,6 +185,19 @@ struct LearningView: View {
                 .pageRow()
             }
         }
+    }
+
+    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(.caption.weight(.medium))
+                .padding(.horizontal, 12).frame(minHeight: 32)
+                .foregroundColor(selected ? Brand.onInk : Brand.ink)
+                .background(selected ? Brand.ink : Color.clear)
+                .overlay(Capsule().stroke(Brand.line))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     static func kindLabel(_ kind: String?) -> String {
@@ -123,6 +224,7 @@ struct SessionDetailView: View {
     @StateObject private var speech = SpeechController()
     @State private var activeSession: PracticeSession?
     @StateObject private var translations = BubbleTranslations()
+    @StateObject private var meanings = FeedbackMeanings()
     @State private var showDelete = false
     @State private var showReview = false
     let initialSession: PracticeSession
@@ -157,7 +259,14 @@ struct SessionDetailView: View {
                                       },
                                       onListen: speech.speak)
                         if let feedback = session.feedback(for: message.id) {
-                            FeedbackNote(feedback: feedback, source: session.scenario.title, onListen: speech.speak)
+                            FeedbackNote(feedback: feedback, source: session.scenario.title, onListen: speech.speak,
+                                         meaningLoading: meanings.loading.contains(message.id)) {
+                                meanings.fill(message.id, revised: feedback.revised) { meaning in
+                                    var updated = session
+                                    if updated.applyFeedbackMeaning(meaning, to: message.id) { store.save(updated) }
+                                    store.fillMeaning(of: feedback.revised, with: meaning)
+                                }
+                            }
                         }
                     }
                 }
@@ -194,6 +303,12 @@ struct SessionDetailView: View {
             Button("取消", role: .cancel) {}
         } message: { Text("删除后不能恢复。收藏的句子会保留。") }
         .onDisappear { speech.stopAll() }
+        #if DEBUG
+        .onAppear {
+            guard DebugLaunch.route == "summary", DebugLaunch.once("summary-page") else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { showReview = true }
+        }
+        #endif
         .pushDestination(item: $activeSession) { session in
             ConversationView(initialSession: session, onClose: { activeSession = nil })
         }

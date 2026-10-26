@@ -13,7 +13,10 @@ import { POST as POST_SCENARIO } from '@/app/api/ios/scenario/route'
 import { POST as POST_TRANSLATE } from '@/app/api/ios/translate/route'
 import { POST as POST_SUGGEST } from '@/app/api/ios/suggest/route'
 import { POST as POST_IDEAS } from '@/app/api/ios/scenario-ideas/route'
-import { practiceRequestSchema, parsePracticeTurn, buildPracticeContext } from '@/app/lib/ios/practice'
+import {
+  practiceRequestSchema, parsePracticeTurn, buildPracticeContext, practiceInstruction, SYSTEM_INSTRUCTION,
+  newsScenarioPayload, suggestionRequestSchema,
+} from '@/app/lib/ios/practice'
 import { authorizeDevelopmentPractice, createPracticeCoordinator } from '@/app/lib/server/iosPractice'
 
 const token = 'a'.repeat(64)
@@ -289,3 +292,76 @@ describe('scenario ideas (换一批)', () => {
   })
 })
 
+
+describe('speaking level and review items', () => {
+  const review = [{ text: 'availability', meaning: '空闲时间' }, { text: 'move the launch', meaning: '推迟上线' }]
+  it('keeps the standard prompt unchanged and adjusts it only when asked', () => {
+    expect(practiceInstruction({})).toBe(SYSTEM_INSTRUCTION)
+    expect(practiceInstruction({ level: 'standard' })).toBe(SYSTEM_INSTRUCTION)
+    const easy = practiceInstruction({ level: 'easy' })
+    expect(easy).toContain('A1-A2')
+    expect(easy).toContain('under 30 English words')
+    expect(easy).not.toContain('A2-B1 level')
+    expect(practiceInstruction({ level: 'challenge' })).toContain('ONE realistic complication')
+    expect(practiceInstruction({ reviewItems: review })).toContain('REVIEW:')
+    expect(practiceInstruction({ reviewItems: review })).not.toContain('availability')
+  })
+  it('accepts at most three review items and only known levels', () => {
+    expect(practiceRequestSchema.safeParse({ ...body(), level: 'easy', reviewItems: review }).success).toBe(true)
+    expect(practiceRequestSchema.safeParse({ ...body(), level: 'expert' }).success).toBe(false)
+    expect(practiceRequestSchema.safeParse({ ...body(), reviewItems: [...review, ...review] }).success).toBe(false)
+    expect(practiceRequestSchema.safeParse({ ...body(), reviewItems: [{ text: 'a', meaning: '', extra: 1 }] }).success).toBe(false)
+  })
+  it('sends review items as data, never as instructions', async () => {
+    const response = await POST(request({ ...body(), level: 'easy', reviewItems: review }))
+    expect(response.status).toBe(200)
+    const sent = generate.mock.calls.at(-1)[0]
+    expect(sent.config.systemInstruction).toContain('A1-A2')
+    expect(JSON.parse(sent.contents[0].parts[0].text).reviewItems).toEqual(review)
+    expect(buildPracticeContext(body())).not.toHaveProperty('reviewItems')
+  })
+  it('sizes stuck-in-call suggestions to the level and lets them reuse a review item', async () => {
+    const suggestion = { hint: '先说页面做完了。', keywords: 'almost done', reply: 'It is almost done.', meaning: '差不多做完了。' }
+    generate.mockResolvedValueOnce({ text: JSON.stringify(suggestion), candidates: [{ finishReason: 'STOP' }], modelVersion: 'test-model' })
+    const input = {
+      requestId: randomUUID(), goal: '', context: '', stepIndex: 0, level: 'easy', reviewItems: review.slice(0, 1),
+      scenario: { title: 'Deadline', partner: 'Alex', partnerRole: 'Colleague', setting: '注册页周五上线。', goals: ['说明情况', '提出请求', '给出方案'] },
+      messages: [{ role: 'partner', text: 'How is it going?' }],
+    }
+    expect(suggestionRequestSchema.safeParse(input).success).toBe(true)
+    const response = await POST_SUGGEST(new Request('http://localhost:8000/api/ios/suggest', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(input),
+    }))
+    expect(response.status).toBe(200)
+    const sent = generate.mock.calls.at(-1)[0]
+    expect(sent.config.responseSchema.properties.reply.description).toContain('A1-A2')
+    expect(sent.config.systemInstruction).toContain('reviewItems')
+    expect(JSON.parse(sent.contents[0].parts[0].text).reviewItems).toEqual(review.slice(0, 1))
+  })
+})
+
+describe('news rehearsal from the daily podcast', () => {
+  const turns = (zh, en) => [{ speaker: 'LL', text: zh }, { speaker: 'DD', text: en }]
+  const episode = {
+    date: '2026-10-26', title: 'LingDaily 10/26', summary: 'legacy',
+    content: {
+      shownotes: { summary_zh: '今天聊折叠屏。', summary_en: 'Foldable phones today.' },
+      chunks: [
+        { name: 'intro', turns: turns('欢迎', 'Welcome') },
+        { name: 'tech', turns: [...turns('折叠屏降价了。', 'Foldable phones got cheaper.'), ...turns('销量上涨。', 'Sales went up.')] },
+        { name: 'world', turns: turns('天气', 'The weather') },
+      ],
+    },
+  }
+  it('passes only the summaries and the English story turns as data', () => {
+    expect(newsScenarioPayload(episode)).toEqual({
+      episodeTitle: 'LingDaily 10/26', date: '2026-10-26', summaryZh: '今天聊折叠屏。', summaryEn: 'Foldable phones today.',
+      stories: { world: 'The weather', tech: 'Foldable phones got cheaper. Sales went up.', business: '' },
+    })
+  })
+  it('caps the story text and tolerates historical rows without a script', () => {
+    const long = { ...episode, content: { chunks: [{ name: 'world', turns: turns('长', 'x'.repeat(9000)) }] } }
+    expect(newsScenarioPayload(long).stories.world).toHaveLength(6000)
+    expect(newsScenarioPayload({ date: '2026-01-01', summary: '旧摘要' })).toMatchObject({ summaryZh: '旧摘要', stories: { world: '', tech: '', business: '' } })
+  })
+})

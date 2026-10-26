@@ -3,7 +3,12 @@ import SwiftUI
 /// Describe a real upcoming conversation; the server turns it into a three-step scenario saved on this device.
 struct ScenarioComposerView: View {
     @EnvironmentObject private var store: PracticeStore
+    @EnvironmentObject private var account: AccountStore
+    @EnvironmentObject private var reminders: ReminderCenter
     @Environment(\.dismiss) private var dismiss
+    /// The day of the real conversation; reminders go out the evening before and that morning.
+    @State private var eventDay: Date?
+    @State private var notificationsDenied = false
     @State private var description = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -48,16 +53,16 @@ struct ScenarioComposerView: View {
                         HStack {
                             Text("试试这些").font(.caption).foregroundColor(Brand.secondary)
                             Spacer()
-                            Button(action: refreshIdeas) {
+                            if account.canPractice { Button(action: refreshIdeas) {
                                 HStack(spacing: 4) {
                                     if refreshing { ProgressView().scaleEffect(0.7) }
                                     else { Image(systemName: "arrow.triangle.2.circlepath") }
                                     Text(refreshing ? "正在想…" : "换一批")
                                 }
                             }
-                            .font(.caption.weight(.medium)).foregroundColor(Brand.ink).frame(minHeight: 32)
+                            .font(.caption.weight(.medium)).foregroundColor(Brand.ink).frame(minHeight: 44)
                             .disabled(refreshing || isLoading)
-                            .accessibilityIdentifier("refresh-ideas")
+                            .accessibilityIdentifier("refresh-ideas") }
                         }
                         if let refreshError {
                             Text(refreshError).font(.caption).foregroundColor(Brand.secondary)
@@ -71,6 +76,7 @@ struct ScenarioComposerView: View {
                             }.buttonStyle(.plain).disabled(isLoading)
                         }
                     }
+                    reminder
                 }
                 .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 24)
                 .readableColumn()
@@ -82,21 +88,55 @@ struct ScenarioComposerView: View {
                     Text(errorMessage).font(.footnote).foregroundColor(Brand.accent)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Button(action: generate) {
-                    HStack(spacing: 8) {
-                        if isLoading { ProgressView().tint(Brand.onInk) }
-                        Text(isLoading ? "正在布置场景…" : "生成场景")
+                if account.canPractice {
+                    Button(action: generate) {
+                        HStack(spacing: 8) {
+                            if isLoading { ProgressView().tint(Brand.onInk) }
+                            Text(isLoading ? "正在布置场景…" : "生成场景")
+                        }
                     }
+                    .buttonStyle(SolidButtonStyle())
+                    .disabled(trimmed.isEmpty || isLoading)
+                    .accessibilityIdentifier("generate-scenario")
+                } else {
+                    AppleSignInButton()
                 }
-                .buttonStyle(SolidButtonStyle())
-                .disabled(trimmed.isEmpty || isLoading)
-                .accessibilityIdentifier("generate-scenario")
             }
             .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8)
             .readableColumn().background(Brand.page)
         }
         .navigationBack(title: "新场景", isEnabled: !isLoading) { dismiss() }
         .onDisappear { task?.cancel() }
+    }
+
+    /// Optional: when the real conversation happens. Asks for notifications only when tapped.
+    @ViewBuilder private var reminder: some View {
+        let today = Calendar.current.startOfDay(for: Date())
+        VStack(alignment: .leading, spacing: 6) {
+            if let day = eventDay {
+                HStack {
+                    DatePicker("什么时候用得上", selection: Binding(get: { day }, set: { eventDay = $0 }),
+                               in: today..., displayedComponents: .date)
+                        .font(.subheadline).foregroundColor(Brand.ink).tint(Brand.accent)
+                        .accessibilityIdentifier("event-day")
+                    Button { eventDay = nil } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                        .font(.caption).foregroundColor(Brand.secondary).accessibilityLabel("不用提醒")
+                }
+                Text("前一晚和当天早上提醒你再过一遍。").font(.caption).foregroundColor(Brand.secondary)
+            } else {
+                Button {
+                    Task {
+                        notificationsDenied = !(await reminders.requestPermission())
+                        if !notificationsDenied { eventDay = Calendar.current.date(byAdding: .day, value: 1, to: today) }
+                    }
+                } label: { Label("什么时候用得上？加个提醒", systemImage: "bell") }
+                    .font(.subheadline).foregroundColor(Brand.secondary).frame(minHeight: 44).disabled(isLoading)
+                    .accessibilityIdentifier("add-event-day")
+                if notificationsDenied {
+                    Text("通知没有打开，可以在系统设置里允许 LingDaily 发送通知。").font(.caption).foregroundColor(Brand.secondary)
+                }
+            }
+        }
     }
 
     private func refreshIdeas() {
@@ -127,6 +167,7 @@ struct ScenarioComposerView: View {
                 let scenario = try await PracticeAPIClient().createScenario(from: text)
                 guard !Task.isCancelled else { return }
                 store.addScenario(scenario)
+                if let eventDay { reminders.scheduleEvent(for: scenario, on: eventDay) }
                 onCreated(scenario)
             } catch is CancellationError {
             } catch {

@@ -1,12 +1,32 @@
+import Combine
 import SwiftUI
 
 struct PracticeHomeView: View {
     @EnvironmentObject private var store: PracticeStore
     @EnvironmentObject private var account: AccountStore
+    @EnvironmentObject private var catalog: ScenarioCatalogStore
+    @EnvironmentObject private var today: TodayStore
+    @EnvironmentObject private var reminders: ReminderCenter
+    @ObservedObject private var player = PodcastPlayer.shared
     @State private var selectedScenario: PracticeScenario?
     @State private var resumed: PracticeSession?
     @State private var composing = false
     @State private var created: PracticeScenario?
+    @State private var showsVocabulary = false
+
+    /// Own scenarios with a real conversation coming up come first, soonest first.
+    private var ownScenarios: [PracticeScenario] {
+        let startOfToday = Calendar.current.startOfDay(for: Date())
+        let upcoming = { (scenario: PracticeScenario) in reminders.eventDay(for: scenario.id).flatMap { $0 >= startOfToday ? $0 : nil } }
+        return store.archive.scenarios.enumerated().sorted { left, right in
+            switch (upcoming(left.element), upcoming(right.element)) {
+            case let (l?, r?): return l < r
+            case (.some, nil): return true
+            case (nil, .some): return false
+            default: return left.offset < right.offset
+            }
+        }.map(\.element)
+    }
 
     /// Latest unfinished rehearsal, unless a newer attempt at the same scenario was already completed.
     private var unfinished: PracticeSession? {
@@ -24,7 +44,7 @@ struct PracticeHomeView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 28) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(Self.dayFormatter.string(from: Date()))
+                        Text(dayLine)
                             .font(.subheadline).foregroundColor(Brand.secondary)
                         HStack {
                             Text(Self.greeting()).font(.largeTitle.bold()).foregroundColor(Brand.ink)
@@ -39,11 +59,15 @@ struct PracticeHomeView: View {
                     }
                     if !account.canPractice { signInCard }
                     if let unfinished { continueCard(unfinished) }
+                    if account.canPractice, let episode = today.episode {
+                        TodayCard(episode: episode, player: player, onPractice: { selectedScenario = $0 },
+                                  onVocabulary: { showsVocabulary = true })
+                    }
                     VStack(spacing: 14) {
-                        ForEach(store.archive.scenarios.filter { !finished.contains($0.id) }) { scenario in
+                        ForEach(ownScenarios.filter { !finished.contains($0.id) }) { scenario in
                             customSceneButton(scenario)
                         }
-                        ForEach(ScenarioLibrary.all.filter { !finished.contains($0.id) }) { sceneButton($0, isCustom: false) }
+                        ForEach(catalog.scenarios.filter { !finished.contains($0.id) }) { sceneButton($0, isCustom: false) }
                     }
                     if !finishedScenarios.isEmpty {
                         // Finished scenarios fold away so new ones stay on top; still one tap to practise again.
@@ -57,7 +81,10 @@ struct PracticeHomeView: View {
                                 .accessibilityIdentifier("scene-\(item.scenario.id)")
                                 .contextMenu {
                                     if item.isCustom {
-                                        Button(role: .destructive) { store.removeScenario(item.scenario.id) } label: {
+                                        Button(role: .destructive) {
+                                            reminders.cancelEvent(for: item.scenario.id)
+                                            store.removeScenario(item.scenario.id)
+                                        } label: {
                                             Label("删除这个场景", systemImage: "trash")
                                         }
                                     }
@@ -81,6 +108,38 @@ struct PracticeHomeView: View {
         .pushDestination(item: $resumed) { session in
             ConversationView(initialSession: session, onClose: { resumed = nil })
         }
+        .pushDestination(isPresented: $showsVocabulary) {
+            if let episode = today.episode { TodayVocabularyView(episode: episode) }
+        }
+        .task {
+            await catalog.refresh()
+            if account.canPractice { await today.refresh() }
+            #if DEBUG
+            if !DebugLaunch.route.isEmpty {
+                // Programmatic pushes during the first layout are dropped; also wait for the launch refresh.
+                for _ in 0..<20 where today.episode == nil { try? await Task.sleep(nanoseconds: 250_000_000) }
+                try? await Task.sleep(nanoseconds: 600_000_000)
+            }
+            if DebugLaunch.take("prep") { selectedScenario = catalog.scenario(id: DebugLaunch.argument) ?? today.episode?.practiceScenario }
+            if DebugLaunch.take("today-vocabulary"), today.episode != nil { showsVocabulary = true }
+            if DebugLaunch.take("compose") { created = nil; composing = true }
+            #endif
+        }
+        .onChange(of: account.canPractice) { canPractice in
+            if canPractice { Task { await today.refresh(force: true) } } else { today.clear() }
+        }
+        .onReceive(reminders.$pendingScenarioID.compactMap { $0 }) { id in
+            reminders.pendingScenarioID = nil
+            guard selectedScenario == nil, resumed == nil, !composing else { return }
+            selectedScenario = store.archive.scenarios.first { $0.id == id } ?? catalog.scenario(id: id)
+        }
+    }
+
+    /// Date, plus a factual line about the last seven days once there is something to count.
+    private var dayLine: String {
+        let date = Self.dayFormatter.string(from: Date())
+        let recent = PracticeStats.recent(store.archive.sessions)
+        return recent.turns > 0 ? "\(date) · 近 7 天练了 \(recent.activeDays) 天，开口 \(recent.turns) 次" : date
     }
 
     /// Scenarios with at least one completed rehearsal.
@@ -89,20 +148,25 @@ struct PracticeHomeView: View {
     }
 
     private var finishedScenarios: [(scenario: PracticeScenario, isCustom: Bool)] {
-        store.archive.scenarios.filter { finished.contains($0.id) }.map { ($0, true) }
-            + ScenarioLibrary.all.filter { finished.contains($0.id) }.map { ($0, false) }
+        ownScenarios.filter { finished.contains($0.id) }.map { ($0, true) }
+            + catalog.scenarios.filter { finished.contains($0.id) }.map { ($0, false) }
     }
 
     private func customSceneButton(_ scenario: PracticeScenario) -> some View {
         sceneButton(scenario, isCustom: true).contextMenu {
-            Button(role: .destructive) { store.removeScenario(scenario.id) } label: {
+            Button(role: .destructive) {
+                reminders.cancelEvent(for: scenario.id)
+                store.removeScenario(scenario.id)
+            } label: {
                 Label("删除这个场景", systemImage: "trash")
             }
         }
     }
 
     private func sceneButton(_ scenario: PracticeScenario, isCustom: Bool) -> some View {
-        Button { selectedScenario = scenario } label: { SceneCard(scenario: scenario, isCustom: isCustom) }
+        Button { selectedScenario = scenario } label: {
+            SceneCard(scenario: scenario, isCustom: isCustom, eventDay: isCustom ? reminders.eventDay(for: scenario.id) : nil)
+        }
             .buttonStyle(.plain)
             .accessibilityIdentifier("scene-\(scenario.id)")
     }
@@ -153,6 +217,18 @@ struct PracticeHomeView: View {
 struct SceneCard: View {
     let scenario: PracticeScenario
     var isCustom = false
+    /// The day of the real conversation, when the learner set one.
+    var eventDay: Date? = nil
+
+    private var eventLabel: String? {
+        guard let eventDay else { return nil }
+        let calendar = Calendar.current
+        if calendar.isDateInToday(eventDay) { return "今天要用" }
+        if calendar.isDateInTomorrow(eventDay) { return "明天要用" }
+        guard eventDay > Date() else { return nil }
+        return "\(calendar.component(.month, from: eventDay))月\(calendar.component(.day, from: eventDay))日要用"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
@@ -162,8 +238,12 @@ struct SceneCard: View {
                     Text(scenario.partnerRole).font(.caption).foregroundColor(Brand.inkOnTone)
                 }
                 Spacer(minLength: 0)
-                Text(isCustom ? "我的 · \(scenario.category)" : scenario.category)
-                    .font(.caption.weight(.medium)).foregroundColor(Brand.inkOnTone)
+                if let eventLabel {
+                    Text(eventLabel).font(.caption.weight(.semibold)).foregroundColor(Brand.accent)
+                } else {
+                    Text(isCustom ? "我的 · \(scenario.category)" : scenario.category)
+                        .font(.caption.weight(.medium)).foregroundColor(Brand.inkOnTone)
+                }
             }
             Text("“\(scenario.steps[0].prompt)”")
                 .font(Brand.english(.title3)).foregroundColor(Brand.ink)

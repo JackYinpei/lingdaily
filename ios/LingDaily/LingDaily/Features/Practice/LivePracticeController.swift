@@ -1,11 +1,17 @@
 import Foundation
 import Combine
+import UIKit
 
 @MainActor
 final class LivePracticeController: ObservableObject {
     enum State { case disconnected, connecting, active }
-    @Published private(set) var state: State = .disconnected
+    @Published private(set) var state: State = .disconnected {
+        // Learners talk without touching the screen; auto-lock would background the app and end the call.
+        didSet { UIApplication.shared.isIdleTimerDisabled = state != .disconnected }
+    }
     @Published private(set) var muted = false
+    /// The partner plays through the phone itself, so talking over them needs 打断.
+    @Published private(set) var usesSpeaker = false
     @Published private(set) var playing = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var hasStarted = false
@@ -53,6 +59,7 @@ final class LivePracticeController: ObservableObject {
     /// User gesture entry point; output is primed synchronously, before any await.
     func start(model: PracticeViewModel, store: PracticeStore) {
         guard state == .disconnected, model.session.phase != .completed else { return }
+        PodcastPlayer.shared.pause()
         self.model = model; self.store = store
         hasStarted = true
         generations.reconnect()
@@ -85,8 +92,13 @@ final class LivePracticeController: ObservableObject {
                 if !playing { self.finishIfReady(); self.watchForStuck() }
             }
         }
+        audio.onRouteChanged = { [weak self] speaker in
+            guard let self, self.generations.accepts(connection: current) else { return }
+            self.usesSpeaker = speaker
+        }
         do { try audio.prepareOutput() }
         catch { stop(message: "暂时无法准备音频，请重新连接或使用文字模式。"); return }
+        usesSpeaker = audio.usesSpeaker
         let snapshot = model.session
         connectTask = Task { [weak self] in
             guard await LiveAudioController.permission() else {
@@ -209,6 +221,7 @@ final class LivePracticeController: ObservableObject {
                 var session = model.session
                 let collected = self.pendingTools.apply(call, to: &session)
                 self.pendingTools.flush(to: &session)
+                session.recordCollected(collected)
                 model.updateLive(session)
                 if collected.isEmpty { self.scheduleSave() }
                 else {

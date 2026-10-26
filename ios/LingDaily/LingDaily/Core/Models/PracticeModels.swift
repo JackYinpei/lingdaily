@@ -23,6 +23,29 @@ struct PracticeScenario: Codable, Equatable, Identifiable {
     let steps: [PracticeStep]
 }
 
+/// How hard the partner makes it: vocabulary, sentence length and follow-up pressure.
+enum PracticeLevel: String, CaseIterable, Identifiable {
+    case easy, standard, challenge
+    static let key = "practiceLevel"
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .easy: return "轻松"
+        case .standard: return "标准"
+        case .challenge: return "挑战"
+        }
+    }
+    static func current(defaults: UserDefaults = .standard) -> PracticeLevel {
+        defaults.string(forKey: key).flatMap(PracticeLevel.init(rawValue:)) ?? .standard
+    }
+}
+
+/// An expression from the learner's own 词库 that the partner tries to bring back.
+struct ReviewTarget: Codable, Equatable, Hashable {
+    let text: String
+    let meaning: String
+}
+
 struct PracticeMessage: Codable, Equatable, Identifiable {
     enum Role: String, Codable { case partner, user }
     enum Kind: String, Codable { case prompt, answer, retry, response }
@@ -50,8 +73,13 @@ struct PracticeSession: Codable, Equatable, Identifiable {
     private(set) var live: LivePracticeState? = nil
     /// Unsent text in the composer, restored when the learner comes back. Optional so older archives still decode.
     private(set) var draft: String? = nil
+    /// Raw `PracticeLevel`; nil is standard. A string so a level from a newer app never breaks decoding.
+    private(set) var level: String? = nil
+    /// Up to three 词库 expressions the partner looks for a chance to bring back.
+    private(set) var reviewItems: [ReviewTarget]? = nil
 
-    init(scenario: PracticeScenario, goal: String = "", context: String = "", useAI: Bool = false, now: Date = Date()) {
+    init(scenario: PracticeScenario, goal: String = "", context: String = "", useAI: Bool = false,
+         level: PracticeLevel = .standard, reviewItems: [ReviewTarget] = [], now: Date = Date()) {
         precondition(!scenario.steps.isEmpty)
         id = UUID()
         self.scenario = scenario
@@ -64,7 +92,11 @@ struct PracticeSession: Codable, Equatable, Identifiable {
         messages = useAI ? [] : [PracticeMessage(id: UUID(), role: .partner, kind: .prompt,
             text: scenario.steps[0].prompt, stepIndex: 0, createdAt: now)]
         ai = useAI ? AIPracticeState(pending: AIPendingRequest(id: UUID(), action: .start)) : nil
+        self.level = level == .standard ? nil : level.rawValue
+        self.reviewItems = reviewItems.isEmpty ? nil : Array(reviewItems.prefix(3))
     }
+
+    var practiceLevel: PracticeLevel { level.flatMap(PracticeLevel.init(rawValue:)) ?? .standard }
 
     var title: String { personalGoal.isEmpty ? scenario.title : personalGoal }
     var step: PracticeStep { scenario.steps[min(stepIndex, scenario.steps.count - 1)] }
@@ -83,7 +115,8 @@ struct PracticeSession: Codable, Equatable, Identifiable {
             stepIndex: stepIndex, goal: personalGoal, context: context,
             scenario: .init(title: scenario.title, partner: scenario.partner,
                 partnerRole: scenario.partnerRole, setting: scenario.setting, goals: scenario.steps.map(\.goal)),
-            messages: messages.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.suffix(24).map { .init(role: $0.role, kind: $0.kind, text: live == nil ? $0.text : String($0.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1200)), stepIndex: $0.stepIndex) })
+            messages: messages.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.suffix(24).map { .init(role: $0.role, kind: $0.kind, text: live == nil ? $0.text : String($0.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1200)), stepIndex: $0.stepIndex) },
+            level: level, reviewItems: reviewItems)
     }
     var currentFeedback: AIFeedback? {
         guard let user = messages.last(where: { $0.role == .user && $0.stepIndex == stepIndex }) else { return nil }
@@ -324,6 +357,8 @@ struct LivePracticeState: Codable, Equatable {
     var model: String? = nil
     var completedTasks: [Int] = []
     var endedAt: Date? = nil
+    /// Items Live collected into 词库 during this rehearsal. Optional so older archives still decode.
+    var collected: [AILearningItem]? = nil
 }
 
 extension PracticeSession {
@@ -349,3 +384,41 @@ extension PracticeSession {
     }
 }
 
+
+extension PracticeSession {
+    /// Words this rehearsal added to 词库: text-mode feedback items plus those Live collected.
+    var collectedItems: [AILearningItem] {
+        var seen = Set<String>()
+        let all = (ai?.feedbacks.flatMap { $0.feedback.items ?? [] } ?? []) + (live?.collected ?? [])
+        return all.filter { seen.insert(SavedExpression.key($0.text)).inserted }
+    }
+
+    mutating func recordCollected(_ items: [AILearningItem], now: Date = Date()) {
+        guard live != nil, !items.isEmpty else { return }
+        let current = live?.collected ?? []
+        let known = Set(current.map { SavedExpression.key($0.text) })
+        let fresh = items.filter { !known.contains(SavedExpression.key($0.text)) }
+        guard !fresh.isEmpty else { return }
+        live?.collected = Array((current + fresh).prefix(200))
+        updatedAt = now
+    }
+
+    /// Review items the learner actually said in this rehearsal.
+    var reusedReviewItems: [ReviewTarget] {
+        let said = messages.filter { $0.role == .user }.map(\.text)
+        return (reviewItems ?? []).filter { item in said.contains { RecallMatcher.matches(target: item.text, heard: $0) } }
+    }
+
+    /// Live corrections arrive without a Chinese meaning; fill it in once translated.
+    @discardableResult
+    mutating func applyFeedbackMeaning(_ meaning: String, to messageID: UUID, now: Date = Date()) -> Bool {
+        let text = meaning.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.count <= 800,
+              let index = ai?.feedbacks.firstIndex(where: { $0.id == messageID }),
+              let record = ai?.feedbacks[index], record.feedback.meaning.isEmpty else { return false }
+        ai?.feedbacks[index] = AIFeedbackRecord(id: record.id, stepIndex: record.stepIndex,
+            feedback: AIFeedback(revised: record.feedback.revised, meaning: text, note: record.feedback.note, items: record.feedback.items))
+        updatedAt = now
+        return true
+    }
+}

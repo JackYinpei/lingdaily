@@ -5,7 +5,7 @@ vi.mock('@google/genai', () => ({ GoogleGenAI: class { authTokens = { create } }
 vi.mock('@/app/lib/server/geminiConfig', () => ({ getServerGeminiApiKey: () => 'synthetic-server-secret' }))
 import { POST } from '@/app/api/ios/live-token/route'
 import { createLiveTokenCoordinator, issueLiveToken, IOS_LIVE_WS_URL } from '@/app/lib/server/iosLive'
-import { liveTokenRequestSchema } from '@/app/lib/ios/live'
+import { liveTokenRequestSchema, voiceForPartner, LIVE_VOICES } from '@/app/lib/ios/live'
 import { liveWebSocketEndpoint, isLiveWebSocketEndpoint, LIVE_WS_PATH } from '@/app/lib/ios/liveEndpoint.mjs'
 
 const pairing = 'b'.repeat(64)
@@ -145,6 +145,47 @@ describe('iOS Live development token', () => {
     expect(locked.config.systemInstruction).toContain('Never wrap up')
     expect(locked.config.realtimeInputConfig.activityHandling).toBeUndefined() // barge-in stays on
     expect(locked.config.outputAudioTranscription).toEqual({})
+  })
+  it('gives each partner a stable voice of their own', () => {
+    expect(voiceForPartner('Alex', '')).toBe('Puck')
+    expect(voiceForPartner('Jamie', '')).toBe('Aoede')
+    expect(voiceForPartner('Taylor', '')).toBe('Kore')
+    expect(voiceForPartner('Emma', '')).toBe(voiceForPartner('emma', ''))
+    for (const name of ['Emma', 'Sarah', 'Ms. Lee']) expect(LIVE_VOICES.female).toContain(voiceForPartner(name, ''))
+    for (const name of ['Mike', 'David', 'Mr. Brown']) expect(LIVE_VOICES.male).toContain(voiceForPartner(name, ''))
+    expect([...LIVE_VOICES.female, ...LIVE_VOICES.male]).toContain(voiceForPartner('Skyler', ''))
+    expect(voiceForPartner('Alex', 'Charon')).toBe('Charon')
+    expect(voiceForPartner('Alex', 'NotAVoice')).toBe('Aoede')
+  })
+  it("locks the partner's voice and retries once with the original voice if it is rejected", async () => {
+    const voice = () => create.mock.calls.at(-1)[0].config.liveConnectConstraints.config.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName
+    expect((await POST(request())).status).toBe(200)
+    expect(voice()).toBe('Puck')
+    create.mockReset()
+      .mockRejectedValueOnce(Object.assign(new Error('synthetic invalid voice'), { status: 400 }))
+      .mockResolvedValue({ name: 'auth_tokens/synthetic-single-use' })
+    expect((await POST(request())).status).toBe(200)
+    expect(create).toHaveBeenCalledTimes(2)
+    expect(voice()).toBe('Aoede')
+    vi.stubEnv('GEMINI_LIVE_VOICE', 'Aoede')
+    expect((await POST(request())).status).toBe(200)
+    expect(voice()).toBe('Aoede')
+  })
+  it('follows the chosen level and treats review items as scenario data', async () => {
+    const instruction = async input => {
+      expect((await POST(request(input))).status).toBe(200)
+      return create.mock.calls.at(-1)[0].config.liveConnectConstraints.config.systemInstruction
+    }
+    expect(await instruction(body())).toContain('short, natural A2–B1 English')
+    const easy = await instruction({ ...body(), level: 'easy' })
+    expect(easy).toContain('A1–A2')
+    expect(easy).not.toContain('A2–B1')
+    expect(await instruction({ ...body(), level: 'challenge' })).toContain('ONE realistic complication')
+    const review = await instruction({ ...body(), reviewItems: [{ text: 'availability', meaning: '空闲时间' }] })
+    expect(review).toContain('REVIEW:')
+    expect(review.split('UNTRUSTED_SCENARIO_JSON:')[1]).toContain('availability')
+    expect(review.split('UNTRUSTED_SCENARIO_JSON:')[0]).not.toContain('availability')
+    expect(liveTokenRequestSchema.safeParse({ ...body(), level: 'expert' }).success).toBe(false)
   })
   it('sanitizes upstream failures and never falls back to unconstrained tokens', async () => {
     create.mockRejectedValue(new Error('synthetic-server-secret provider body wss://private'))

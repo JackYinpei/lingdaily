@@ -88,6 +88,9 @@ struct AIPracticeRequest: Codable {
     let messages: [Message]
     /// The learner's model choice; the server only honours listed models.
     var model: String? = nil
+    /// Omitted for standard, so default requests are unchanged for older servers.
+    var level: String? = nil
+    var reviewItems: [ReviewTarget]? = nil
 }
 
 struct AIPracticeResponse: Codable {
@@ -115,14 +118,20 @@ struct AIScenarioResponse: Codable {
     let scenario: Draft
 
     func makeScenario(id: String = "custom-\(UUID().uuidString)") -> PracticeScenario? {
-        let draft = scenario
-        let texts = [draft.title, draft.subtitle, draft.category, draft.partner, draft.partnerRole, draft.setting]
-            + draft.steps.flatMap { [$0.goal, $0.prompt, $0.translation, $0.hint, $0.keywords, $0.expression, $0.meaning] }
-        guard draft.steps.count == 3, !model.isEmpty,
+        model.isEmpty ? nil : scenario.practiceScenario(id: id)
+    }
+}
+
+extension AIScenarioResponse.Draft {
+    /// A validated three-step scenario, or nil when any field is missing or too long.
+    func practiceScenario(id: String) -> PracticeScenario? {
+        let texts = [title, subtitle, category, partner, partnerRole, setting]
+            + steps.flatMap { [$0.goal, $0.prompt, $0.translation, $0.hint, $0.keywords, $0.expression, $0.meaning] }
+        guard steps.count == 3,
               texts.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.count <= 400 }) else { return nil }
-        return PracticeScenario(id: id, title: draft.title, subtitle: draft.subtitle, category: draft.category,
-            symbol: "text.bubble", partner: draft.partner, partnerRole: draft.partnerRole, setting: draft.setting,
-            steps: draft.steps.enumerated().map { index, step in
+        return PracticeScenario(id: id, title: title, subtitle: subtitle, category: category,
+            symbol: "text.bubble", partner: partner, partnerRole: partnerRole, setting: setting,
+            steps: steps.enumerated().map { index, step in
                 PracticeStep(id: "step-\(index)", goal: step.goal, prompt: step.prompt, translation: step.translation,
                     hint: step.hint, keywords: step.keywords, expression: step.expression, meaning: step.meaning)
             })

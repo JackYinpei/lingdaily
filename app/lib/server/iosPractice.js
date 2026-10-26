@@ -6,10 +6,10 @@ import { getServerGeminiApiKey, getServerGeminiBaseUrl } from './geminiConfig'
 import { resolveModel } from '../ios/models'
 import { recordUsage, tokensFromUsageMetadata } from './aiUsage'
 import {
-  buildPracticeContext, IDEAS_INSTRUCTION, IDEAS_RESPONSE_SCHEMA, parseIdeas,
-  parsePracticeTurn, parseScenarioDraft, parseSuggestion, parseTranslation,
-  RESPONSE_SCHEMA, SCENARIO_INSTRUCTION, SCENARIO_RESPONSE_SCHEMA, SYSTEM_INSTRUCTION,
-  SUGGESTION_INSTRUCTION, SUGGESTION_RESPONSE_SCHEMA, TRANSLATION_INSTRUCTION, TRANSLATION_RESPONSE_SCHEMA,
+  buildPracticeContext, IDEAS_INSTRUCTION, IDEAS_RESPONSE_SCHEMA, NEWS_SCENARIO_INSTRUCTION, newsScenarioPayload,
+  parseIdeas, parsePracticeTurn, parseScenarioDraft, parseSuggestion, parseTranslation, practiceInstruction,
+  RESPONSE_SCHEMA, SCENARIO_INSTRUCTION, SCENARIO_RESPONSE_SCHEMA, suggestionInstruction, suggestionResponseSchema,
+  TRANSLATION_INSTRUCTION, TRANSLATION_RESPONSE_SCHEMA,
 } from '../ios/practice'
 
 export class PracticeAPIError extends Error {
@@ -103,7 +103,7 @@ async function generateStructured({ systemInstruction, responseSchema, payload, 
 export async function generatePracticeTurn(body, userId) {
   const context = buildPracticeContext(body)
   const { model, data } = await generateStructured({
-    systemInstruction: SYSTEM_INSTRUCTION, responseSchema: RESPONSE_SCHEMA,
+    systemInstruction: practiceInstruction(body), responseSchema: RESPONSE_SCHEMA,
     payload: context,
     retryPayload: { ...context, formatReminder: 'The previous attempt was invalid. Rewrite ONLY learnerLatestAnswer in feedback.revised; do not put the role-play partner reply there. Follow every required field and length limit.' },
     parse: raw => parsePracticeTurn(raw, body.action, context.learnerLatestAnswer || ''),
@@ -129,6 +129,21 @@ export async function generateScenarioDraft(body, userId) {
   return { requestId: body.requestId, model, scenario: data }
 }
 
+/** Rehearsal about one story of a stored daily podcast; shared by every learner that day. */
+export async function generateNewsScenario(episode, userId) {
+  const payload = newsScenarioPayload(episode)
+  const { model, data } = await generateStructured({
+    systemInstruction: NEWS_SCENARIO_INSTRUCTION, responseSchema: SCENARIO_RESPONSE_SCHEMA,
+    payload,
+    retryPayload: { ...payload, formatReminder: 'The previous attempt was invalid. Return exactly 3 steps and respect every field length.' },
+    parse: parseScenarioDraft,
+    temperature: 0.6, maxOutputTokens: 2400, usage: { userId, feature: 'scenario' },
+    invalidMessage: '今天的新闻话题没准备好，请稍后再试。',
+    unavailableMessage: '今天的新闻话题暂时不可用，请稍后再试。',
+  })
+  return { model, scenario: data }
+}
+
 export async function generateTranslation(body, userId) {
   const payload = { line: body.text }
   const { model, data } = await generateStructured({
@@ -146,9 +161,10 @@ export async function generateSuggestion(body, userId) {
   const payload = {
     scenario: body.scenario, personalGoal: body.goal, context: body.context,
     currentTask: body.scenario.goals[body.stepIndex], stepIndex: body.stepIndex, recentMessages: body.messages,
+    ...(body.reviewItems?.length ? { reviewItems: body.reviewItems } : {}),
   }
   const { model, data } = await generateStructured({
-    systemInstruction: SUGGESTION_INSTRUCTION, responseSchema: SUGGESTION_RESPONSE_SCHEMA,
+    systemInstruction: suggestionInstruction(body), responseSchema: suggestionResponseSchema(body.level),
     payload, retryPayload: { ...payload, formatReminder: 'Return hint, keywords, reply and meaning only, within the length limits.' },
     // Headroom for models that think before answering (they bill and count those tokens too).
     parse: parseSuggestion, temperature: 0.5, maxOutputTokens: 1500,

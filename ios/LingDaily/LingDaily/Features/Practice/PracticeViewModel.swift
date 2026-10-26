@@ -56,6 +56,22 @@ final class PracticeViewModel: ObservableObject {
         store.save(session)
     }
 
+    func applyFeedbackMeaning(_ meaning: String, to messageID: UUID, store: PracticeStore) {
+        guard session.applyFeedbackMeaning(meaning, to: messageID) else { return }
+        store.save(session)
+    }
+
+    /// 再练一次: a fresh rehearsal of the same scenario, goal and level; the finished one stays in history.
+    func restart(reviewItems: [ReviewTarget]) {
+        generation = UUID()
+        task?.cancel()
+        task = nil
+        isLoading = false
+        errorMessage = nil
+        session = PracticeSession(scenario: session.scenario, goal: session.personalGoal, context: session.context,
+                                  useAI: true, level: session.practiceLevel, reviewItems: reviewItems)
+    }
+
     func keepDraft(_ text: String) { session.keepDraft(text) }
 
     func enterLive() { pause(); session.beginLive() }

@@ -6,6 +6,8 @@ struct SettingsView: View {
     @EnvironmentObject private var sync: SyncEngine
     @AppStorage("appearance") private var appearance = "system"
     @AppStorage("autoReadAIReplies") private var autoReadReplies = true
+    @AppStorage(SpeechController.slowKey) private var slowSpeech = false
+    @AppStorage(ReviewPicker.enabledKey) private var reviewWords = true
     @AppStorage(LivePause.key) private var pauseMs = LivePause.standard
     @AppStorage(AIDataConsent.key) private var aiConsentVersion = ""
     @State private var signingOut = false
@@ -32,6 +34,13 @@ struct SettingsView: View {
                         Toggle("自动朗读对方的话", isOn: $autoReadReplies)
                             .font(.subheadline).foregroundColor(Brand.ink).tint(Brand.accent)
                         Brand.line.frame(height: 1)
+                        Toggle("放慢朗读", isOn: $slowSpeech)
+                            .font(.subheadline).foregroundColor(Brand.ink).tint(Brand.accent)
+                        Brand.line.frame(height: 1)
+                        Toggle("练习时带上词库里的词", isOn: $reviewWords)
+                            .font(.subheadline).foregroundColor(Brand.ink).tint(Brand.accent)
+                            .accessibilityIdentifier("review-words-toggle")
+                        Brand.line.frame(height: 1)
                         HStack {
                             Text("停顿多久算说完").font(.subheadline).foregroundColor(Brand.ink)
                             Spacer(minLength: 8)
@@ -42,6 +51,7 @@ struct SettingsView: View {
                             .accessibilityIdentifier("live-pause")
                         }
                     }.surfaceCard()
+                    ReminderCard()
                     if account.canPractice { AIModelCard() }
                     if account.session != nil && !account.usesLocalDevelopment { UsageCard() }
                     VStack(alignment: .leading, spacing: 12) {
@@ -134,6 +144,8 @@ struct SettingsView: View {
     /// Signing out removes this account's records from the device; they come back from the cloud on sign-in.
     private func finishSignOut() {
         sync.resetLocalData()
+        ReminderCenter.shared.clearAll()
+        ReviewLog.clear()
         account.signOut()
     }
 
@@ -191,6 +203,8 @@ private struct AccountDataView: View {
                     do {
                         try await account.confirmDeletion(result)
                         sync.resetLocalData()
+                        ReminderCenter.shared.clearAll()
+                        ReviewLog.clear()
                         dismiss()
                     } catch is CancellationError {
                     } catch {
@@ -208,6 +222,53 @@ private struct AccountDataView: View {
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .disabled(deleting)
         }.surfaceCard()
+    }
+}
+
+/// Opt-in daily reminder. Days with practice are skipped; permission is asked only when it is turned on.
+private struct ReminderCard: View {
+    @EnvironmentObject private var store: PracticeStore
+    @AppStorage(ReminderCenter.dailyEnabledKey) private var enabled = false
+    @AppStorage(ReminderCenter.dailyHourKey) private var hour = 21
+    @AppStorage(ReminderCenter.dailyMinuteKey) private var minute = 0
+    @State private var denied = false
+
+    private var time: Binding<Date> {
+        Binding(get: { Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? Date() },
+                set: { value in
+                    hour = Calendar.current.component(.hour, from: value)
+                    minute = Calendar.current.component(.minute, from: value)
+                    reschedule()
+                })
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle("每天提醒我练习", isOn: Binding(get: { enabled }, set: { turnOn in
+                guard turnOn else { enabled = false; reschedule(); return }
+                Task {
+                    denied = !(await ReminderCenter.shared.requestPermission())
+                    enabled = !denied
+                    reschedule()
+                }
+            }))
+            .font(.subheadline).foregroundColor(Brand.ink).tint(Brand.accent)
+            .accessibilityIdentifier("daily-reminder")
+            if enabled {
+                DatePicker("提醒时间", selection: time, displayedComponents: .hourAndMinute)
+                    .font(.subheadline).foregroundColor(Brand.ink).tint(Brand.accent)
+                Text("当天已经练过就不再提醒。").font(.caption).foregroundColor(Brand.secondary)
+            }
+            if denied {
+                Text("通知没有打开，可以在系统设置里允许 LingDaily 发送通知。").font(.caption).foregroundColor(Brand.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .surfaceCard()
+    }
+
+    private func reschedule() {
+        ReminderCenter.shared.rescheduleDaily(practicedToday: PracticeStats.spokeToday(store.archive.sessions))
     }
 }
 

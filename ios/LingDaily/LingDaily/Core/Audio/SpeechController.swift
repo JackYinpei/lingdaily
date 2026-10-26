@@ -52,6 +52,7 @@ final class SpeechController: NSObject, ObservableObject, AVSpeechSynthesizerDel
     func startRecording(maxCharacters: Int = 800) async {
         guard !isRecording, !isRequestingPermission, !isFinalizing else { return }
         stopAll()
+        PodcastPlayer.shared.pause()
         errorMessage = nil
         let current = UUID()
         generation = current
@@ -173,8 +174,27 @@ final class SpeechController: NSObject, ObservableObject, AVSpeechSynthesizerDel
         if !isSpeaking { deactivateOwnedSession() }
     }
 
+    /// 「我的 → 放慢朗读」.
+    static let slowKey = "slowSpeech"
+
+    /// The best installed US English voice: premium, then enhanced, else the system default.
+    /// Novelty voices are skipped where the system can identify them.
+    static let preferredVoice: AVSpeechSynthesisVoice? = {
+        func rank(_ voice: AVSpeechSynthesisVoice) -> Int {
+            if #available(iOS 16.0, macOS 13.0, *), voice.quality == .premium { return 2 }
+            return voice.quality == .enhanced ? 1 : 0
+        }
+        let voices = AVSpeechSynthesisVoice.speechVoices().filter { voice in
+            guard voice.language == "en-US", rank(voice) > 0 else { return false }
+            if #available(iOS 17.0, macOS 14.0, *) { return !voice.voiceTraits.contains(.isNoveltyVoice) }
+            return true
+        }
+        return voices.max { rank($0) < rank($1) } ?? AVSpeechSynthesisVoice(language: "en-US")
+    }()
+
     func speak(_ text: String) {
         stopAll()
+        PodcastPlayer.shared.pause()
         errorMessage = nil
         do {
             let session = AVAudioSession.sharedInstance()
@@ -182,8 +202,8 @@ final class SpeechController: NSObject, ObservableObject, AVSpeechSynthesizerDel
             try session.setActive(true)
             sessionActive = true
             let utterance = AVSpeechUtterance(string: text)
-            utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
-            utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.88
+            utterance.voice = Self.preferredVoice
+            utterance.rate = AVSpeechUtteranceDefaultSpeechRate * (UserDefaults.standard.bool(forKey: Self.slowKey) ? 0.7 : 0.88)
             isSpeaking = true
             activeUtterance = utterance
             synthesizer.speak(utterance)

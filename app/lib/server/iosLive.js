@@ -2,7 +2,7 @@ import 'server-only'
 import { GoogleGenAI } from '@google/genai'
 import { getServerGeminiApiKey } from './geminiConfig'
 import { PracticeAPIError, createUserLimiter } from './iosPractice'
-import { buildLiveInstruction, LIVE_TOOLS, livePauseMs } from '../ios/live'
+import { buildLiveInstruction, DEFAULT_LIVE_VOICE, LIVE_TOOLS, livePauseMs, voiceForPartner } from '../ios/live'
 import { resolveModel } from '../ios/models'
 import { DEFAULT_LIVE_WS_URL, liveWebSocketEndpoint } from '../ios/liveEndpoint.mjs'
 
@@ -43,19 +43,27 @@ export async function issueLiveToken(body) {
   // signing endpoint. The approved relay forwards the constrained WebSocket;
   // it never receives the API key or replaces the locked token configuration.
   const client = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: 'v1alpha', timeout: 25000 } })
+  const abortSignal = AbortSignal.timeout(25000)
+  const create = voiceName => client.authTokens.create({ config: {
+    uses: 1, expireTime: expiresAt, newSessionExpireTime: new Date(now + 2 * 60_000).toISOString(),
+    httpOptions: { apiVersion: 'v1alpha' }, abortSignal,
+    liveConnectConstraints: { model, config: {
+      responseModalities: ['AUDIO'], systemInstruction: buildLiveInstruction(scenarioBody), tools: LIVE_TOOLS,
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
+      inputAudioTranscription: {}, outputAudioTranscription: {},
+      realtimeInputConfig: { automaticActivityDetection: liveActivityDetection(pauseMs) },
+    } },
+    // Omitted lockAdditionalFields locks the entire config (SDK Case 2),
+    // including unspecified fields. Never fall back to an unconstrained token.
+  } })
+  const voice = voiceForPartner(scenarioBody.scenario?.partner)
   try {
-    const result = await client.authTokens.create({ config: {
-      uses: 1, expireTime: expiresAt, newSessionExpireTime: new Date(now + 2 * 60_000).toISOString(),
-      httpOptions: { apiVersion: 'v1alpha' }, abortSignal: AbortSignal.timeout(25000),
-      liveConnectConstraints: { model, config: {
-        responseModalities: ['AUDIO'], systemInstruction: buildLiveInstruction(scenarioBody), tools: LIVE_TOOLS,
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } },
-        inputAudioTranscription: {}, outputAudioTranscription: {},
-        realtimeInputConfig: { automaticActivityDetection: liveActivityDetection(pauseMs) },
-      } },
-      // Omitted lockAdditionalFields locks the entire config (SDK Case 2),
-      // including unspecified fields. Never fall back to an unconstrained token.
-    } })
+    let result
+    try { result = await create(voice) } catch (error) {
+      // A voice the model rejects must never cost the learner the call: retry once with the original voice.
+      if (voice === DEFAULT_LIVE_VOICE || error.status !== 400) throw error
+      result = await create(DEFAULT_LIVE_VOICE)
+    }
     if (!result.name || typeof result.name !== 'string') throw new Error('Missing token')
     return { token: result.name, model, wsURL, expiresAt }
   } catch (error) {

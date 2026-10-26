@@ -125,6 +125,14 @@ describe('iOS cloud sync into the shared tables', () => {
     expect(db.tables.unfamiliar_english[0].items).toEqual([{ text: 'on track', type: 'phrase', meaning: '按计划' }])
   })
 
+  it('accepts items Live labelled other instead of failing every later sync', async () => {
+    const item = { text: 'for the time being', meaning: '暂时', source: '把延期说清楚', createdAt: '2026-10-05T10:00:00.000Z', kind: 'other' }
+    const { status, data } = await call(POST, userA, { expressions: { upsert: [item] } })
+    expect(status).toBe(200)
+    expect(db.tables.unfamiliar_english[0].items).toEqual([{ text: 'for the time being', type: 'other', meaning: '暂时' }])
+    expect(data.expressions).toEqual([expect.objectContaining({ key: 'for the time being', kind: null })])
+  })
+
   it('saves own scenarios as private web scenarios with the full practice plan', async () => {
     const { data } = await call(POST, userA, { scenarios: { upsert: [scenario()] } })
     const [row] = db.tables.scenarios

@@ -50,7 +50,8 @@ const scenarioSchema = z.object({
 
 const expressionSchema = z.object({
   text: text(200).min(1), meaning: text(300), source: text(200), createdAt: isoDate,
-  kind: z.enum(['word', 'phrase', 'grammar']).nullable().optional(),
+  // Live's record tool also allows `other`; it is stored as type other, like a saved sentence.
+  kind: z.enum(['word', 'phrase', 'grammar', 'other']).nullable().optional(),
 }).strict()
 
 export const syncRequestSchema = z.object({

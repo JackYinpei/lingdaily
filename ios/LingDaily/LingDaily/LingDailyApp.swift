@@ -26,6 +26,7 @@ struct LingDailyApp: App {
         _sync = StateObject(wrappedValue: SyncEngine(store: store, account: account))
         // Before launch finishes, so a reminder that opened the app is still delivered.
         ReminderCenter.shared.install()
+        TabBarStyle.apply()
     }
 
     var body: some Scene {

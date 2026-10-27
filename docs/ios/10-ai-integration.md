@@ -426,6 +426,7 @@ Nginx示例增加JP server_name，保留Upgrade/HTTP1.1/长超时/不缓冲；`/
 - **未登录时原地登录**：准备页和新场景页底部直接显示 Apple 登录，不再进入对话后才报错。
 - **总结页**：没有批注的任务显示学习者原话（标"你说的"）；只写非零事实（重说、新词）；列出本次新进词库与"这次你用上了"；增加「再练一次」（同场景、目标与难度，语音模式由该点击直接开始通话）。
 - **朗读**：优先使用已安装的高级/增强 en-US 音色（iOS 17+ 排除 novelty 音色）；「我的 → 放慢朗读」。
+- **Tab 栏透明重叠**：Tab 位于根 NavigationView 内，UIKit 识别不到页面滚动，iOS 18 上一直是透明的 scroll-edge 样式，内容与 Tab 文字重叠。启动时 `TabBarStyle.apply()` 统一为不透明 `Brand.page` 底 + `Brand.line` 细线（iOS 18/27 模拟器验证）。版本号改为 1.1（构建 3）。
 - **同步 bug**：Live 收词允许 `other` 类型，但 `/api/ios/sync` 只接受 word/phrase/grammar，出现一次 `other` 后整次同步 400 且之后每次失败。服务端现接受 `other`（按 type other 存储，读回为句子类），已送审的 1.0 部署后即恢复。
 
 新功能：

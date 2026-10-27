@@ -1,6 +1,20 @@
 import SwiftUI
 import UIKit
 
+/// The tabs sit inside the root NavigationView, so UIKit never sees a tab's scroll view reach the
+/// bottom edge and kept the transparent scroll-edge look: content scrolled under the tab labels.
+/// One opaque paper bar with a hairline, in light and dark, in every scroll position.
+enum TabBarStyle {
+    static func apply() {
+        let appearance = UITabBarAppearance()
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundColor = UIColor(Brand.page)
+        appearance.shadowColor = UIColor(Brand.line)
+        UITabBar.appearance().standardAppearance = appearance
+        UITabBar.appearance().scrollEdgeAppearance = appearance
+    }
+}
+
 extension View {
     /// iOS 15-compatible programmatic pushes. Destinations inherit the same environment and navigation stack.
     func pushDestination<Destination: View>(isPresented: Binding<Bool>, @ViewBuilder destination: () -> Destination) -> some View {

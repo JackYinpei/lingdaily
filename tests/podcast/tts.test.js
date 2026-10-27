@@ -10,6 +10,8 @@ import path from "node:path";
 import { createServerGeminiClient } from "@/app/lib/server/geminiConfig";
 import {
   estimateChunkSeconds,
+  levelSpeech,
+  speechLevelDb,
   synthesizeChunkWithRetry,
   synthesizePodcast,
   trimEdgeSilence,
@@ -30,10 +32,10 @@ function smallChunk(name = "intro") {
   };
 }
 
-function speechPcm(seconds) {
+function speechPcm(seconds, amplitude = 8000) {
   const samples = new Int16Array(Math.round(seconds * SAMPLE_RATE));
   for (let i = 0; i < samples.length; i += 1) {
-    samples[i] = Math.round(Math.sin(i / 7) * 8000);
+    samples[i] = Math.round(Math.sin(i / 7) * amplitude);
   }
   return Buffer.from(samples.buffer);
 }
@@ -122,7 +124,7 @@ describe("chunk synthesis", () => {
     }
   });
 
-  it("fails over to the stable TTS model when the preview stays overloaded", async () => {
+  it("retries transient overloads on the same model", async () => {
     vi.useFakeTimers();
     try {
       const overload = Object.assign(new Error("model is experiencing high demand"), { status: 503 });
@@ -135,24 +137,55 @@ describe("chunk synthesis", () => {
       await vi.runAllTimersAsync();
       await promise;
 
-      const models = generateContent.mock.calls.map((call) => call[0].model);
-      expect(models[0]).toBe("gemini-3.1-flash-tts-preview");
-      expect(models[2]).toBe("gemini-2.5-flash-preview-tts");
+      expect(generateContent.mock.calls.map((call) => call[0].model)).toEqual(Array(3).fill("gemini-3.1-flash-tts-preview"));
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("tries the stable model once when the preview model fails permanently", async () => {
+  it("abandons a stalled call after the time limit and retries it on the same model", async () => {
+    vi.stubEnv("PODCAST_TTS_CALL_TIMEOUT_MS", "50");
+    try {
+      const stalled = ({ config }) => new Promise((_, reject) => {
+        config.abortSignal.addEventListener("abort", () => reject(new Error("This operation was aborted")));
+      });
+      const generateContent = vi.fn()
+        .mockImplementationOnce(stalled)
+        .mockResolvedValueOnce(audioResponse(speechPcm(10)));
+
+      const pcm = await synthesizeChunkWithRetry({ models: { generateContent } }, smallChunk());
+
+      expect(generateContent).toHaveBeenCalledTimes(2);
+      expect(generateContent.mock.calls.map((call) => call[0].model)).toEqual(Array(2).fill("gemini-3.1-flash-tts-preview"));
+      expect(seconds(pcm)).toBeGreaterThan(9.5);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("treats a dropped connection as transient", async () => {
+    vi.useFakeTimers();
+    try {
+      const generateContent = vi.fn()
+        .mockRejectedValueOnce(new TypeError("terminated"))
+        .mockResolvedValueOnce(audioResponse(speechPcm(10)));
+
+      const promise = synthesizeChunkWithRetry({ models: { generateContent } }, smallChunk());
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(generateContent).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fails at once when the model is permanently unavailable", async () => {
     const gone = Object.assign(new Error("requested model was not found"), { status: 404 });
-    const generateContent = vi.fn()
-      .mockRejectedValueOnce(gone)
-      .mockResolvedValueOnce(audioResponse(speechPcm(10)));
+    const generateContent = vi.fn().mockRejectedValue(gone);
 
-    await synthesizeChunkWithRetry({ models: { generateContent } }, smallChunk());
-
-    expect(generateContent).toHaveBeenCalledTimes(2);
-    expect(generateContent.mock.calls[1][0].model).toBe("gemini-2.5-flash-preview-tts");
+    await expect(synthesizeChunkWithRetry({ models: { generateContent } }, smallChunk())).rejects.toThrow(/not found/);
+    expect(generateContent).toHaveBeenCalledTimes(1);
   });
 
   it("gives up after exhausting bad-audio retries rather than publishing a glitch", async () => {
@@ -165,12 +198,31 @@ describe("chunk synthesis", () => {
       await vi.runAllTimersAsync();
       await expectation;
 
-      expect(generateContent).toHaveBeenCalledTimes(4);
-      // The stable model gets a chance before the chunk is abandoned.
-      expect(generateContent.mock.calls.at(-1)[0].model).toBe("gemini-2.5-flash-preview-tts");
+      expect(generateContent).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("speech levelling", () => {
+  it("brings quiet and loud takes to the same speech loudness", () => {
+    const quiet = levelSpeech(speechPcm(3, 2500));
+    const loud = levelSpeech(speechPcm(3, 20000));
+    expect(Math.abs(speechLevelDb(quiet) - speechLevelDb(loud))).toBeLessThan(0.5);
+    expect(Math.abs(speechLevelDb(quiet) + 19)).toBeLessThan(0.5);
+  });
+
+  it("keeps peaks below full scale, leaves silence alone and caps the gain", () => {
+    const peaky = levelSpeech(Buffer.concat([speechPcm(2, 3000), speechPcm(0.2, 32000)]));
+    const samples = new Int16Array(peaky.buffer, peaky.byteOffset, peaky.byteLength / 2);
+    expect(Math.max(...samples.map(Math.abs))).toBeLessThanOrEqual(32767);
+    expect(levelSpeech(silencePcm(1)).equals(silencePcm(1))).toBe(true);
+    // A near-silent take (quiet speech with sparse peaks, ~-41 dBFS) is raised by at most 12 dB.
+    const whisper = speechPcm(2, 400);
+    const view = new Int16Array(whisper.buffer, whisper.byteOffset, whisper.byteLength / 2);
+    for (let i = 600; i < view.length; i += 1200) view[i] = 2500;
+    expect(speechLevelDb(levelSpeech(whisper)) - speechLevelDb(whisper)).toBeCloseTo(12, 0);
   });
 });
 
@@ -192,10 +244,62 @@ describe("podcast synthesis", () => {
       expect(generateContent).toHaveBeenCalledTimes(2);
       expect(result.duration).toBe(20);
       expect(result.size).toBeGreaterThan(1000);
+      expect(result.model).toBe("gemini-3.1-flash-tts-preview");
       const written = await readFile(outputMp3Path);
       expect(written.byteLength).toBe(result.size);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  async function synthesize(chunks, generateContent) {
+    createServerGeminiClient.mockReturnValue({ models: { generateContent } });
+    const dir = await mkdtemp(path.join(tmpdir(), "podcast-tts-"));
+    try {
+      return await synthesizePodcast({ chunks }, { outputMp3Path: path.join(dir, "episode.mp3"), workDir: path.join(dir, "work") });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("re-voices the whole episode with the stable model instead of mixing models", async () => {
+    const gone = Object.assign(new Error("requested model was not found"), { status: 404 });
+    const generateContent = vi.fn(async ({ model, contents }) => {
+      const outro = contents[0].parts[0].text.includes("outro line");
+      if (model === "gemini-3.1-flash-tts-preview" && outro) throw gone;
+      return audioResponse(speechPcm(10));
+    });
+    const outro = smallChunk("outro");
+    outro.turns[1] = { speaker: "DD", text: "This outro line wraps up the global markets story today." };
+
+    const result = await synthesize([smallChunk("intro"), outro], generateContent);
+
+    expect(result.model).toBe("gemini-2.5-flash-preview-tts");
+    const stable = generateContent.mock.calls.filter((call) => call[0].model === "gemini-2.5-flash-preview-tts");
+    expect(stable).toHaveLength(2); // Both chunks, including the intro the preview had already voiced.
+  });
+
+  it("voices chunks in parallel, at most three at a time, in script order", async () => {
+    let active = 0;
+    let peak = 0;
+    const generateContent = vi.fn(async ({ contents }) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      active -= 1;
+      const index = Number(contents[0].parts[0].text.match(/segment (\d)/)[1]);
+      return audioResponse(speechPcm(9 + index * 0.1));
+    });
+    const chunks = [0, 1, 2, 3, 4].map((index) => {
+      const chunk = smallChunk(`c${index}`);
+      chunk.turns[1] = { speaker: "DD", text: `Today we unpack segment ${index} of the global markets.` };
+      return chunk;
+    });
+
+    const result = await synthesize(chunks, generateContent);
+
+    expect(generateContent).toHaveBeenCalledTimes(5);
+    expect(peak).toBe(3);
+    expect(result.duration).toBe(46); // 9.0 + 9.1 + 9.2 + 9.3 + 9.4 s, joined in script order.
   });
 });

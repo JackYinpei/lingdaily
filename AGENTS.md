@@ -176,9 +176,13 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
    退回本地 manifest 兼容模式。
 3. 抓取 world/tech/business 新闻（每类目最多 4 次退避重试；任一类目最终为空则
    整次失败，避免模型凭空编新闻），调 Gemini 生成严格 JSON 脚本。
-4. 对 intro/world/tech/business/outro 五个 chunk 分别调 Gemini multi-speaker TTS：
-   拼接响应内全部音频 part、裁剪首尾静音，并按文稿估算时长校验（约 0.5x–1.6x
-   窗口）；校验失败或过载会退避重试，并在必要时降级到稳定 TTS 模型
+4. 对 intro/world/tech/business/outro 五个 chunk 分别调 Gemini multi-speaker TTS
+   （最多 3 段并行、长段先开始，`PODCAST_TTS_CONCURRENCY` 可调）：拼接响应内全部音频
+   part、裁剪首尾静音，并按文稿估算时长校验（约 0.5x–1.6x 窗口）；单次调用超过
+   150 秒（`PODCAST_TTS_CALL_TIMEOUT_MS`）、过载或校验失败会在同一模型上退避重试。
+   **同一期只用一个 TTS 模型**：某段在主模型上用尽重试时，整期改用稳定模型重新合成，
+   绝不逐段混用（两代模型同名音色听感不同）。拼接前每段按说话音量（有声 50 ms 帧 RMS
+   中位数）统一到 −19 dBFS 并软限幅，消除分段生成的音量跳变
    （`PODCAST_TTS_MODEL` / `PODCAST_TTS_FALLBACK_MODEL` 可覆盖）。
 5. PCM 在 Node 内用 lamejs 编码为 96 kbps MP3，不依赖 ffmpeg。
 6. MP3 上传 COS，DB 更新为 `completed`，再尽力更新本地 TXT/MP3/manifest/RSS 镜像。

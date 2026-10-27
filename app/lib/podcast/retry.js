@@ -16,7 +16,8 @@ export function backoffDelay(retryNumber) {
 }
 
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
-const RETRYABLE_STATUS_PATTERN = /\b(?:unavailable|resource_exhausted|internal|overloaded|deadline)\b|high demand|try again|econnreset|etimedout|fetch failed|socket hang up|network error/i;
+// "terminated" is undici dropping a long-running response (a TTS call stalled ~300 s on 2026-10-26).
+const RETRYABLE_STATUS_PATTERN = /\b(?:unavailable|resource_exhausted|internal|overloaded|deadline|terminated)\b|high demand|try again|econnreset|etimedout|fetch failed|socket hang up|network error/i;
 
 // Distinguish transient upstream failures (503 "high demand", 429 rate limits,
 // 5xx, network blips) from permanent ones. Only transient failures are worth

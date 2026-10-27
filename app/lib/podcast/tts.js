@@ -1,5 +1,7 @@
 // Synthesize each script chunk with Gemini multi-speaker TTS, then concat into one MP3.
 // Splitting per chunk keeps each TTS call under the "few minutes" drift threshold.
+// Separate calls are what made episodes sound uneven, so every chunk of an episode
+// uses the same model and is levelled to the same speech loudness before the join.
 
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import Mp3Encoder from "@breezystack/lamejs";
@@ -10,24 +12,35 @@ import { createServerGeminiClient } from "@/app/lib/server/geminiConfig";
 // The preview TTS model has two failure modes seen in production: 503 "high
 // demand" bursts, and HTTP 200 responses whose audio is glitched — transcript
 // read twice, one phrase stuck in a loop, or a minute of silence appended
-// (2026-07-29 episode). Transient failures retry with backoff and fail over to
-// the previous-generation TTS model this pipeline used before; glitched audio
-// is caught by the duration check below and retried the same way. Both models
-// are overridable so ops can swap them without a redeploy.
+// (2026-07-29 episode). Transient failures retry with backoff; glitched audio is
+// caught by the duration check below and retried. A model that still cannot
+// voice a chunk hands the WHOLE episode to the next model: the two models render
+// the same voice names differently, and switching per chunk made the hosts sound
+// like other people halfway through. Both models are overridable without a redeploy.
 const PRIMARY_TTS_MODEL = (process.env.PODCAST_TTS_MODEL || "gemini-3.1-flash-tts-preview").trim();
 const FALLBACK_TTS_MODEL = (process.env.PODCAST_TTS_FALLBACK_MODEL ?? "gemini-2.5-flash-preview-tts").trim();
 const TTS_MODELS = [PRIMARY_TTS_MODEL, FALLBACK_TTS_MODEL].filter(
   (model, index, all) => model && all.indexOf(model) === index,
 );
-const MAX_TRANSIENT_RETRIES = 4;
-const TRANSIENT_RETRIES_BEFORE_FALLBACK = 2;
-const MAX_BAD_AUDIO_RETRIES = 3;
-const BAD_AUDIO_RETRIES_BEFORE_FALLBACK = 2;
+// Retry budget per chunk and model.
+const MAX_TRANSIENT_RETRIES = 3;
+const MAX_BAD_AUDIO_RETRIES = 2;
+// A call still running after this is abandoned and retried as a transient failure:
+// one stalled ~300 s (until the socket timed out) on 2026-10-26 while the same
+// chunk normally takes ~60 s.
+function ttsCallTimeoutMs() {
+  return Number.parseInt(process.env.PODCAST_TTS_CALL_TIMEOUT_MS || "", 10) || 150_000;
+}
+// One ~110 s chunk takes ~60 s to synthesize (measured 2026-10-26), so five in a
+// row already filled most of the route's 300 s budget. Chunks run in parallel,
+// longest first.
+const TTS_CONCURRENCY = Math.min(Math.max(Number.parseInt(process.env.PODCAST_TTS_CONCURRENCY || "3", 10) || 3, 1), 5);
 
 const SAMPLE_RATE = 24000;
 const CHANNELS = 1;
 const SAMPLE_WIDTH = 2;
 const MP3_KBPS = 96;
+const FULL_SCALE = 32767;
 
 const VOICE_A = "Zephyr";     // Warm
 const VOICE_B = "Orus";       // Upbeat
@@ -48,6 +61,17 @@ const MAX_DURATION_RATIO = 1.6;
 const SILENCE_AMPLITUDE = 500; // ~1.5% of int16 full scale
 const EDGE_KEEP_SECONDS = 0.6; // natural pause left at each chunk boundary
 
+// Speech loudness. Separate calls came back several dB apart (the 2026-10-25 and
+// 10-26 episodes swung 7-10 dB between segments, heard as the hosts changing).
+// A chunk's level is the median RMS of its voiced 50 ms frames, so pauses and a
+// few loud words do not move it; each chunk is scaled to one target, with a soft
+// knee above LIMIT_KNEE so peaks never clip.
+const TARGET_SPEECH_DBFS = -19;
+const LEVEL_FRAME_SECONDS = 0.05;
+const VOICED_FRAME_PEAK = 2000;
+const MAX_LEVEL_GAIN_DB = 12;
+const LIMIT_KNEE = Math.round(0.8 * FULL_SCALE);
+
 const DIRECTOR_PREAMBLE = `You are synthesizing a daily bilingual English/Mandarin news podcast.
 
 AUDIO PROFILE
@@ -57,6 +81,7 @@ AUDIO PROFILE
 DIRECTOR'S NOTES
 - Style: friendly, enthusiastic, conversational — the "vocal smile" is audible. They react to each other, not read from a script.
 - Pacing: natural spoken pace; slight speed-ups on excitement words, gentle pauses at story transitions.
+- Consistency: this transcript is one segment of a longer episode recorded in separate passes. Keep each host's voice, pitch, pace and volume exactly the same as in every other segment, from the first line to the last.
 - Language: the transcript is organized into two-turn bilingual pairs. The first turn is Mandarin and the second is its natural English counterpart, spoken by the other host.
 - Keep each turn in its written language. Do not merge the pair into one mixed-language turn; English names or learning terms inside Mandarin are the only normal exception.
 - Preserve the speaker labels exactly. Language ownership swaps between pairs, so the same host may intentionally have two adjacent turns at a pair boundary.
@@ -154,22 +179,68 @@ export function validateChunkAudio(chunk, pcm) {
   return trimmed;
 }
 
-export async function synthesizeChunkWithRetry(ai, chunk) {
-  let modelIndex = 0;
+/** Median RMS of the voiced 50 ms frames, in dBFS; null when the audio has no speech. */
+export function speechLevelDb(pcm) {
+  const samples = new Int16Array(pcm.buffer, pcm.byteOffset, pcm.byteLength / SAMPLE_WIDTH);
+  const frame = Math.round(LEVEL_FRAME_SECONDS * SAMPLE_RATE);
+  const levels = [];
+  for (let start = 0; start + frame <= samples.length; start += frame) {
+    let peak = 0;
+    let energy = 0;
+    for (let i = start; i < start + frame; i += 1) {
+      const value = samples[i];
+      peak = Math.max(peak, Math.abs(value));
+      energy += value * value;
+    }
+    if (peak >= VOICED_FRAME_PEAK) levels.push(Math.sqrt(energy / frame));
+  }
+  if (levels.length === 0) return null;
+  levels.sort((a, b) => a - b);
+  return 20 * Math.log10(levels[Math.floor(levels.length / 2)] / FULL_SCALE);
+}
+
+/** Scales a chunk to the episode's speech loudness; peaks above the knee are softly limited. */
+export function levelSpeech(pcm, targetDb = TARGET_SPEECH_DBFS) {
+  const level = speechLevelDb(pcm);
+  if (level === null) return pcm;
+  const gainDb = Math.min(Math.max(targetDb - level, -MAX_LEVEL_GAIN_DB), MAX_LEVEL_GAIN_DB);
+  const gain = 10 ** (gainDb / 20);
+  const input = new Int16Array(pcm.buffer, pcm.byteOffset, pcm.byteLength / SAMPLE_WIDTH);
+  const output = new Int16Array(input.length);
+  const headroom = FULL_SCALE - LIMIT_KNEE;
+  for (let i = 0; i < input.length; i += 1) {
+    const scaled = input[i] * gain;
+    const magnitude = Math.abs(scaled);
+    const limited = magnitude <= LIMIT_KNEE
+      ? magnitude
+      : LIMIT_KNEE + headroom * Math.tanh((magnitude - LIMIT_KNEE) / headroom);
+    output[i] = Math.round(Math.sign(scaled) * limited);
+  }
+  return Buffer.from(output.buffer);
+}
+
+class TtsModelError extends Error {}
+
+// Voices one chunk with one model. Throws once that model has used its retries
+// (or failed permanently); the episode then moves to the next model.
+export async function synthesizeChunkWithRetry(ai, chunk, model = TTS_MODELS[0], { signal } = {}) {
   let transientRetries = 0;
   let badAudioRetries = 0;
 
   while (true) {
-    const model = TTS_MODELS[modelIndex];
+    if (signal?.aborted) throw new TtsModelError(`TTS chunk "${chunk.name}" was cancelled`);
 
-    // Phase 1: the API call. Failures here are classified like the script
-    // phase: transient overloads retry with backoff and eventually fail over.
+    // Phase 1: the API call. Transient overloads and stalls retry with backoff.
+    const timeoutMs = ttsCallTimeoutMs();
+    const attempt = AbortSignal.timeout(timeoutMs);
+    const started = Date.now();
     let response;
     try {
       response = await ai.models.generateContent({
         model,
         contents: [{ parts: [{ text: renderChunkPrompt(chunk) }] }],
         config: {
+          abortSignal: signal ? AbortSignal.any([signal, attempt]) : attempt,
           responseModalities: ["AUDIO"],
           speechConfig: {
             multiSpeakerVoiceConfig: {
@@ -182,31 +253,22 @@ export async function synthesizeChunkWithRetry(ai, chunk) {
         },
       });
     } catch (apiError) {
-      const message = apiError instanceof Error ? apiError.message : String(apiError);
-
-      if (!isRetryableApiError(apiError)) {
-        // A permanent error on the preview model (deprecated or renamed, as
-        // preview models routinely are) would fail every day until someone
-        // noticed, so give the stable model one shot before surfacing it.
-        if (modelIndex < TTS_MODELS.length - 1) {
-          console.warn(
-            `[podcast/tts] Chunk "${chunk.name}": ${model} failed permanently (${message}); trying ${TTS_MODELS[modelIndex + 1]}.`,
-          );
-          modelIndex += 1;
-          continue;
-        }
-        throw new Error(`TTS chunk "${chunk.name}" failed: ${message}`);
+      if (signal?.aborted) throw new TtsModelError(`TTS chunk "${chunk.name}" was cancelled`);
+      const timedOut = attempt.aborted;
+      const message = timedOut
+        ? `no audio after ${Math.round(timeoutMs / 1000)}s`
+        : apiError instanceof Error ? apiError.message : String(apiError);
+      // A permanent error (a preview model deprecated or renamed, as preview
+      // models routinely are) would fail every day until someone noticed.
+      if (!timedOut && !isRetryableApiError(apiError)) {
+        throw new TtsModelError(`TTS chunk "${chunk.name}" failed: ${message}`);
       }
-
       if (transientRetries >= MAX_TRANSIENT_RETRIES) {
-        throw new Error(
+        throw new TtsModelError(
           `TTS chunk "${chunk.name}" failed after ${transientRetries} transient retries: ${message}`,
         );
       }
       transientRetries += 1;
-      if (modelIndex < TTS_MODELS.length - 1 && transientRetries >= TRANSIENT_RETRIES_BEFORE_FALLBACK) {
-        modelIndex += 1;
-      }
       console.warn(
         `[podcast/tts] Transient error from ${model} on chunk "${chunk.name}" (retry ${transientRetries}/${MAX_TRANSIENT_RETRIES}): ${message}`,
       );
@@ -215,19 +277,17 @@ export async function synthesizeChunkWithRetry(ai, chunk) {
     }
 
     // Phase 2: the call succeeded, so judge the audio itself. Unusable audio
-    // (missing, repeated/looping, truncated) earns a fresh synthesis attempt,
-    // switching to the stable model once the preview misbehaves twice.
+    // (missing, repeated/looping, truncated) earns a fresh synthesis attempt.
     try {
-      return validateChunkAudio(chunk, extractChunkPcm(response));
+      const pcm = validateChunkAudio(chunk, extractChunkPcm(response));
+      console.log(`[podcast/tts] ${model} voiced chunk "${chunk.name}" in ${Math.round((Date.now() - started) / 1000)}s`);
+      return pcm;
     } catch (audioError) {
       const message = audioError instanceof Error ? audioError.message : String(audioError);
       if (badAudioRetries >= MAX_BAD_AUDIO_RETRIES) {
-        throw new Error(`TTS chunk "${chunk.name}" kept returning unusable audio: ${message}`);
+        throw new TtsModelError(`TTS chunk "${chunk.name}" kept returning unusable audio: ${message}`);
       }
       badAudioRetries += 1;
-      if (modelIndex < TTS_MODELS.length - 1 && badAudioRetries >= BAD_AUDIO_RETRIES_BEFORE_FALLBACK) {
-        modelIndex += 1;
-      }
       console.warn(
         `[podcast/tts] Unusable audio from ${model} on chunk "${chunk.name}" (retry ${badAudioRetries}/${MAX_BAD_AUDIO_RETRIES}): ${message}`,
       );
@@ -236,29 +296,67 @@ export async function synthesizeChunkWithRetry(ai, chunk) {
   }
 }
 
+// Every chunk with one model, a few at a time and longest first; results keep
+// script order. The first failure cancels the rest so the next model starts sooner.
+async function synthesizeEpisodeChunks(ai, chunks, model) {
+  const controller = new AbortController();
+  const results = new Array(chunks.length);
+  const order = chunks.map((_, index) => index)
+    .sort((a, b) => estimateChunkSeconds(chunks[b]) - estimateChunkSeconds(chunks[a]));
+  let next = 0;
+  let failure = null;
+  async function worker() {
+    while (next < order.length && !failure) {
+      const index = order[next];
+      next += 1;
+      try {
+        results[index] = await synthesizeChunkWithRetry(ai, chunks[index], model, { signal: controller.signal });
+      } catch (error) {
+        failure ||= error;
+        controller.abort();
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(TTS_CONCURRENCY, order.length) }, worker));
+  if (failure) throw failure;
+  return results;
+}
+
 function estimateMp3Duration(pcmBuffers) {
   const totalSamples = pcmBuffers.reduce((acc, b) => acc + b.byteLength / SAMPLE_WIDTH, 0);
   return Math.round(totalSamples / SAMPLE_RATE);
 }
 
-// Synthesize every chunk, concat to single MP3, return { size, duration }.
+// Synthesize every chunk with one model, level them, concat to a single MP3,
+// return { size, duration, model }.
 export async function synthesizePodcast(script, { outputMp3Path, workDir }) {
   const ai = createServerGeminiClient();
   if (!ai) throw new Error("Gemini API key is not configured");
 
   await mkdir(workDir, { recursive: true });
 
-  const pcmBuffers = [];
-  for (const chunk of script.chunks) {
-    const pcm = await synthesizeChunkWithRetry(ai, chunk);
-    pcmBuffers.push(pcm);
+  let pcmBuffers = null;
+  let usedModel = null;
+  for (const [index, model] of TTS_MODELS.entries()) {
+    try {
+      pcmBuffers = await synthesizeEpisodeChunks(ai, script.chunks, model);
+      usedModel = model;
+      break;
+    } catch (error) {
+      if (index === TTS_MODELS.length - 1) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[podcast/tts] ${model} could not voice every chunk (${message}); re-voicing the whole episode with ${TTS_MODELS[index + 1]} so the hosts sound the same throughout.`,
+      );
+    }
   }
 
-  const duration = estimateMp3Duration(pcmBuffers);
-  const mp3Buffer = pcmBuffersToMp3(pcmBuffers);
+  const levelled = pcmBuffers.map((pcm) => levelSpeech(pcm));
+  const duration = estimateMp3Duration(levelled);
+  const mp3Buffer = pcmBuffersToMp3(levelled);
   await writeFile(outputMp3Path, mp3Buffer);
 
   await rm(workDir, { recursive: true, force: true });
 
-  return { size: mp3Buffer.length, duration, mp3Buffer };
+  return { size: mp3Buffer.length, duration, mp3Buffer, model: usedModel };
 }

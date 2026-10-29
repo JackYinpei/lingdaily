@@ -1,5 +1,23 @@
 # LingDaily App Store 发布记录
 
+## 1.5（构建 3）：2026-10-29
+
+**2026-10-29 22:18（Asia/Shanghai）正式送审，Apple 显示「已提交 1 个项目」和「等待审核」，审核通过后自动发布。**
+
+- [本次审核详情](https://appstoreconnect.apple.com/apps/6824758752/distribution/reviewsubmissions/details/43d37525-7a3f-4844-a69d-2b726744c6fb)；提交 ID：`43d37525-7a3f-4844-a69d-2b726744c6fb`。
+- TestFlight 构建 ID：`f71942ac-6ad5-415d-a1e6-be481e460ae2`；送审项目核实为 `1.5 (3)`。
+- 之前的 iOS 改进（`e11c40c`、`c9070b3`）已在 GitHub main，但 LingDaily 当时未配置 Xcode Cloud，Apple 后台只有 1.0 的构建 1、2。工程原为 1.1（3），与用户创建的商店 1.5 不匹配。本次将工程对齐为 1.5（3），代码 `7afd381` 已推送。
+- 本次使用本机 Release 真机归档，22:07 上传成功；新构建处理完成后关联商店版本，保存中文更新说明及包含播客后台播放、可选本地提醒的审核说明，再正式提交。
+- 验证：Swift 96 项（93 通过、3 个联网测试跳过）；JS 228 通过、1 跳过；ESLint 零 warning；隔离迁移测试、生产构建和签名归档上传通过。完整 check 首次因 Docker 未启动停在迁移步骤，启动后分别完成迁移与生产构建。未调用真实模型。
+- 发布包核实为 `com.qcy.LingDaily` / `1.5` / `3`，最低 iOS 15，包含隐私清单，`ITSAppUsesNonExemptEncryption=false`，不包含 `AIConnection.json`；后台音频模式用于播客。
+- 1.0 已可分发；销售范围显示 174 个地区可供应，中国大陆为「缺少 ICP 备案号」。用户提供的是已有主体备案号；腾讯云仅列出网站服务，APP 列表暂无数据，没有将网站/主体号填作 LingDaily 的 App 备案号。[Apple 备案信息要求](https://developer.apple.com/help/app-store-connect/reference/app-information/app-information)。
+- 用户亲自接受了更新后的 Apple Developer Program 许可协议，并登录 Xcode 开发者账号；此前协议更新阻挡 Xcode Cloud，Xcode 未登录阻挡本机上传。
+- 经用户要求配置了 [LingDaily Xcode Cloud](https://appstoreconnect.apple.com/teams/c4b10a53-eda5-4e5b-b385-e2b18b0e121c/xcode-cloud/products/6f77c7a0-8a53-4090-a296-d4ae0c15f700/groups)。工作流 `main App Store` 启用 main 分支变更触发和手动触发，使用共享 `LingDaily` scheme，包含 iOS Build 和 Archive，Archive 的 Distribution Preparation 为 **App Store Connect**。初次仅 Build 的 Cloud 构建 1 成功；后续构建号从 4 开始，避开已上传的本机构建 3。Cloud 自动构建/上传不等于自动送审，商店新版本仍需选择构建并提交审核。
+
+以下保留 1.0 的历史送审回执。
+
+## 1.0（构建 2）：2026-10-20
+
 更新：2026-10-20 12:56（Asia/Shanghai）。使用 Chrome 的 `yoasobi996@gmail.com` 配置文件。
 
 **版本 1.0（构建 2）已正式送审，当前「等待审核」，通过后自动发布。** Apple 回执为「已提交 1 个项目」。

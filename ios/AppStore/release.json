@@ -3,26 +3,36 @@
   "appleID": "6824758752",
   "bundleID": "com.qcy.LingDaily",
   "teamID": "8AJ84729BZ",
-  "version": "1.0",
-  "build": "2",
+  "version": "1.5",
+  "build": "3",
   "minimumIOS": "15.0",
-  "platforms": ["iPhone", "iPad"],
+  "platforms": [
+    "iPhone",
+    "iPad"
+  ],
   "appStoreConnect": "https://appstoreconnect.apple.com/apps/6824758752/distribution",
   "submissionStatus": "Waiting for Review",
-  "submissionID": "8ab13458-5fcf-4dfa-b3d8-acec5973a3cd",
-  "submissionURL": "https://appstoreconnect.apple.com/apps/6824758752/distribution/reviewsubmissions/details/8ab13458-5fcf-4dfa-b3d8-acec5973a3cd",
-  "submittedAt": "2026-10-20T12:56:00+08:00",
+  "submissionID": "43d37525-7a3f-4844-a69d-2b726744c6fb",
+  "submissionURL": "https://appstoreconnect.apple.com/apps/6824758752/distribution/reviewsubmissions/details/43d37525-7a3f-4844-a69d-2b726744c6fb",
+  "submittedAt": "2026-10-29T22:18:00+08:00",
   "receipt": "已提交 1 个项目",
-  "testFlightBuildID": "f782928b-3809-4a4d-aa1c-a001ec251d54",
-  "sourceCommit": "707f6c0",
+  "testFlightBuildID": "f71942ac-6ad5-415d-a1e6-be481e460ae2",
+  "sourceCommit": "7afd381",
   "category": "Education",
   "ageRating": "18+ (regional variations; legacy OS 17+)",
   "price": "Free",
-  "availability": "175 countries and regions on release",
+  "availability": "174 countries and regions available; China mainland blocked by missing App ICP filing",
   "releaseMode": "Automatic after approval",
   "privacyPolicy": "https://lingdaily.yasobi.xyz/privacy",
   "support": "https://lingdaily.yasobi.xyz/support",
-  "privacyDataTypes": ["Name", "EmailAddress", "UserID", "OtherUserContent", "AudioData", "ProductInteraction"],
+  "privacyDataTypes": [
+    "Name",
+    "EmailAddress",
+    "UserID",
+    "OtherUserContent",
+    "AudioData",
+    "ProductInteraction"
+  ],
   "privacyPurpose": "AppFunctionality",
   "linkedToIdentity": true,
   "tracking": false,
@@ -32,20 +42,36 @@
   "screenshots": "screenshots/manifest.json",
   "uploadedScreenshotCount": 4,
   "checks": {
-    "swiftPassed": 83,
+    "swiftPassed": 93,
     "swiftNetworkSkipped": 3,
-    "iosAPI": 62,
-    "fullJSTests": 115,
-    "fullNpmCheck": "Passed, including isolated migration tests and production build",
-    "releaseSimulatorBuild": "Passed",
+    "fullJSTests": 228,
+    "jsSkipped": 1,
+    "eslint": "Passed with zero warnings",
+    "isolatedMigrations": "Passed after starting Docker Desktop",
+    "productionBuild": "Passed",
     "deviceArchiveAndDistributionUpload": "Passed",
-    "productionPrivacyAndSupport": "HTTP 200 and expected content verified",
+    "releaseBundle": "1.5 (3), iOS 15+, privacy manifest present, no AIConnection.json, non-exempt encryption false",
     "appStoreSubmissionValidation": "Passed"
   },
   "notes": [
-    "Waiting for Review is not approval or public availability.",
+    "Version 1.5 (3) is Waiting for Review; approval and public release are pending.",
     "No real-model tests were run during submission preparation.",
-    "Mac and Apple Vision Pro compatibility distribution are disabled.",
-    "Production code deployment 39363579251 succeeded before submission."
-  ]
+    "Mac and Apple Vision Pro compatibility distribution remain disabled.",
+    "Previous iOS code changes were already on origin/main; the App Store version was aligned from 1.1 to 1.5 before archiving.",
+    "Xcode Cloud was not configured for LingDaily before this release; this submission was archived and uploaded from the local Mac.",
+    "China mainland availability requires a valid App ICP filing that matches LingDaily. The existing website subject filing is not an App filing."
+  ],
+  "xcodeCloud": {
+    "productID": "6f77c7a0-8a53-4090-a296-d4ae0c15f700",
+    "workflow": "main App Store",
+    "branch": "main",
+    "actions": [
+      "Build - iOS",
+      "Archive - iOS"
+    ],
+    "distributionPreparation": "App Store Connect",
+    "firstBuild": "1 succeeded (build-only configuration)",
+    "subsequentBuildNumbersStartAt": 4,
+    "url": "https://appstoreconnect.apple.com/teams/c4b10a53-eda5-4e5b-b385-e2b18b0e121c/xcode-cloud/products/6f77c7a0-8a53-4090-a296-d4ae0c15f700/groups"
+  }
 }

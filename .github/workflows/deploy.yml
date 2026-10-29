@@ -80,6 +80,7 @@ jobs:
 
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     needs: build-and-push
     permissions:
       contents: read
@@ -92,8 +93,10 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          command_timeout: 30m
           script: |
+            set -eu
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose -f ~/lingdaily/docker-compose.yml pull
             docker compose -f ~/lingdaily/docker-compose.yml up -d
-            docker image prune -f
+            # Keep previous images available for rollback; no global pruning here.

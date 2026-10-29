@@ -8,6 +8,8 @@ services:
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       PODCAST_TIMEZONE: ${PODCAST_TIMEZONE:-Asia/Shanghai}
+      PODCAST_CACHE_DIR: /app/podcast-cache
     volumes:
       - ./podcasts:/app/public/podcasts
+      - ./podcast-cache:/app/podcast-cache
     restart: unless-stopped

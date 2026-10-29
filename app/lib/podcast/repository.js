@@ -80,22 +80,51 @@ export async function claimPodcastGeneration(date, force = false) {
   return { claimed: false, episode: await getPodcastEpisode(date, { includeIncomplete: true }) }
 }
 
-export async function updatePodcastEpisode(date, generationId, fields) {
+async function patchPodcastEpisode(date, generationId, fields, activeOnly = false) {
   requireConfig()
   if (!generationId) throw new Error('Podcast generation lease is required for updates')
-  const response = await fetch(
-    `${supabaseUrl}/rest/v1/podcasts?date_folder=eq.${encodeURIComponent(date)}&category=eq.daily&generation_id=eq.${encodeURIComponent(generationId)}`,
-    {
-      method: 'PATCH',
-      headers: headers('return=representation'),
-      body: JSON.stringify(fields),
-      cache: 'no-store',
-    },
-  )
-  const data = await parseResponse(response, [])
-  const row = Array.isArray(data) ? data[0] : data
-  if (!row) throw new PodcastLeaseLostError(date)
-  return toPodcastEpisode(row)
+  const configuredTimeout = Number(process.env.PODCAST_LEASE_TIMEOUT_MS)
+  const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+    ? Math.min(15_000, configuredTimeout) : 15_000
+  const controller = new AbortController()
+  let timer
+  // Bound response-body reads too, even if a fetch implementation ignores abort.
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error('Podcast lease request timed out'))
+      controller.abort()
+    }, timeoutMs)
+  })
+  try {
+    const request = fetch(
+      `${supabaseUrl}/rest/v1/podcasts?date_folder=eq.${encodeURIComponent(date)}&category=eq.daily&generation_id=eq.${encodeURIComponent(generationId)}${activeOnly ? '&status=in.(in_progress,script_generated)' : ''}`,
+      {
+        method: 'PATCH',
+        headers: headers('return=representation'),
+        body: JSON.stringify(fields),
+        cache: 'no-store',
+        signal: controller.signal,
+      },
+    ).then((response) => parseResponse(response, []))
+    const data = await Promise.race([request, timeout])
+    const row = Array.isArray(data) ? data[0] : data
+    if (!row) throw new PodcastLeaseLostError(date)
+    return toPodcastEpisode(row)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export async function updatePodcastEpisode(date, generationId, fields) {
+  // An acknowledged timeout does not prove the previous completed PATCH rolled
+  // back. Never let failure cleanup erase a terminal success with the same lease.
+  return patchPodcastEpisode(date, generationId, fields, fields.status === 'failed')
+}
+
+export async function renewPodcastGeneration(date, generationId) {
+  // The BEFORE UPDATE trigger supplies database now(); do not touch status or
+  // content, and never renew completed/failed rows, even with the same token.
+  return patchPodcastEpisode(date, generationId, { updated_at: new Date().toISOString() }, true)
 }
 
 export async function getPodcastEpisode(date, { includeIncomplete = false } = {}) {

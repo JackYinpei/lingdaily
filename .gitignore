@@ -50,3 +50,9 @@ reference/
 experience/
 .claude/
 .ios-dev/
+
+# private generation checkpoints and Python bytecode
+/.podcast-cache/
+/podcast-cache/
+__pycache__/
+*.pyc

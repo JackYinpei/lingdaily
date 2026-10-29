@@ -7,3 +7,7 @@ node_modules
 .env.*
 !.env.example
 README.md
+.podcast-cache
+podcast-cache
+**/__pycache__
+*.pyc

@@ -3,6 +3,13 @@ import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises
 import { fetchPodcastNews } from '@/app/lib/podcast/news'
 import { generatePodcastScript } from '@/app/lib/podcast/script'
 import { synthesizePodcast } from '@/app/lib/podcast/tts'
+import {
+  loadPodcastScriptCheckpoint,
+  openPodcastCheckpoint,
+  podcastTtsCacheDirectory,
+  savePodcastScriptCheckpoint,
+  savePodcastTtsCheckpoint,
+} from '@/app/lib/podcast/checkpoint'
 import { uploadPodcastToCos } from '@/app/lib/podcast/storage'
 import {
   buildEpisodeEnclosureUrl,
@@ -13,13 +20,14 @@ import {
 } from '@/app/lib/podcast/feed'
 import {
   claimPodcastGeneration,
+  renewPodcastGeneration,
   updatePodcastEpisode,
 } from '@/app/lib/podcast/repository'
 import { renderPodcastShownotesText } from '@/app/lib/podcast/shownotes'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 300
+export const maxDuration = 7200
 
 const PODCAST_DIR = path.join(process.cwd(), 'public', 'podcasts')
 const MANIFEST_PATH = path.join(PODCAST_DIR, 'manifest.json')
@@ -159,7 +167,7 @@ export async function POST(req) {
   const tempTxtPath = path.join(PODCAST_DIR, `.${id}-${suffix}.txt`)
   const tempManifestPath = path.join(PODCAST_DIR, `.manifest-${suffix}.json`)
   const tempFeedPath = path.join(PODCAST_DIR, `.feed-${suffix}.xml`)
-  const workDir = path.join(PODCAST_DIR, `.work-${id}-${suffix}`)
+
   let databaseTracking = false
   let databaseCompleted = false
   let generationId = null
@@ -232,8 +240,14 @@ export async function POST(req) {
       })
     }
 
-    const news = await fetchPodcastNews()
-    const script = await generatePodcastScript(news)
+    const checkpoint = await openPodcastCheckpoint(id)
+    let savedScript = force ? null : await loadPodcastScriptCheckpoint(checkpoint)
+    if (!savedScript) {
+      const news = await fetchPodcastNews()
+      savedScript = await savePodcastScriptCheckpoint(checkpoint, await generatePodcastScript(news))
+    }
+    const { script, scriptFingerprint } = savedScript
+    const workDir = await podcastTtsCacheDirectory(checkpoint, scriptFingerprint)
     const scriptText = renderScriptTxt(id, script)
 
     await updateTrackedEpisode({
@@ -247,10 +261,55 @@ export async function POST(req) {
 
     await writeFile(tempTxtPath, scriptText, 'utf8')
 
-    const { size, duration, mp3Buffer } = await synthesizePodcast(script, {
-      outputMp3Path: tempMp3Path,
-      workDir,
-    })
+    const configuredDeadline = Number(process.env.PODCAST_TTS_DEADLINE_MS)
+    const deadlineMs = Number.isFinite(configuredDeadline) && configuredDeadline > 0
+      ? Math.min(7_200_000, Math.max(1, configuredDeadline)) : 7_200_000
+    const ttsController = new AbortController()
+    const deadlineTimer = setTimeout(() => ttsController.abort(), deadlineMs)
+    const configuredHeartbeat = Number(process.env.PODCAST_LEASE_HEARTBEAT_MS)
+    const heartbeatMs = Number.isFinite(configuredHeartbeat) && configuredHeartbeat > 0
+      ? Math.min(300_000, Math.max(1, configuredHeartbeat)) : 300_000
+    let heartbeatTimer
+    let heartbeatStopped = false
+    let heartbeatPending = Promise.resolve()
+    let leaseError = null
+    // Recursive timeouts ensure at most one bounded renewal is in flight.
+    const scheduleHeartbeat = () => {
+      heartbeatTimer = setTimeout(() => {
+        heartbeatPending = (async () => {
+          try {
+            await renewPodcastGeneration(id, generationId)
+          } catch (error) {
+            leaseError = error
+            ttsController.abort(error)
+          } finally {
+            if (!heartbeatStopped && !ttsController.signal.aborted) scheduleHeartbeat()
+          }
+        })()
+      }, heartbeatMs)
+    }
+    if (databaseTracking) scheduleHeartbeat()
+    let synthesis
+    try {
+      synthesis = await synthesizePodcast(script, {
+        outputMp3Path: tempMp3Path,
+        workDir,
+        signal: ttsController.signal,
+      })
+    } finally {
+      heartbeatStopped = true
+      clearTimeout(heartbeatTimer)
+      // Drain before uploading/completing or recording failure: no background
+      // heartbeat may race a terminal database update or the next request.
+      await heartbeatPending
+      clearTimeout(deadlineTimer)
+    }
+    if (leaseError) throw leaseError
+    if (ttsController.signal.aborted) throw new Error('Podcast TTS generation aborted')
+    const { size, duration, mp3Buffer, model } = synthesis
+    // Keep the actual provider/model provenance out of the public transcript and
+    // database schema. Save it before upload so failed publication is traceable.
+    await savePodcastTtsCheckpoint(checkpoint, scriptFingerprint, synthesis)
     const audioBody = mp3Buffer || await readFile(tempMp3Path)
     const storageFilename = databaseTracking
       ? `${id}-${generationId}.mp3`
@@ -299,6 +358,9 @@ export async function POST(req) {
       ok: true,
       compatibilityMode: !databaseTracking,
       episode: cronSafeEpisode(episode),
+      // Model identifiers are operational data; never return provider prose or
+      // metadata in the legacy cron response (which greps for literal "error").
+      ...(typeof model === 'string' && /^[a-zA-Z0-9._/-]{1,120}$/.test(model) && !/error/i.test(model) ? { model } : {}),
     })
   } catch (error) {
     console.error('[podcast/generate] Error:', error)
@@ -320,7 +382,6 @@ export async function POST(req) {
       rm(tempTxtPath, { force: true }),
       rm(tempManifestPath, { force: true }),
       rm(tempFeedPath, { force: true }),
-      rm(workDir, { recursive: true, force: true }),
     ])
   }
 }

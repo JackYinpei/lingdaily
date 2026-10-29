@@ -38,6 +38,9 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      - name: Podcast scheduler tests
+        run: python3 -m unittest discover -s tests/ops -v
+
       - name: Migration smoke tests
         run: npm run test:migrations
 

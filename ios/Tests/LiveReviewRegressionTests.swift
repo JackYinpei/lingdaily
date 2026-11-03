@@ -53,6 +53,22 @@ final class LiveReviewRegressionTests: XCTestCase {
         XCTAssertEqual(outgoing.take()?.message, "ack")
         outgoing.clearAudio(); XCTAssertTrue(outgoing.isEmpty)
     }
+    func testWaitingFramesShareMessagesAndTheBacklogStaysOneSecond() throws {
+        let frames = (0..<12).map { Data(repeating: UInt8($0), count: 640) }
+        let messages = LiveUploadBatch.messages(frames)
+        XCTAssertEqual(messages.map(\.frames), [5, 5, 2])
+        XCTAssertEqual(messages.reduce(Data()) { $0 + $1.pcm }, frames.reduce(Data(), +))
+        for message in messages { XCTAssertNoThrow(try LiveCodec.audio(message.pcm)) }
+        XCTAssertEqual(LiveUploadBatch.messages([frames[0]]).map(\.frames), [1])
+
+        var outgoing = LiveOutgoingBuffer(capacity: 50)
+        try outgoing.append("ack", priority: true)
+        for i in 0..<30 { try outgoing.append("pcm\(i)", audio: true, frames: 5) }
+        // 49 frames of room next to the ack: nine 5-frame messages fit, the older ones were dropped.
+        XCTAssertEqual(outgoing.count, 10); XCTAssertEqual(outgoing.droppedAudioFrames, 105)
+        XCTAssertEqual(outgoing.take()?.message, "ack")
+        XCTAssertEqual(outgoing.take()?.message, "pcm21")
+    }
     func test4800NativeFramesAreSplitAndConvertedWithoutLoss() throws {
         let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1))
         let converter = try LivePCMConverter(format: format)

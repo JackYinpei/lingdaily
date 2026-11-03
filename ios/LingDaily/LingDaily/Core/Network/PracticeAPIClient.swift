@@ -111,9 +111,28 @@ private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate, @unche
 final class PracticeAPIClient: PracticeServing {
     /// Debug-only local pairing from `npm run ios:dev`; nil means the production service.
     let configuration: AIConnectionConfiguration?
-    private let session: URLSession
     private let accountSession: () -> AccountSession?
     private let aiConsent: () -> Bool
+
+    /// Shared by every client so requests reuse warm connections (and TLS sessions)
+    /// to the Tokyo server instead of paying a new handshake from China each time.
+    private static let session = makeSession(resourceTimeout: 40)
+    /// Sync uploads the local archive and downloads the cloud copy; both can be large
+    /// on a slow uplink, so only the overall limit is longer.
+    private static let syncSession = makeSession(resourceTimeout: 120)
+
+    private static func makeSession(resourceTimeout: TimeInterval) -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 35
+        config.timeoutIntervalForResource = resourceTimeout
+        config.httpCookieAcceptPolicy = .never
+        config.httpShouldSetCookies = false
+        config.waitsForConnectivity = true
+        // Freshness is decided by the stores, as before, not by a shared response cache.
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: config, delegate: NoRedirectDelegate(), delegateQueue: nil)
+    }
 
     init(configuration: AIConnectionConfiguration? = .bundled(),
          accountSession: @escaping () -> AccountSession? = { AccountKeychain.load() },
@@ -121,16 +140,7 @@ final class PracticeAPIClient: PracticeServing {
         self.configuration = configuration
         self.accountSession = accountSession
         self.aiConsent = aiConsent
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 35
-        config.timeoutIntervalForResource = 40
-        config.httpCookieAcceptPolicy = .never
-        config.httpShouldSetCookies = false
-        config.waitsForConnectivity = true
-        session = URLSession(configuration: config, delegate: NoRedirectDelegate(), delegateQueue: nil)
     }
-
-    deinit { session.invalidateAndCancel() }
 
     /// True when this build talks to a local development server and needs no account.
     var usesLocalDevelopment: Bool { configuration != nil }
@@ -145,7 +155,8 @@ final class PracticeAPIClient: PracticeServing {
         guard configuration == nil else { throw PracticeNetworkError.notConfigured }
         guard let account = accountSession(), account.isUsable() else { throw PracticeNetworkError.signedOut }
         return try await send("api/ios/sync", changes, baseURL: LingDailyService.baseURL, bearer: account.token,
-                              encoder: CloudSyncCoding.encoder, decoder: CloudSyncCoding.decoder, maxBytes: 64 * 1024 * 1024)
+                              encoder: CloudSyncCoding.encoder, decoder: CloudSyncCoding.decoder, maxBytes: 64 * 1024 * 1024,
+                              session: Self.syncSession)
     }
 
     /// Permanently deletes the account and its cloud data (web data included).
@@ -265,7 +276,8 @@ final class PracticeAPIClient: PracticeServing {
 
     private func send<Body: Encodable, Result: Decodable>(_ path: String, _ body: Body, baseURL: URL, bearer: String?,
                                                           encoder: JSONEncoder = JSONEncoder(), decoder: JSONDecoder = JSONDecoder(),
-                                                          maxBytes: Int = 24 * 1024, method: String = "POST") async throws -> Result {
+                                                          maxBytes: Int = 24 * 1024, method: String = "POST",
+                                                          session: URLSession = PracticeAPIClient.session) async throws -> Result {
         // Account, sync, usage and model-list requests do not send content to Gemini.
         let aiPaths: Set<String> = ["api/ios/practice", "api/ios/scenario", "api/ios/scenario-ideas",
                                     "api/ios/translate", "api/ios/suggest", "api/ios/live-token"]

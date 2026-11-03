@@ -17,6 +17,8 @@ struct LingDailyApp: App {
     @StateObject private var reminders = ReminderCenter.shared
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("appearance") private var appearance = "system"
+    /// Control Center or a system alert only makes the app inactive; that is not a return to the app.
+    @State private var returnedFromBackground = true
 
     init() {
         let store = PracticeStore()
@@ -41,12 +43,15 @@ struct LingDailyApp: App {
                 .preferredColorScheme(appearance == "system" ? nil : (appearance == "dark" ? .dark : .light))
         }
         .onChange(of: scenePhase) { phase in
+            if phase == .background { returnedFromBackground = true }
             guard phase == .active else { return }
+            reminders.rescheduleDaily(practicedToday: PracticeStats.spokeToday(store.archive.sessions))
+            guard returnedFromBackground else { return }
+            returnedFromBackground = false
             // Pick up changes made on the web or another device when returning to the app.
             Task { await sync.syncNow() }
             Task { await catalog.refresh() }
             if account.canPractice { Task { await today.refresh() } }
-            reminders.rescheduleDaily(practicedToday: PracticeStats.spokeToday(store.archive.sessions))
         }
     }
 }

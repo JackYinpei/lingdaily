@@ -112,8 +112,10 @@ struct PracticeHomeView: View {
             if let episode = today.episode { TodayVocabularyView(episode: episode) }
         }
         .task {
-            await catalog.refresh()
+            // Independent requests: the Today card does not wait for the catalog.
+            async let catalogRefresh: Void = catalog.refresh()
             if account.canPractice { await today.refresh() }
+            await catalogRefresh
             #if DEBUG
             if !DebugLaunch.route.isEmpty {
                 // Programmatic pushes during the first layout are dropped; also wait for the launch refresh.

@@ -1,9 +1,29 @@
 import Combine
 import Foundation
 
+/// Posted by the Live call screen when a call starts and when it ends.
+enum LiveCallActivity {
+    static let changed = Notification.Name("LingDaily.liveCallActivityChanged")
+    static let isActiveKey = "isActive"
+
+    /// Owned by one call controller. Also reports the end if the controller goes away mid-call,
+    /// so sync can never stay on hold.
+    final class Marker {
+        var isActive = false {
+            didSet { if isActive != oldValue { Self.post(isActive) } }
+        }
+        deinit { if isActive { Self.post(false) } }
+        private static func post(_ active: Bool) {
+            NotificationCenter.default.post(name: LiveCallActivity.changed, object: nil, userInfo: [LiveCallActivity.isActiveKey: active])
+        }
+    }
+}
+
 /// Keeps the local archive and the signed-in account's cloud copy in step.
 /// Local edits are recorded immediately and uploaded a few seconds later;
 /// the device also pulls when the account signs in and when the app returns.
+/// During a Live call nothing is uploaded (the call's audio needs the bandwidth);
+/// edits made during the call go out right after hang-up.
 @MainActor
 final class SyncEngine: ObservableObject {
     enum Status: Equatable { case idle, syncing, failed(String) }
@@ -18,6 +38,12 @@ final class SyncEngine: ObservableObject {
     private var again = false
     private var debounce: Task<Void, Never>?
     private var signedIn: AnyCancellable?
+    private var liveCall: AnyCancellable?
+    private var inLiveCall = false
+    private var deferredDuringCall = false
+    /// Bumped by every local edit; a sync that started before an edit runs once more.
+    private var changeCount = 0
+    private var changeCountAtStart = 0
 
     init(store: PracticeStore, account: AccountStore) {
         self.store = store
@@ -31,6 +57,18 @@ final class SyncEngine: ObservableObject {
             guard session != nil else { return }
             Task { @MainActor in _ = await self?.syncNow() }
         }
+        liveCall = NotificationCenter.default.publisher(for: LiveCallActivity.changed).sink { [weak self] note in
+            let active = note.userInfo?[LiveCallActivity.isActiveKey] as? Bool ?? false
+            Task { @MainActor in self?.liveCallChanged(active: active) }
+        }
+    }
+
+    private func liveCallChanged(active: Bool) {
+        guard active != inLiveCall else { return }
+        inLiveCall = active
+        guard !active, deferredDuringCall else { return }
+        deferredDuringCall = false
+        Task { _ = await syncNow() }
     }
 
     var isEnabled: Bool { !account.usesLocalDevelopment && account.session != nil }
@@ -46,6 +84,7 @@ final class SyncEngine: ObservableObject {
         case .scenarioDeleted(let id): ledger.scenarioDeleted(id)
         }
         saveLedger()
+        changeCount &+= 1
         debounce?.cancel()
         debounce = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 4_000_000_000)
@@ -58,8 +97,14 @@ final class SyncEngine: ObservableObject {
     @discardableResult
     func syncNow() async -> Bool {
         guard isEnabled else { return false }
+        if inLiveCall {
+            deferredDuringCall = true
+            return false
+        }
         if let running {
-            again = true
+            // Only edits made after the running sync collected its changes need another round;
+            // a caller that just wants fresh cloud data gets it from the running one.
+            if changeCount != changeCountAtStart { again = true }
             return await running.value
         }
         let task = Task { [weak self] () -> Bool in
@@ -78,8 +123,21 @@ final class SyncEngine: ObservableObject {
         return result
     }
 
+    /// Uploads in rounds until nothing fits the remaining pending changes, or a round makes no progress.
     private func performSync() async -> Bool {
-        guard let session = account.session, store.canWrite else { return false }
+        changeCountAtStart = changeCount
+        var pending = Int.max
+        for _ in 0..<50 {
+            guard let clean = await performRound() else { return false }
+            if clean || ledger.pendingCount >= pending { return clean }
+            pending = ledger.pendingCount
+        }
+        return ledger.pendingCount == 0
+    }
+
+    /// One request. Nil when it failed.
+    private func performRound() async -> Bool? {
+        guard let session = account.session, store.canWrite else { return nil }
         if ledger.ownerUserID != session.userID {
             if ledger.ownerUserID != nil {
                 // Data on this device belongs to another account: never upload it into this one.
@@ -94,7 +152,7 @@ final class SyncEngine: ObservableObject {
         let changes = ledger.changes(from: store.archive)
         do {
             let snapshot = try await PracticeAPIClient(configuration: nil).sync(changes)
-            guard account.session?.userID == session.userID else { return false }
+            guard account.session?.userID == session.userID else { return nil }
             var merged = store.archive
             ledger.merge(snapshot, sent: changes, into: &merged)
             store.replaceArchive(merged)
@@ -104,7 +162,7 @@ final class SyncEngine: ObservableObject {
             return ledger.pendingCount == 0
         } catch {
             status = account.session == nil ? .idle : .failed(error.localizedDescription)
-            return false
+            return nil
         }
     }
 

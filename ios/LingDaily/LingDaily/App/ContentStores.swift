@@ -8,6 +8,7 @@ final class ScenarioCatalogStore: ObservableObject {
     @Published private(set) var scenarios: [PracticeScenario]
     private let file: URL
     private var refreshing = false
+    private var refreshedAt: Date?
 
     init() {
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -19,10 +20,14 @@ final class ScenarioCatalogStore: ObservableObject {
     func scenario(id: String) -> PracticeScenario? { scenarios.first { $0.id == id } }
 
     func refresh() async {
+        // The server marks the catalog fresh for 10 minutes; launch and return-to-app both ask for it.
+        if let refreshedAt, Date().timeIntervalSince(refreshedAt) < 600 { return }
         guard !refreshing else { return }
         refreshing = true
         defer { refreshing = false }
-        guard let fresh = try? await PracticeAPIClient().scenarioCatalog(), fresh != scenarios else { return }
+        guard let fresh = try? await PracticeAPIClient().scenarioCatalog() else { return }
+        refreshedAt = Date()
+        guard fresh != scenarios else { return }
         scenarios = fresh
         guard let data = try? JSONEncoder().encode(fresh) else { return }
         try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)

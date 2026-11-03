@@ -25,16 +25,18 @@ final class CloudSyncTests: XCTestCase {
     }
 
     private func snapshot(sessions: [PracticeSession] = [], expressions: [SavedExpression] = [],
-                          scenarios: [PracticeScenario] = [], rejected: [String]? = nil) throws -> SyncSnapshot {
+                          scenarios: [PracticeScenario] = [], rejected: [String]? = nil,
+                          unchanged: [String]? = nil) throws -> SyncSnapshot {
         // Decode through the real wire format so date coding is covered too.
         struct Wire: Encodable {
             struct Session: Encodable { let id: String; let session: PracticeSession }
             struct Expression: Encodable { let key, text, meaning, source: String; let createdAt: Date; let kind: String? }
             let sessions: [Session]; let expressions: [Expression]; let scenarios: [PracticeScenario]; let rejectedSessions: [String]?
+            let unchangedSessions: [String]?
         }
         let wire = Wire(sessions: sessions.map { .init(id: $0.id.uuidString.lowercased(), session: $0) },
                         expressions: expressions.map { .init(key: $0.id, text: $0.text, meaning: $0.meaning, source: $0.source, createdAt: $0.createdAt, kind: $0.kind) },
-                        scenarios: scenarios, rejectedSessions: rejected)
+                        scenarios: scenarios, rejectedSessions: rejected, unchangedSessions: unchanged)
         return try CloudSyncCoding.decoder.decode(SyncSnapshot.self, from: CloudSyncCoding.encoder.encode(wire))
     }
 
@@ -128,5 +130,53 @@ final class CloudSyncTests: XCTestCase {
         XCTAssertEqual(archive.sessions.count, 1, "A rejected session is never treated as deleted remotely")
         ledger.sessionChanged(local.id)
         XCTAssertEqual(ledger.changes(from: archive).sessions.upsert.count, 1)
+    }
+
+    func testLargeUploadGoesOutInRoundsAndUnsentSessionsStayLocal() throws {
+        var archive = PracticeArchive()
+        for offset in 0..<5 { archive.upsert(session(answer: "Answer \(offset)", at: TimeInterval(offset))) }
+        var ledger = SyncLedger()
+        ledger.adopt(owner: "user-a", archive: archive)
+        var limits = SyncBatchLimits.server
+        limits.sessions = 2
+        var uploaded: [PracticeSession] = []
+        for round in 1...3 {
+            let changes = ledger.changes(from: archive, limits: limits)
+            XCTAssertEqual(changes.sessions.upsert.count, round < 3 ? 2 : 1)
+            uploaded += changes.sessions.upsert
+            ledger.merge(try snapshot(sessions: uploaded), sent: changes, into: &archive)
+            XCTAssertEqual(archive.sessions.count, 5, "Sessions not uploaded yet are never dropped")
+            XCTAssertEqual(ledger.pendingCount, 5 - uploaded.count)
+        }
+        XCTAssertEqual(Set(uploaded.map(\.id)), Set(archive.sessions.map(\.id)))
+
+        limits = .server
+        limits.sessionBytes = 1
+        ledger.adopt(owner: "user-a", archive: archive)
+        XCTAssertEqual(ledger.changes(from: archive, limits: limits).sessions.upsert.count, 1, "An oversized session still goes alone")
+        limits = .server
+        limits.knownSessions = 2
+        XCTAssertEqual(ledger.changes(from: archive, limits: limits).knownSessions?.keys.sorted(),
+                       archive.sessions.prefix(2).map { SyncLedger.sessionKey($0.id) }.sorted(), "Only the newest versions are listed")
+    }
+
+    func testUnchangedSessionsKeepTheLocalCopyAndRemoteDeletionsStillApply() throws {
+        var archive = PracticeArchive()
+        let kept = session(answer: "Kept")
+        let removed = session(answer: "Removed elsewhere")
+        archive.upsert(kept); archive.upsert(removed)
+        var ledger = SyncLedger()
+        ledger.adopt(owner: "user-a", archive: archive)
+        let sent = ledger.changes(from: archive)
+        XCTAssertEqual(sent.knownSessions?[SyncLedger.sessionKey(kept.id)], kept.updatedAt.timeIntervalSince1970 * 1000)
+        ledger.merge(try snapshot(sessions: [kept, removed]), sent: sent, into: &archive)
+
+        let changes = ledger.changes(from: archive)
+        XCTAssertEqual(changes.knownSessions?.count, 2)
+        ledger.merge(try snapshot(unchanged: [kept.id.uuidString]), sent: changes, into: &archive)
+        XCTAssertEqual(archive.sessions.map(\.id), [kept.id])
+        XCTAssertEqual(archive.sessions.first, kept)
+        XCTAssertEqual(ledger.synced.sessions, [SyncLedger.sessionKey(kept.id)])
+        XCTAssertEqual(ledger.pendingCount, 0)
     }
 }

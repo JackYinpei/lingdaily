@@ -8,6 +8,16 @@ enum LiveUploadBatch {
         while batch.count < maximum, let frame = nextFrame() { batch.append(frame) }
         return batch
     }
+
+    /// Frames already waiting together go out as one message of up to 100 ms
+    /// (the codec's limit), instead of one WebSocket message per 20 ms frame.
+    /// Nothing waits for more audio, so latency is unchanged.
+    static func messages(_ frames: [Data], framesPerMessage: Int = 5) -> [(pcm: Data, frames: Int)] {
+        stride(from: 0, to: frames.count, by: max(1, framesPerMessage)).map { start in
+            let group = frames[start..<min(start + max(1, framesPerMessage), frames.count)]
+            return (group.reduce(into: Data()) { $0.append($1) }, group.count)
+        }
+    }
 }
 
 /// A batch can already have left the capture queue when mute occurs. Its epoch
@@ -36,24 +46,39 @@ struct LiveInputBuffer {
 }
 
 /// Control messages are never discarded in favour of microphone frames.
+/// Capacity counts 20 ms frames (a merged audio message weighs its frame count),
+/// so the backlog stays bounded to the same duration of audio.
 struct LiveOutgoingBuffer {
-    struct Item { let message: String; let audio: Bool }
+    struct Item {
+        let message: String; let audio: Bool; let frames: Int
+        var weight: Int { audio ? frames : 1 }
+    }
     let capacity: Int
     private var items: [Item] = []
+    private var weight = 0
     private(set) var droppedAudioFrames = 0
     init(capacity: Int = 50) { self.capacity = max(1, capacity) }
-    mutating func append(_ message: String, audio: Bool = false, priority: Bool = false) throws {
-        if items.count >= capacity {
-            if let index = items.firstIndex(where: \.audio) { items.remove(at: index); droppedAudioFrames += 1 }
-            else if audio { droppedAudioFrames += 1; return }
-            else { throw LiveProtocolError.overloaded }
+    mutating func append(_ message: String, audio: Bool = false, priority: Bool = false, frames: Int = 1) throws {
+        let item = Item(message: message, audio: audio, frames: max(1, frames))
+        while weight + item.weight > capacity {
+            if let index = items.firstIndex(where: \.audio) {
+                let dropped = items.remove(at: index)
+                weight -= dropped.weight; droppedAudioFrames += dropped.frames
+            } else if audio { droppedAudioFrames += item.frames; return }
+            else if weight >= capacity { throw LiveProtocolError.overloaded }
+            else { break }
         }
-        let item = Item(message: message, audio: audio)
+        weight += item.weight
         if priority { items.insert(item, at: 0) } else { items.append(item) }
     }
-    mutating func take() -> Item? { items.isEmpty ? nil : items.removeFirst() }
-    mutating func clearAudio() { items.removeAll(where: \.audio) }
-    mutating func clear() { items.removeAll(keepingCapacity: true) }
+    mutating func take() -> Item? {
+        guard !items.isEmpty else { return nil }
+        let item = items.removeFirst()
+        weight -= item.weight
+        return item
+    }
+    mutating func clearAudio() { items.removeAll(where: \.audio); weight = items.count }
+    mutating func clear() { items.removeAll(keepingCapacity: true); weight = 0 }
     var isEmpty: Bool { items.isEmpty }
     var count: Int { items.count }
 }

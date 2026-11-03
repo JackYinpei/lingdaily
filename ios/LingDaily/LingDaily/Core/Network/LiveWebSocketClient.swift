@@ -36,6 +36,7 @@ actor LiveWebSocketClient {
     private var receiver: Task<Void, Never>?
     private var uploader: Task<Void, Never>?
     private var timeout: Task<Void, Never>?
+    private var keepalive: Task<Void, Never>?
     private var seenTools = Set<String>()
     private var handler: Handler?
     private var failure: Failure?
@@ -87,6 +88,7 @@ actor LiveWebSocketClient {
                     case .setupComplete:
                         guard !ready else { continue }
                         ready = true; inputGate.open(); timeout?.cancel()
+                        startKeepalive(source, generation: current)
                     case .tool(let call):
                         let action = call.validated()
                         let duplicate = seenTools.contains(call.id)
@@ -107,6 +109,23 @@ actor LiveWebSocketClient {
         }
     }
 
+    /// While muted and the partner is silent nothing moves on the socket; the request
+    /// timeout and carrier middleboxes treat that as dead. A ping every 10 s keeps it open.
+    private func startKeepalive(_ source: URLSessionWebSocketTask, generation current: UInt64) {
+        keepalive?.cancel()
+        keepalive = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                guard !Task.isCancelled, let self, await self.isCurrent(source, generation: current) else { return }
+                // A failed ping is not treated as a failure here; a dead socket ends the receive loop.
+                source.sendPing { _ in }
+            }
+        }
+    }
+    private func isCurrent(_ source: URLSessionWebSocketTask, generation current: UInt64) -> Bool {
+        generation == current && socket === source && ready
+    }
+
     func startUpload(generation current: UInt64, nextFrame: @escaping () -> Data?) {
         guard ready, current == generation, uploader == nil else { return }
         // setupComplete opens input once. A mute that occurs before this pump
@@ -115,9 +134,9 @@ actor LiveWebSocketClient {
             while !Task.isCancelled {
                 guard let self else { return }
                 guard let (epoch, batch) = await self.takeUploadBatch(generation: current, nextFrame: nextFrame) else { return }
-                for frame in batch {
+                for message in LiveUploadBatch.messages(batch) {
                     guard !Task.isCancelled else { return }
-                    await self.upload(frame, generation: current, inputGeneration: epoch)
+                    await self.upload(message.pcm, frames: message.frames, generation: current, inputGeneration: epoch)
                 }
                 try? await Task.sleep(nanoseconds: 20_000_000)
             }
@@ -127,9 +146,9 @@ actor LiveWebSocketClient {
         guard ready, generation == current else { return nil }
         return (inputGate.generation, inputGate.isOpen ? LiveUploadBatch.take(nextFrame: nextFrame) : [])
     }
-    private func upload(_ frame: Data, generation current: UInt64, inputGeneration epoch: UInt64) async {
+    private func upload(_ pcm: Data, frames: Int, generation current: UInt64, inputGeneration epoch: UInt64) async {
         guard ready, generation == current, inputGate.accepts(epoch) else { return }
-        do { try enqueue(LiveCodec.audio(frame), generation: current, audio: true) }
+        do { try enqueue(LiveCodec.audio(pcm), generation: current, audio: true, frames: frames) }
         catch { await fail(current, stage: "uploadEncoding", error: error) }
     }
     func endInput(generation current: UInt64) {
@@ -147,9 +166,10 @@ actor LiveWebSocketClient {
         guard ready, current == generation else { throw LiveProtocolError.invalid }
         try enqueue(LiveCodec.text(text), generation: current, priority: true)
     }
-    private func enqueue(_ message: String, generation current: UInt64, priority: Bool = false, audio: Bool = false) throws {
+    private func enqueue(_ message: String, generation current: UInt64, priority: Bool = false, audio: Bool = false,
+                         frames: Int = 1) throws {
         guard generation == current, socket != nil else { return }
-        try outgoing.append(message, audio: audio, priority: priority)
+        try outgoing.append(message, audio: audio, priority: priority, frames: frames)
         if !writing {
             writing = true
             Task { [weak self] in await self?.write(generation: current) }
@@ -159,7 +179,7 @@ actor LiveWebSocketClient {
         do {
             while generation == current, let socket, let item = outgoing.take() {
                 try await socket.send(.string(item.message))
-                if generation == current, item.audio { sentAudioFrames += 1 }
+                if generation == current, item.audio { sentAudioFrames += item.frames }
             }
             if generation == current { writing = false }
         } catch { if generation == current { await fail(current, stage: "send", error: error) } }
@@ -191,8 +211,8 @@ actor LiveWebSocketClient {
     private func reset() {
         ready = false
         inputGate.close()
-        receiver?.cancel(); uploader?.cancel(); timeout?.cancel()
-        receiver = nil; uploader = nil; timeout = nil
+        receiver?.cancel(); uploader?.cancel(); timeout?.cancel(); keepalive?.cancel()
+        receiver = nil; uploader = nil; timeout = nil; keepalive = nil
         socket?.cancel(with: .normalClosure, reason: nil); socket = nil
         session?.invalidateAndCancel(); session = nil
         outgoing = LiveOutgoingBuffer(); seenTools.removeAll(); writing = false; sentAudioFrames = 0

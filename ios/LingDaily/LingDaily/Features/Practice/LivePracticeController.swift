@@ -7,7 +7,11 @@ final class LivePracticeController: ObservableObject {
     enum State { case disconnected, connecting, active }
     @Published private(set) var state: State = .disconnected {
         // Learners talk without touching the screen; auto-lock would background the app and end the call.
-        didSet { UIApplication.shared.isIdleTimerDisabled = state != .disconnected }
+        didSet {
+            UIApplication.shared.isIdleTimerDisabled = state != .disconnected
+            // Cloud sync holds its uploads while a call needs the bandwidth.
+            callActivity.isActive = state != .disconnected
+        }
     }
     @Published private(set) var muted = false
     /// The partner plays through the phone itself, so talking over them needs 打断.
@@ -19,6 +23,7 @@ final class LivePracticeController: ObservableObject {
     @Published private(set) var suggestion: LiveSuggestion?
     @Published private(set) var suggesting = false
     @Published private(set) var suggestionError: String?
+    private let callActivity = LiveCallActivity.Marker()
     private var stuckTask: Task<Void, Never>?
     /// Idea generated in the background as soon as the partner finishes a line.
     private var prefetched: (line: UUID?, task: Task<LiveSuggestion?, Never>)?
@@ -108,13 +113,15 @@ final class LivePracticeController: ObservableObject {
             }
             guard let self, self.generations.accepts(connection: current), !Task.isCancelled else { return }
             do {
-                // Permission may just have been granted. Finish configuring
-                // voice processing before fetching the token or receiving audio.
-                try self.audio.prepareOutput()
                 #if DEBUG
                 LiveDebugDiagnostics.record("phase=tokenRequest")
                 #endif
-                let token = try await self.api.liveToken(for: snapshot)
+                // The token round trip to the server overlaps with configuring voice
+                // processing (permission may just have been granted). Both finish
+                // before the socket opens, so no audio arrives before output is ready.
+                async let pendingToken = self.api.liveToken(for: snapshot)
+                try self.audio.prepareOutput()
+                let token = try await pendingToken
                 guard self.generations.accepts(connection: current), !Task.isCancelled else { return }
                 #if DEBUG
                 LiveDebugDiagnostics.record("phase=websocketConnect")

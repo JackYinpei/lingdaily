@@ -13,6 +13,8 @@ struct SyncSnapshot: Decodable {
     let expressions: [Expression]
     let scenarios: [PracticeScenario]
     let rejectedSessions: [String]?
+    /// Sessions whose cloud copy is the version this device sent in `knownSessions`; not repeated in `sessions`.
+    let unchangedSessions: [String]?
 }
 
 /// Local changes not yet in the cloud.
@@ -30,14 +32,35 @@ struct SyncChanges: Encodable {
     var sessions = Bucket<PracticeSession>()
     var expressions = Bucket<Expression>()
     var scenarios = Bucket<PracticeScenario>()
+    /// Version (updatedAt, epoch ms) of every session on this device, so the server skips sending them back.
+    var knownSessions: [String: Double]?
     var isEmpty: Bool { sessions.isEmpty && expressions.isEmpty && scenarios.isEmpty }
 }
 
+/// What one sync request may carry. Mirrors the server's limits; the byte budget also
+/// stays below common proxy body limits, so a large first upload goes out in several rounds.
+struct SyncBatchLimits {
+    var sessions = 100, sessionDeletes = 200
+    var expressions = 500, expressionDeletes = 500
+    var scenarios = 50, scenarioDeletes = 50
+    /// Leaves room for vocabulary, scenarios and `knownSessions`, keeping a request under 1 MB.
+    var sessionBytes = 600 * 1024
+    /// The server returns at most its newest 500 sessions; anything not listed simply comes back in full.
+    var knownSessions = 500
+    static let server = SyncBatchLimits()
+}
+
 enum CloudSyncCoding {
-    private static func formatter(fractional: Bool) -> ISO8601DateFormatter {
+    private static let fractionalFormatter = makeFormatter(fractional: true)
+    private static let wholeSecondFormatter = makeFormatter(fractional: false)
+    private static func makeFormatter(fractional: Bool) -> ISO8601DateFormatter {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = fractional ? [.withInternetDateTime, .withFractionalSeconds] : [.withInternetDateTime]
         return formatter
+    }
+    // Created once: a sync encodes and decodes thousands of dates.
+    private static func formatter(fractional: Bool) -> ISO8601DateFormatter {
+        fractional ? fractionalFormatter : wholeSecondFormatter
     }
 
     static var encoder: JSONEncoder {
@@ -106,16 +129,29 @@ struct SyncLedger: Codable, Equatable {
         dirty.scenarios = Set(archive.scenarios.map(\.id))
     }
 
-    func changes(from archive: PracticeArchive) -> SyncChanges {
+    /// The next request's worth of pending changes. Whatever does not fit stays
+    /// pending and goes out in the following round.
+    func changes(from archive: PracticeArchive, limits: SyncBatchLimits = .server) -> SyncChanges {
         var changes = SyncChanges()
-        changes.sessions.upsert = archive.sessions.filter { dirty.sessions.contains(Self.sessionKey($0.id)) }
-        changes.sessions.delete = deleted.sessions.sorted()
-        changes.expressions.upsert = archive.expressions.filter { dirty.expressions.contains($0.id) }.map {
+        var bytes = 0
+        for session in archive.sessions where dirty.sessions.contains(Self.sessionKey(session.id)) {
+            guard changes.sessions.upsert.count < limits.sessions else { break }
+            let size = (try? CloudSyncCoding.encoder.encode(session).count) ?? 0
+            // A session larger than the whole budget still goes alone, so the server can reject it.
+            if !changes.sessions.upsert.isEmpty, bytes + size > limits.sessionBytes { break }
+            changes.sessions.upsert.append(session)
+            bytes += size
+        }
+        changes.sessions.delete = Array(deleted.sessions.sorted().prefix(limits.sessionDeletes))
+        changes.expressions.upsert = archive.expressions.filter { dirty.expressions.contains($0.id) }.prefix(limits.expressions).map {
             .init(text: $0.text, meaning: $0.meaning, source: $0.source, createdAt: $0.createdAt, kind: $0.kind)
         }
-        changes.expressions.delete = deleted.expressions.sorted()
-        changes.scenarios.upsert = archive.scenarios.filter { dirty.scenarios.contains($0.id) }
-        changes.scenarios.delete = deleted.scenarios.sorted()
+        changes.expressions.delete = Array(deleted.expressions.sorted().prefix(limits.expressionDeletes))
+        changes.scenarios.upsert = Array(archive.scenarios.filter { dirty.scenarios.contains($0.id) }.prefix(limits.scenarios))
+        changes.scenarios.delete = Array(deleted.scenarios.sorted().prefix(limits.scenarioDeletes))
+        changes.knownSessions = Dictionary(archive.sessions.prefix(limits.knownSessions).map {
+            (Self.sessionKey($0.id), $0.updatedAt.timeIntervalSince1970 * 1000)
+        }, uniquingKeysWith: { a, _ in a })
         return changes
     }
 
@@ -136,8 +172,12 @@ struct SyncLedger: Codable, Equatable {
         deleted.expressions.subtract(sent.expressions.delete)
         deleted.scenarios.subtract(sent.scenarios.delete)
 
+        // Sessions the server did not repeat are this device's own copies (same version).
+        let unchanged = Set((snapshot.unchangedSessions ?? []).map { $0.lowercased() })
+        let held = archive.sessions.filter { unchanged.contains(Self.sessionKey($0.id)) }
+            .map { SyncSnapshot.Session(id: Self.sessionKey($0.id), session: $0) }
         // Sessions: remote wins unless this device still has unsent edits or a pending delete.
-        let remoteSessions = snapshot.sessions.filter { $0.session.isValid && $0.session.userTurns > 0 }
+        let remoteSessions = (snapshot.sessions + held).filter { $0.session.isValid && $0.session.userTurns > 0 }
         let remoteKeys = Set(remoteSessions.map { $0.id.lowercased() })
         var sessions = archive.sessions.filter { session in
             let key = Self.sessionKey(session.id)

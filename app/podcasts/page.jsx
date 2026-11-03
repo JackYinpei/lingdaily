@@ -15,7 +15,7 @@ export default async function PodcastsPage() {
   let episodes = []
   let unavailable = false
   try {
-    episodes = await listPodcastEpisodes({ limit: 100, includeScript: false })
+    episodes = await listPodcastEpisodes({ limit: 100, listView: true })
   } catch (error) {
     unavailable = true
     console.error('[podcasts/page] Failed to load episodes:', error)

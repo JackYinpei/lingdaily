@@ -87,3 +87,36 @@ describe('podcast lease renewal', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('podcast list view', () => {
+  const shownotes = { summary_zh: '中文摘要', summary_en: 'English summary', vocabulary: [{ term: 'stand-off', meaning_zh: '对峙', definition_en: 'a deadlock', example_en: 'The stand-off continued.' }] }
+  const fullRow = {
+    date_folder: '2026-11-03', title: 'Episode', summary: 'legacy', script: 'LL: ...', status: 'completed',
+    created_at: '2026-11-03T00:00:00Z', updated_at: '2026-11-03T00:00:00Z', audio_bytes: 10, audio_duration_seconds: 360,
+    audio_url: 'https://cos.test/a.mp3', content: { shownotes, chunks: [{ lines: ['long script'] }], episode_summary: 'old summary' },
+  }
+  // What PostgREST returns for the list-view aliases of the same row.
+  const listRow = ({ script: _script, content, ...rest }) => ({
+    ...rest, content_shownotes: content?.shownotes ?? null, content_episode_summary: content?.episode_summary ?? null,
+    content_nested_shownotes: content?.content?.shownotes ?? null, content_nested_episode_summary: content?.content?.episode_summary ?? null,
+  })
+
+  it.each([
+    ['current', fullRow],
+    ['nested', { ...fullRow, content: { content: { shownotes, episode_summary: 'nested' } } }],
+    ['legacy', { ...fullRow, content: null }],
+  ])('reads only shownotes paths and renders the same shownotes (%s rows)', async (_name, row) => {
+    const { normalizePodcastShownotes } = await import('@/app/lib/podcast/shownotes')
+    fetch.mockResolvedValueOnce(Response.json([row])).mockResolvedValueOnce(Response.json([listRow(row)]))
+    const [full] = await repository.listPodcastEpisodes()
+    const [light] = await repository.listPodcastEpisodes({ listView: true })
+    expect(new URL(fetch.mock.calls[0][0]).searchParams.get('select')).toBe('*')
+    const select = new URL(fetch.mock.calls[1][0]).searchParams.get('select')
+    expect(select).not.toContain('script')
+    expect(select).toContain('content_shownotes:content->shownotes')
+    expect(normalizePodcastShownotes(light)).toEqual(normalizePodcastShownotes(full))
+    const { script: _a, content: _b, ...fullRest } = full
+    const { script: _c, content: _d, ...lightRest } = light
+    expect(lightRest).toEqual(fullRest)
+  })
+})

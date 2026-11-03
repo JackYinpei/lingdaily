@@ -144,19 +144,38 @@ export async function getPodcastEpisode(date, { includeIncomplete = false } = {}
   return toPodcastEpisode(Array.isArray(data) ? data[0] : null)
 }
 
-// Every column except the TXT `script`, which the list page and RSS feed never show.
-const LIST_COLUMNS_WITHOUT_SCRIPT = [
-  'date_folder', 'title', 'summary', 'content', 'status', 'created_at', 'updated_at',
+// The list page and RSS feed show title, date, audio and the shownotes summary.
+// The full script (TXT `script` and the chunks inside `content`) is ~10 KB per
+// episode and crosses from the database in mainland China to Tokyo, which took
+// 10+ seconds for 100 episodes; only the shownotes paths of `content` are read.
+const LIST_VIEW_SELECT = [
+  'date_folder', 'title', 'summary', 'status', 'created_at', 'updated_at',
   'audio_bytes', 'audio_duration_seconds', 'audio_url',
+  'content_shownotes:content->shownotes', 'content_episode_summary:content->episode_summary',
+  'content_nested_shownotes:content->content->shownotes',
+  'content_nested_episode_summary:content->content->episode_summary',
 ].join(',')
 
-export async function listPodcastEpisodes({ limit = 50, includeScript = true } = {}) {
+// Rebuilds the part of `content` that normalizePodcastShownotes reads.
+function listViewRow(row) {
+  const {
+    content_shownotes: shownotes, content_episode_summary: episodeSummary,
+    content_nested_shownotes: nestedShownotes, content_nested_episode_summary: nestedEpisodeSummary, ...rest
+  } = row
+  const pick = (fields) => Object.fromEntries(Object.entries(fields).filter(([, value]) => value != null))
+  const nested = pick({ shownotes: nestedShownotes, episode_summary: nestedEpisodeSummary })
+  const content = pick({ shownotes, episode_summary: episodeSummary })
+  if (Object.keys(nested).length) content.content = nested
+  return { ...rest, content: Object.keys(content).length ? content : null }
+}
+
+export async function listPodcastEpisodes({ limit = 50, listView = false } = {}) {
   requireConfig()
   const safeLimit = Math.min(Math.max(Number.parseInt(String(limit), 10) || 50, 1), 1000)
   const params = new URLSearchParams({
     status: 'eq.completed',
     category: 'eq.daily',
-    select: includeScript ? '*' : LIST_COLUMNS_WITHOUT_SCRIPT,
+    select: listView ? LIST_VIEW_SELECT : '*',
     order: 'date_folder.desc',
     limit: String(safeLimit),
   })
@@ -165,5 +184,5 @@ export async function listPodcastEpisodes({ limit = 50, includeScript = true } =
     cache: 'no-store',
   })
   const data = await parseResponse(response, [])
-  return Array.isArray(data) ? data.map(toPodcastEpisode) : []
+  return Array.isArray(data) ? data.map(row => toPodcastEpisode(listView ? listViewRow(row) : row)) : []
 }

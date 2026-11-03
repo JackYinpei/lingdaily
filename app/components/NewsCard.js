@@ -4,6 +4,18 @@ import { Card } from "@/app/components/ui/card"
 import { Badge } from "@/app/components/ui/badge"
 import { cn } from "@/app/lib/utils"
 
+// Kagi serves feed thumbnails from kagiproxy.com. Those go through our own image
+// optimizer (resized, cached, same origin) instead of each browser fetching the
+// full-size original from abroad; any other host is shown as before.
+function isOptimizableNewsImage(src) {
+  try {
+    const url = new URL(src)
+    return url.protocol === "https:" && url.hostname === "kagiproxy.com" && url.pathname.startsWith("/img/")
+  } catch {
+    return false
+  }
+}
+
 export function NewsCard({
   news,
   isSelected,
@@ -50,7 +62,7 @@ export function NewsCard({
                 alt={news.title}
                 width={64}
                 height={64}
-                unoptimized
+                unoptimized={!isOptimizableNewsImage(news.urlToImage)}
                 className="w-16 h-16 rounded object-cover flex-shrink-0 transition-all duration-300"
                 onError={(e) => {
                   e.currentTarget.style.display = "none"
@@ -92,7 +104,7 @@ export function NewsCard({
               alt={news.title}
               width={compact ? 64 : 80}
               height={compact ? 64 : 80}
-              unoptimized
+              unoptimized={!isOptimizableNewsImage(news.urlToImage)}
               className={cn(
                 "rounded object-cover transition-all duration-300",
                 compact

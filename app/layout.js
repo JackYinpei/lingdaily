@@ -1,6 +1,7 @@
 import "./globals.css";
 import { SessionProvider } from "next-auth/react"
 import { headers } from 'next/headers'
+import { auth } from '@/app/auth'
 import { LanguageProvider } from '@/app/contexts/LanguageContext'
 import { ThemeProvider } from '@/app/contexts/ThemeContext'
 
@@ -71,15 +72,27 @@ export const viewport = {
   ],
 };
 
+function clientSession(session) {
+  if (!session?.user) return null
+  const copy = { ...session }
+  delete copy.supabaseAccessToken
+  return copy
+}
+
 export default async function RootLayout({ children }) {
   const h = await headers()
   const acceptLanguage = h.get('accept-language') || ''
+  // Hand the (JWT, no database) session to the client so it does not have to
+  // fetch /api/auth/session before preferences and history can load. The
+  // Supabase token is only for server routes and stays out of the page.
+  // If reading it fails, `undefined` keeps the old behaviour: the client fetches it.
+  const session = await auth().then(clientSession, () => undefined)
   const themeScript = `(()=>{try{var s=localStorage.getItem('theme');var m=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;var t=s==='light'?'light':s==='dark'?'dark':(m?'dark':'light');var d=document.documentElement;d.classList.toggle('dark',t==='dark');}catch(e){document.documentElement.classList.add('dark');}})()`
   return (
     <html lang="en" suppressHydrationWarning className="bg-background">
       <body suppressHydrationWarning className="bg-background min-h-screen">
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        <SessionProvider>
+        <SessionProvider session={session}>
           <LanguageProvider initialAcceptLanguage={acceptLanguage}>
             <ThemeProvider>
               {children}

@@ -144,13 +144,19 @@ export async function getPodcastEpisode(date, { includeIncomplete = false } = {}
   return toPodcastEpisode(Array.isArray(data) ? data[0] : null)
 }
 
-export async function listPodcastEpisodes({ limit = 50 } = {}) {
+// Every column except the TXT `script`, which the list page and RSS feed never show.
+const LIST_COLUMNS_WITHOUT_SCRIPT = [
+  'date_folder', 'title', 'summary', 'content', 'status', 'created_at', 'updated_at',
+  'audio_bytes', 'audio_duration_seconds', 'audio_url',
+].join(',')
+
+export async function listPodcastEpisodes({ limit = 50, includeScript = true } = {}) {
   requireConfig()
   const safeLimit = Math.min(Math.max(Number.parseInt(String(limit), 10) || 50, 1), 1000)
   const params = new URLSearchParams({
     status: 'eq.completed',
     category: 'eq.daily',
-    select: '*',
+    select: includeScript ? '*' : LIST_COLUMNS_WITHOUT_SCRIPT,
     order: 'date_folder.desc',
     limit: String(safeLimit),
   })

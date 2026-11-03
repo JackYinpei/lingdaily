@@ -318,6 +318,7 @@ export async function POST(req) {
       filename: storageFilename,
       contentType: 'audio/mpeg',
       body: audioBody,
+      immutable: databaseTracking,
     })
 
     const fallbackEpisode = localEpisode(id, {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { ScenarioCard } from "./ScenarioCard";
 import GenerateScenarioDialog from "./GenerateScenarioDialog";
@@ -45,6 +45,13 @@ const i18n = {
   },
 };
 
+// Resolves (never rejects) so an unused prefetch cannot become an unhandled rejection.
+function fetchScenarioList(url) {
+  return fetch(url, { cache: "no-store" })
+    .then(async (res) => ({ ok: res.ok, json: await res.json().catch(() => ({})) }))
+    .catch((error) => ({ ok: false, json: {}, error }));
+}
+
 export default function ScenarioFeed({
   onArticleSelect,
   onCategoryChange,
@@ -56,6 +63,7 @@ export default function ScenarioFeed({
   languageReady = true,
 }) {
   const { data: session } = useSession();
+  const prefetchedScenarios = useRef(null);
   const [categories, setCategories] = useState([]);
   const [scenarios, setScenarios] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -93,6 +101,15 @@ export default function ScenarioFeed({
   // Fetch categories on mount
   useEffect(() => {
     let cancelled = false;
+    // The last-used category is usually picked again: start loading its scenarios
+    // alongside the category list instead of after it (one round trip less).
+    const savedSlug = localStorage.getItem("scenario-category");
+    if (savedSlug) {
+      prefetchedScenarios.current = {
+        url: `/api/scenarios?categorySlug=${savedSlug}`,
+        response: fetchScenarioList(`/api/scenarios?categorySlug=${savedSlug}`),
+      };
+    }
     (async () => {
       try {
         setError(null);
@@ -138,9 +155,11 @@ export default function ScenarioFeed({
         } else {
           url = `/api/scenarios?categorySlug=${selectedCategory.slug}`;
         }
-        const res = await fetch(url, { cache: "no-store" });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json?.error || "Failed to fetch scenarios");
+        const prefetched = prefetchedScenarios.current;
+        prefetchedScenarios.current = null;
+        const { ok, json, error: fetchError } = await (prefetched?.url === url ? prefetched.response : fetchScenarioList(url));
+        if (fetchError) throw fetchError;
+        if (!ok) throw new Error(json?.error || "Failed to fetch scenarios");
         if (!cancelled) setScenarios(Array.isArray(json?.data) ? json.data : []);
       } catch (err) {
         if (!cancelled) setError(err.message);

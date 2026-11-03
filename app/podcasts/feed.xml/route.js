@@ -22,7 +22,7 @@ export async function GET() {
   let databaseEpisodes = []
   let databaseError = null
   try {
-    databaseEpisodes = await listPodcastEpisodes({ limit: 1000 })
+    databaseEpisodes = await listPodcastEpisodes({ limit: 1000, includeScript: false })
   } catch (error) {
     databaseError = error
     console.warn('[podcasts/feed] Database unavailable; using legacy feed mirror.', error)

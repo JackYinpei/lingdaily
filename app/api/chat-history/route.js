@@ -126,6 +126,18 @@ async function readRequestBody(req) {
   }
 }
 
+const LIST_SELECT = [
+  "id", "news_key", "news_title", "history", "revision", "source_type", "created_at", "updated_at",
+  "news_original_title:news->originalTitle", "news_embedded_title:news->title", "news_embedded_id:news->id",
+].join(",")
+
+// Rebuilds the part of `news` the list item reads (title fallbacks) from the selected paths.
+function listRow(row) {
+  if (!row || !("news_original_title" in row)) return row
+  const { news_original_title: originalTitle, news_embedded_title: title, news_embedded_id: id, ...rest } = row
+  return { ...rest, news: { originalTitle, title, id } }
+}
+
 async function fetchCurrentRow(config, userId, { id, newsKey }) {
   const params = new URLSearchParams({
     user_id: `eq.${userId}`,
@@ -430,13 +442,16 @@ export async function GET(req) {
     let scanCursor = cursor
     let exhausted = false
     let filterSourceInMemory = false
+    // The list needs the transcript (preview, turn count) but only the title
+    // fields of the `news` snapshot, which for app rehearsals is the whole session.
+    let listSelect = LIST_SELECT
 
     // Skip legacy rows that contain only a system context. Scan in bounded
     // batches so an old account with empty rows still gets a full useful page.
     for (let scan = 0; scan < 100 && eligibleRows.length <= limit && !exhausted; scan += 1) {
       const params = new URLSearchParams({
         user_id: `eq.${session.user.id}`,
-        select: "*",
+        select: listSelect,
         order: "updated_at.desc,id.desc",
         limit: String(batchSize),
       })
@@ -446,6 +461,12 @@ export async function GET(req) {
       }
 
       let result = await historyDatabaseRequest(config, "chat_history", { params })
+      if (!result.ok && listSelect !== "*" && isMissingColumn(result)) {
+        // Older schema without revision/source_type: read whole rows as before.
+        listSelect = "*"
+        params.set("select", listSelect)
+        result = await historyDatabaseRequest(config, "chat_history", { params })
+      }
       if (!result.ok && sourceType && !filterSourceInMemory && isMissingColumn(result)) {
         filterSourceInMemory = true
         params.delete("source_type")
@@ -456,7 +477,7 @@ export async function GET(req) {
         return databaseFailure()
       }
 
-      const rows = Array.isArray(result.data) ? result.data : []
+      const rows = (Array.isArray(result.data) ? result.data : []).map(listRow)
       for (const row of rows) {
         if (getRealUserMessages(row.history).length === 0) continue
         if (sourceType && toChatHistoryListItem(row).sourceType !== sourceType) continue

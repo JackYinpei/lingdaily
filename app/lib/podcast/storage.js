@@ -41,7 +41,7 @@ function putObject(cos, params) {
   });
 }
 
-export async function uploadPodcastToCos({ filename, contentType, body }) {
+export async function uploadPodcastToCos({ filename, contentType, body, immutable = false }) {
   const cfg = getCosConfig();
   const cos = new COS({ SecretId: cfg.secretId, SecretKey: cfg.secretKey });
   const key = `${cfg.prefix}/${filename}`;
@@ -52,6 +52,8 @@ export async function uploadPodcastToCos({ filename, contentType, body }) {
     Key: key,
     Body: body,
     ContentType: contentType,
+    // A key unique to one generation never changes, so players and CDNs may keep it.
+    ...(immutable ? { CacheControl: 'public, max-age=31536000, immutable' } : {}),
   });
 
   return `${cfg.publicBaseUrl}/${key}`;

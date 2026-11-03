@@ -3,18 +3,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('server-only', () => ({}))
 const { db, verifyApple, findUser, deleteUser, revoke } = vi.hoisted(() => ({
-  db: { tables: {} }, verifyApple: vi.fn(), findUser: vi.fn(), deleteUser: vi.fn(), revoke: vi.fn(),
+  db: { tables: {}, reads: [] }, verifyApple: vi.fn(), findUser: vi.fn(), deleteUser: vi.fn(), revoke: vi.fn(),
 }))
 
-// Minimal PostgREST stand-in: eq./not.is.null filters, upsert on id, the chat RPC.
+// Minimal PostgREST stand-in: eq./in./not.is.null filters, the session version
+// alias, upsert on id, the chat RPC.
 function matches(row, params) {
   for (const [key, raw] of params?.entries() || []) {
     if (['select', 'order', 'limit', 'on_conflict'].includes(key)) continue
     if (raw === 'not.is.null') { if (row[key] == null) return false; continue }
+    if (raw.startsWith('in.(')) {
+      if (!raw.slice(4, -1).split(',').map(value => value.replace(/^"|"$/g, '')).includes(String(row[key]))) return false
+      continue
+    }
     if (raw.startsWith('eq.') && String(row[key]) !== raw.slice(3)) return false
   }
   return true
 }
+const withAliases = (row, params) => params?.get('select')?.includes('version:news->session->>updatedAt')
+  ? { ...row, version: row.news?.session?.updatedAt ?? null } : row
 vi.mock('@/app/lib/history/server', () => ({
   getHistoryDatabaseConfig: () => ({ baseUrl: 'https://db.test', serviceRoleKey: 'x', schema: 'public' }),
   historyDatabaseRequest: async (_config, resource, { method = 'GET', params, body } = {}) => {
@@ -28,7 +35,8 @@ vi.mock('@/app/lib/history/server', () => ({
     }
     const rows = db.tables[resource] ||= []
     if (method === 'GET') {
-      const found = rows.filter(row => matches(row, params))
+      db.reads.push(params?.get('select') || '*')
+      const found = rows.filter(row => matches(row, params)).map(row => withAliases(row, params))
       return { ok: true, status: 200, data: params?.get('order')?.startsWith('timestamp.asc') ? found.sort((a, b) => a.timestamp.localeCompare(b.timestamp)) : found }
     }
     if (method === 'POST') {
@@ -82,6 +90,7 @@ const scenario = (overrides = {}) => ({
 
 beforeEach(() => {
   db.tables = {}
+  db.reads = []
   vi.stubEnv('NODE_ENV', 'production')
   vi.stubEnv('AUTH_SECRET', 'synthetic-auth-secret-for-ios-session-tests')
   delete globalThis[Symbol.for('lingdaily.iosSyncLimiter.v1')]
@@ -151,6 +160,41 @@ describe('iOS cloud sync into the shared tables', () => {
     expect(other.data).toEqual({ sessions: [], expressions: [], scenarios: [] })
     vi.stubEnv('NODE_ENV', 'development'); vi.stubEnv('IOS_PRACTICE_DEV_ENABLED', '1'); vi.stubEnv('IOS_PRACTICE_DEV_TOKEN', 'c'.repeat(64))
     expect((await call(GET, 'c'.repeat(64), undefined, 'GET')).status).toBe(400)
+  })
+
+  it('only sends back sessions the device does not already hold in that version', async () => {
+    const other = session({ id: 'C0000000-1111-4222-8333-444455556666', updatedAt: '2026-10-05T11:00:00.000Z' })
+    await call(POST, userA, { sessions: { upsert: [session(), other] } })
+    const full = await call(POST, userA, {})
+    expect(full.data.sessions).toHaveLength(2)
+    expect(full.data).not.toHaveProperty('unchangedSessions')
+
+    db.reads = []
+    const known = {
+      // Same version (the device may keep sub-millisecond precision), and an outdated one.
+      'A3B1C2D4-1111-4222-8333-444455556666': Date.parse('2026-10-05T10:00:00.000Z') + 0.4,
+      'c0000000-1111-4222-8333-444455556666': Date.parse('2026-10-05T10:30:00.000Z'),
+    }
+    const { status, data } = await call(POST, userA, { knownSessions: known })
+    expect(status).toBe(200)
+    expect(data.unchangedSessions).toEqual(['a3b1c2d4-1111-4222-8333-444455556666'])
+    expect(data.sessions.map(item => item.id)).toEqual(['c0000000-1111-4222-8333-444455556666'])
+    expect(data.sessions[0].session).toEqual({ ...other, id: other.id.toLowerCase() })
+    // Unchanged bodies are never read from the database.
+    expect(db.reads.filter(select => select.includes('news,'))).toHaveLength(1)
+
+    const fresh = await call(POST, userA, { knownSessions: {} })
+    expect(fresh.data.unchangedSessions).toEqual([])
+    expect(fresh.data.sessions).toHaveLength(2)
+  })
+
+  it('writes several sessions of one upload and still reports each one that cannot be stored', async () => {
+    const ids = Array.from({ length: 9 }, (_, index) => `D000000${index}-1111-4222-8333-444455556666`)
+    const upsert = ids.map((id, index) => index % 4 === 1 ? { ...session({ id }), messages: 'oops' } : session({ id }))
+    const { status, data } = await call(POST, userA, { sessions: { upsert } })
+    expect(status).toBe(200)
+    expect(data.rejectedSessions).toEqual([ids[1], ids[5]].map(id => id.toLowerCase()))
+    expect(db.tables.chat_history).toHaveLength(7)
   })
 
   it('rejects a malformed request, and skips only the session that cannot be stored', async () => {

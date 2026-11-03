@@ -54,7 +54,19 @@ const expressionSchema = z.object({
   kind: z.enum(['word', 'phrase', 'grammar', 'other']).nullable().optional(),
 }).strict()
 
+const SESSION_BODY_BATCH = 40
+const SESSION_WRITE_CONCURRENCY = 4
+
+// Optional on POST: the version (updatedAt, epoch ms) of every session the device
+// already holds. Sessions whose cloud copy is that same version are listed in
+// `unchangedSessions` instead of being sent again. Older apps omit it and keep
+// receiving every session in full.
+const knownSessionsSchema = z.record(z.string(), z.number().finite())
+  .refine(value => Object.keys(value).length <= SESSION_LIMIT * 2, 'size')
+  .transform(value => new Map(Object.entries(value).map(([id, ms]) => [id.toLowerCase(), ms])))
+
 export const syncRequestSchema = z.object({
+  knownSessions: knownSessionsSchema.optional(),
   sessions: z.object({ upsert: z.array(z.unknown()).max(100).default([]), delete: z.array(uuidText).max(200).default([]) }).strict().default({}),
   expressions: z.object({ upsert: z.array(expressionSchema).max(500).default([]), delete: z.array(text(200)).max(500).default([]) }).strict().default({}),
   scenarios: z.object({ upsert: z.array(scenarioSchema).max(50).default([]), delete: z.array(z.string().regex(/^custom-[0-9A-Fa-f-]{36}$/)).max(50).default([]) }).strict().default({}),
@@ -106,16 +118,45 @@ async function request(config, resource, options, operation) {
   return result.data
 }
 
+const sessionsFromRows = rows => rows.flatMap(row => {
+  const session = row.news?.session
+  return session && typeof session === 'object' ? [{ id: row.news_key.slice('practice:'.length), revision: row.revision, session }] : []
+})
+
 async function loadSessions(config, userId) {
   const params = new URLSearchParams({
     user_id: `eq.${userId}`, source_type: 'eq.practice', select: 'news_key,news,revision,updated_at',
     order: 'updated_at.desc,id.desc', limit: String(SESSION_LIMIT),
   })
-  const rows = await request(config, 'chat_history', { params }, 'load sessions')
-  return rows.flatMap(row => {
-    const session = row.news?.session
-    return session && typeof session === 'object' ? [{ id: row.news_key.slice('practice:'.length), revision: row.revision, session }] : []
+  return sessionsFromRows(await request(config, 'chat_history', { params }, 'load sessions'))
+}
+
+/** Same sessions as `loadSessions`, but only fetches bodies the device does not already hold. */
+async function loadChangedSessions(config, userId, known) {
+  const params = new URLSearchParams({
+    user_id: `eq.${userId}`, source_type: 'eq.practice', select: 'news_key,version:news->session->>updatedAt',
+    order: 'updated_at.desc,id.desc', limit: String(SESSION_LIMIT),
   })
+  const index = await request(config, 'chat_history', { params }, 'load session index')
+  const unchanged = []
+  const needed = []
+  for (const row of index) {
+    const id = row.news_key.slice('practice:'.length)
+    const version = Date.parse(row.version || '')
+    // Within 1 ms: the device keeps sub-millisecond dates, the wire format has milliseconds.
+    if (known.has(id) && Math.abs(version - known.get(id)) < 1) unchanged.push(id)
+    else needed.push(row.news_key)
+  }
+  const batches = []
+  for (let start = 0; start < needed.length; start += SESSION_BODY_BATCH) batches.push(needed.slice(start, start + SESSION_BODY_BATCH))
+  const bodies = await Promise.all(batches.map(keys => request(config, 'chat_history', {
+    params: new URLSearchParams({
+      user_id: `eq.${userId}`, source_type: 'eq.practice', select: 'news_key,news,revision,updated_at',
+      news_key: `in.(${keys.map(key => `"${key}"`).join(',')})`,
+    }),
+  }, 'load sessions')))
+  const byKey = new Map(bodies.flat().map(row => [row.news_key, row]))
+  return { sessions: sessionsFromRows(needed.flatMap(key => byKey.has(key) ? [byKey.get(key)] : [])), unchangedSessions: unchanged }
 }
 
 async function loadExpressionRows(config, userId) {
@@ -152,12 +193,14 @@ async function loadScenarios(config, userId) {
   return rows.map(row => row.practice_plan).filter(plan => plan && typeof plan === 'object')
 }
 
-export async function loadSnapshot(userId) {
+export async function loadSnapshot(userId, knownSessions) {
   const config = databaseConfig()
   const [sessions, rows, scenarios] = await Promise.all([
-    loadSessions(config, userId), loadExpressionRows(config, userId), loadScenarios(config, userId),
+    knownSessions ? loadChangedSessions(config, userId, knownSessions) : loadSessions(config, userId),
+    loadExpressionRows(config, userId), loadScenarios(config, userId),
   ])
-  return { sessions, expressions: expressionsFromRows(rows), scenarios }
+  const sessionPart = knownSessions ? sessions : { sessions }
+  return { ...sessionPart, expressions: expressionsFromRows(rows), scenarios }
 }
 
 /** Returns false when this one session can never be stored, so the client stops retrying it. */
@@ -166,10 +209,10 @@ async function upsertSession(config, userId, raw) {
   if (!parsed.success || Buffer.byteLength(JSON.stringify(raw)) > MAX_SESSION_BYTES) return false
   const session = parsed.data
   const newsKey = `practice:${session.id}`
-  const params = new URLSearchParams({ user_id: `eq.${userId}`, news_key: `eq.${newsKey}`, select: 'news,revision' })
+  const params = new URLSearchParams({ user_id: `eq.${userId}`, news_key: `eq.${newsKey}`, select: 'version:news->session->>updatedAt' })
   const [current] = await request(config, 'chat_history', { params }, 'read session')
   // Another device already saved a newer version: keep it; the client adopts it from the snapshot.
-  const remoteUpdated = Date.parse(current?.news?.session?.updatedAt || '')
+  const remoteUpdated = Date.parse(current?.version || '')
   if (current && remoteUpdated > Date.parse(session.updatedAt) + 1) return true
   const title = (session.personalGoal || '').trim() || session.scenario.title || 'App 练习'
   await request(config, 'rpc/save_chat_history', {
@@ -244,9 +287,20 @@ async function upsertScenario(config, userId, scenario) {
 export async function applySync(userId, changes) {
   const config = databaseConfig()
   const rejectedSessions = []
-  for (const raw of changes.sessions.upsert) {
-    if (!await upsertSession(config, userId, raw)) rejectedSessions.push(String(raw?.id || '').toLowerCase())
-  }
+  const upserts = changes.sessions.upsert
+  const ids = upserts.map(raw => String(raw?.id || '').toLowerCase())
+  // Different sessions are different rows, so a few can be written at once;
+  // a repeated id keeps the strict one-after-another order.
+  const concurrency = new Set(ids).size === ids.length ? SESSION_WRITE_CONCURRENCY : 1
+  const stored = new Array(upserts.length)
+  let next = 0
+  await Promise.all(Array.from({ length: Math.min(concurrency, upserts.length) }, async () => {
+    while (next < upserts.length) {
+      const index = next++
+      stored[index] = await upsertSession(config, userId, upserts[index])
+    }
+  }))
+  stored.forEach((ok, index) => { if (!ok) rejectedSessions.push(ids[index]) })
   for (const id of changes.sessions.delete) {
     await deleteRows(config, 'chat_history', new URLSearchParams({
       user_id: `eq.${userId}`, news_key: `eq.practice:${id}`, source_type: 'eq.practice',
@@ -263,7 +317,7 @@ export async function applySync(userId, changes) {
       id: `eq.${scenarioRowId(id)}`, user_id: `eq.${userId}`, practice_plan: 'not.is.null',
     }), 'delete scenario')
   }
-  return { ...await loadSnapshot(userId), rejectedSessions }
+  return { ...await loadSnapshot(userId, changes.knownSessions), rejectedSessions }
 }
 
 /** Deletes every row the account owns across the shared tables (web data included). */

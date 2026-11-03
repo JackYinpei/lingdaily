@@ -57,6 +57,8 @@ export const DEFAULT_LIVE_VOICE = 'Aoede'
 const PARTNER_VOICES = Object.freeze({
   alex: 'Puck', jamie: 'Aoede', taylor: 'Kore', sam: 'Leda', jordan: 'Charon',
   casey: 'Zephyr', morgan: 'Orus', riley: 'Fenrir', avery: 'Leda', quinn: 'Puck',
+  rowan: 'Orus', robin: 'Kore', emerson: 'Aoede', drew: 'Charon', charlie: 'Fenrir', reese: 'Leda',
+  jesse: 'Puck', hayden: 'Zephyr', parker: 'Charon', kai: 'Orus', ellis: 'Kore',
 })
 const FEMALE_NAMES = new Set(('amy anna ashley chloe claire ella emily emma grace hannah helen jennifer jessica julia karen kate ' +
   'laura lily linda lisa lucy mary megan mia michelle nancy natalie olivia rachel rebecca sarah sophia sophie susan victoria zoe ' +

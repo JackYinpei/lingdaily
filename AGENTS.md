@@ -60,7 +60,7 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | `ios/` | 原生 SwiftUI AI 体验版，最低 iOS 15；Sign in with Apple 后连线上服务，真实 Gemini 逐轮文字 + Live 实时语音/重说/历史与收藏；本机存档经 `SyncEngine` 同步到与网页共用的 Supabase 表，可删除账号 |
 | `app/api/ios/auth/apple/` | 原生 Sign in with Apple：验证 Apple identity token（JWKS、bundle ID audience、nonce），按 Apple 验证邮箱复用 `ensureAuthUser()` 映射 Supabase UUID，签发 60 天 iOS 会话 JWT（AUTH_SECRET 经 HKDF 派生的独立密钥） |
 | `app/api/ios/practice/`、`app/api/ios/scenario/`、`app/api/ios/live-token/` | Gemini 逐句练习、新场景生成及受约束 Gemini Live 临时 token API；生产只接受 iOS 会话，本机配对 token 仅 development + 显式启用可用；缓存与限流按用户隔离，不读写数据库 |
-| `app/api/ios/scenarios/`、`app/api/ios/today/` | 内置场景清单（公开、无模型调用，内容在 `app/lib/ios/scenarioCatalog.js`，上新无需发版）；「今日」最新每日播客 + 按期共享生成一次的「聊聊这条新闻」场景（`app/lib/server/iosToday.js`，只用节目稿事实） |
+| `app/api/ios/scenarios/`、`app/api/ios/today/` | 内置场景清单（公开、无模型调用，内容在 `app/lib/ios/scenarioCatalog.js`，上新无需发版；数组顺序即首页顺序，生活/学习/社交在前、职场在后，每个对话对象在 `app/lib/ios/live.js` 固定音色）；「今日」最新每日播客 + 按期共享生成一次的「聊聊这条新闻」场景（`app/lib/server/iosToday.js`，只用节目稿事实） |
 | `instrumentation.js`、`instrumentation-node.js` | 服务端启动钩子（Node 部分单独文件，不进 Edge bundle）：Supabase 在国内、服务器在东京，新建 TLS 约 250–360ms、复用约 85ms，故把 fetch 空闲连接保持 45s（数据库网关约 60s 断开）；仅 Node 自带 undici 6.x（Node 20）时生效，`undici` 依赖须与之同一大版本 |
 | `nginx/lingdaily-site.conf` | 主站 nginx 参考配置：HTTP/2、JSON/XML gzip、TLS 会话复用、上游 keepalive、8MB 请求体（iOS 同步）；不改应用行为，部署前 `nginx -t` |
 | `app/lib/ios/liveEndpoint.mjs`、`nginx/gemini-proxy.conf` | 原生Live服务端独立选择Google/受控JP/旧中转，严格origin与固定Constrained路径；Nginx示例透传WSS且禁用含凭据URL日志，App也检查完整endpoint白名单 |

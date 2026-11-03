@@ -12,13 +12,23 @@ describe('built-in scenario catalog', () => {
     expect(data.version).toBe(SCENARIO_CATALOG_VERSION)
     expect(data.scenarios).toEqual(JSON.parse(JSON.stringify(SCENARIO_CATALOG)))
   })
-  it('keeps the bundled ids first and every entry valid for the app', () => {
-    expect(SCENARIO_CATALOG.slice(0, 4).map(item => item.id)).toEqual(['deadline', 'hotel', 'introduction', 'coffee'])
+  it('keeps the bundled ids and every entry valid for the app', () => {
+    const ids = SCENARIO_CATALOG.map(item => item.id)
+    expect(ids).toEqual(expect.arrayContaining(['deadline', 'hotel', 'introduction', 'coffee']))
     expect(new Set(SCENARIO_CATALOG.map(item => item.id)).size).toBe(SCENARIO_CATALOG.length)
     for (const scenario of SCENARIO_CATALOG) {
       expect(catalogScenarioSchema.safeParse(scenario).success, scenario.id).toBe(true)
       expect(new Set(scenario.steps.map(item => item.id)).size, scenario.id).toBe(3)
     }
+  })
+  it('covers everyday life and school, not only work, and leads with them', () => {
+    const count = category => SCENARIO_CATALOG.filter(item => item.category === category).length
+    expect(count('日常')).toBeGreaterThanOrEqual(5)
+    expect(count('学习')).toBeGreaterThanOrEqual(4)
+    expect(count('社交')).toBeGreaterThanOrEqual(2)
+    expect(SCENARIO_CATALOG.slice(0, 6).every(item => item.category !== '职场')).toBe(true)
+    // Each person is somebody else: one partner name per scenario.
+    expect(new Set(SCENARIO_CATALOG.map(item => item.partner)).size).toBe(SCENARIO_CATALOG.length)
   })
   it('gives every built-in partner a fixed voice', () => {
     const pinned = SCENARIO_CATALOG.map(item => voiceForPartner(item.partner, ''))

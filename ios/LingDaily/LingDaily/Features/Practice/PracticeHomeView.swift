@@ -13,6 +13,8 @@ struct PracticeHomeView: View {
     @State private var composing = false
     @State private var created: PracticeScenario?
     @State private var showsVocabulary = false
+    /// Home filter; "" shows every category. Kept across launches.
+    @AppStorage("homeScenarioCategory") private var category = ""
 
     /// Own scenarios with a real conversation coming up come first, soonest first.
     private var ownScenarios: [PracticeScenario] {
@@ -63,11 +65,12 @@ struct PracticeHomeView: View {
                         TodayCard(episode: episode, player: player, onPractice: { selectedScenario = $0 },
                                   onVocabulary: { showsVocabulary = true })
                     }
+                    if categories.count > 1 { categoryFilter }
                     VStack(spacing: 14) {
-                        ForEach(ownScenarios.filter { !finished.contains($0.id) }) { scenario in
+                        ForEach(ownScenarios.filter { !finished.contains($0.id) && shows($0) }) { scenario in
                             customSceneButton(scenario)
                         }
-                        ForEach(catalog.scenarios.filter { !finished.contains($0.id) }) { sceneButton($0, isCustom: false) }
+                        ForEach(catalog.scenarios.filter { !finished.contains($0.id) && shows($0) }) { sceneButton($0, isCustom: false) }
                     }
                     if !finishedScenarios.isEmpty {
                         // Finished scenarios fold away so new ones stay on top; still one tap to practise again.
@@ -150,8 +153,52 @@ struct PracticeHomeView: View {
     }
 
     private var finishedScenarios: [(scenario: PracticeScenario, isCustom: Bool)] {
-        ownScenarios.filter { finished.contains($0.id) }.map { ($0, true) }
-            + catalog.scenarios.filter { finished.contains($0.id) }.map { ($0, false) }
+        ownScenarios.filter { finished.contains($0.id) && shows($0) }.map { ($0, true) }
+            + catalog.scenarios.filter { finished.contains($0.id) && shows($0) }.map { ($0, false) }
+    }
+
+    /// Categories that have at least one scenario: everyday life and school first, work last.
+    private var categories: [String] {
+        let present = Set((ownScenarios + catalog.scenarios).map(\.category))
+        let preferred = ["日常", "学习", "社交", "旅行", "职场"]
+        return preferred.filter(present.contains) + present.subtracting(preferred).sorted()
+    }
+
+    /// A category that no longer has scenarios falls back to showing everything.
+    private var activeCategory: String? { categories.contains(category) ? category : nil }
+
+    private func shows(_ scenario: PracticeScenario) -> Bool {
+        activeCategory.map { scenario.category == $0 } ?? true
+    }
+
+    private var categoryFilter: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                categoryChip("全部", selected: activeCategory == nil) { category = "" }
+                ForEach(categories, id: \.self) { name in
+                    categoryChip(name, selected: activeCategory == name) { category = name }
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .padding(.horizontal, -20)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("场景分类")
+    }
+
+    private func categoryChip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(selected ? .semibold : .regular))
+                .foregroundColor(selected ? Brand.onInk : Brand.ink)
+                .padding(.horizontal, 16).frame(minHeight: 44)
+                .background(selected ? Brand.ink : Brand.surface)
+                .overlay(Capsule().strokeBorder(selected ? Color.clear : Brand.line))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("category-\(title)")
     }
 
     private func customSceneButton(_ scenario: PracticeScenario) -> some View {

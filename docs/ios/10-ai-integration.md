@@ -123,6 +123,8 @@ iOS 不另建存储，**复用网页已有的 Supabase 表**，同一账号在�
 | 自建场景 | `scenarios` 私有用户行 + `practice_plan`（完整三步计划），并生成英文 `system_prompt` | 网页场景列表可用 |
 
 `/api/ios/sync`：`POST { sessions/expressions/scenarios: { upsert, delete } }` 先应用改动再返回快照；`GET` 只取快照。会话以 `updatedAt` 防旧覆盖新；单条无效/过大的会话放进 `rejectedSessions`，不让整批卡死。只同步 en/zh-CN 学习项。缓存/限流按用户，单次请求 ≤4MB。
+增量下发（2026-11）：POST 可带可选 `knownSessions: { "<session id>": <updatedAt 毫秒> }`（本机现有每个会话的版本）；服务端先只读版本索引，云端版本相同（±1ms）的会话只列进 `unchangedSessions: [id]`，不再回传正文，其余照旧放在 `sessions`。不带该字段（旧版 App）时响应与之前完全一致。App 合并时把 `unchangedSessions` 视同云端返回了本机副本，远端删除照常生效。服务端 schema 是 strict 的，**带 `knownSessions` 的 App 只能在该服务端部署后发布**。
+App 侧：`knownSessions` 只列最新 500 个；一次请求最多 100 个会话且会话正文约 ≤600KB（整个请求 <1MB），其余留待下一轮（首次同步大存档分多轮上传，修复超过 4MB/100 个会话时永远 400 的问题）；Live 通话期间不发同步（本机照常保存），挂断后立即补同步；回到前台只在真正从后台返回时拉取，并发加入的拉取不再额外跑一轮。
 
 App 端 `SyncLedger`（Core/Persistence/CloudSync.swift，纯逻辑有单测）显式记录 synced/dirty/deleted，不靠时间戳比较；`SyncEngine` 在登录、回到前台和本地修改后 4 秒同步。首次登录把本机已有记录上传进该账号；本机数据属于另一个账号时先清空再下载，绝不跨账号上传。退出登录先尝试上传，仍有未同步内容时提示，确认后清除本机记录（重新登录从云端恢复）。
 

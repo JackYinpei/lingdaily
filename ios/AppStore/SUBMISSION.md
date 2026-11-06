@@ -1,5 +1,19 @@
 # LingDaily App Store 发布记录
 
+## 1.6（构建 9）：2026-11-06
+
+**2026-11-06 20:53（Asia/Shanghai）正式送审，Apple 回执「已提交 1 个项目」，审核详情显示「等待审核」，通过后自动向所有用户发布。**
+
+- [本次审核详情](https://appstoreconnect.apple.com/apps/6824758752/distribution/reviewsubmissions/details/fa1889c0-7397-4881-9937-e1d393a41e6c)；提交 ID：`fa1889c0-7397-4881-9937-e1d393a41e6c`。
+- TestFlight 构建 ID：`9fe4f7f9-39f0-43ac-b139-a917bc40f06b`；审核项目核实为 `1.6 (9)`。
+- 发布前已 fetch，最新业务代码 `c4e958b` 与 `origin/main` 一致；包含首页场景分类、云同步与连接复用优化、安静等待时的 Live 心跳。线上公开场景目录已核实为 version 3、21 个场景、五个分类。
+- 1.5 已可分发；之前 Cloud 上传的 `1.5 (5)/(7)/(8)` 因已批准的 1.5 train 关闭而失败（Apple 90186/90062）。本次将 Debug/Release 工程版本改为 `1.6 (9)`，版本提交为 `3dfefa7`，使用本机签名 Release 归档，于 20:49:16 上传成功，并等待 Apple 处理完成后关联商店版本。
+- 已保存中文更新说明及英文审核操作说明；沿用现有 iPhone/iPad 各两张截图和审核联系人；自动发布、立即向所有用户发布更新、保留评分均已核实。
+- 验证：Swift 99 项（96 通过、3 个显式联网测试跳过），JS 240 通过、1 跳过，ESLint 零 warning；Docker 启动后隔离迁移测试和生产构建通过；Debug/Release 模拟器构建及签名真机归档上传成功。Release 模拟器实测线上场景加载、日常/学习分类切换及筛选结果正常。本轮未调用真实模型，未重新验证真人音频。
+- 发布包核实为 `com.qcy.LingDaily` / `1.6` / `9`，最低 iOS 15，包含隐私清单，`ITSAppUsesNonExemptEncryption=false`，不包含本机配对 `AIConnection.json`；后台 audio 模式保持用于播客。
+- Xcode Cloud 下一个构建版本编号已改为 **10**，避免和本机上传的构建 9 冲突；版本号已同步到仓库，后续 Cloud 不再继续上传到已关闭的 1.5 train。
+- 归档及验证日志位于 `/tmp/LingDaily-1.6-9.xcarchive`、`/tmp/lingdaily-16-*.log`，不纳入 Git；已有未跟踪的 `marketing/` 未改动。
+
 ## 1.5（构建 3）：2026-10-29
 
 **2026-10-29 22:18（Asia/Shanghai）正式送审，Apple 显示「已提交 1 个项目」和「等待审核」，审核通过后自动发布。**

@@ -30,6 +30,12 @@ describe('built-in scenario catalog', () => {
     // Each person is somebody else: one partner name per scenario.
     expect(new Set(SCENARIO_CATALOG.map(item => item.partner)).size).toBe(SCENARIO_CATALOG.length)
   })
+  it('describes every partner and includes people the learner has to stand up to', () => {
+    expect(SCENARIO_CATALOG.every(item => item.persona?.trim())).toBe(true)
+    for (const id of ['nearmiss', 'deposit', 'queue', 'blame']) {
+      expect(SCENARIO_CATALOG.find(item => item.id === id), id).toBeTruthy()
+    }
+  })
   it('gives every built-in partner a fixed voice', () => {
     const pinned = SCENARIO_CATALOG.map(item => voiceForPartner(item.partner, ''))
     expect(pinned.every(Boolean)).toBe(true)

@@ -74,7 +74,6 @@ extension PracticeSession {
         }
         guard !batch.isEmpty else { return nil }
         return .init(requestId: UUID(), sessionId: id,
-                     scenario: .init(title: scenario.title, partner: scenario.partner, partnerRole: scenario.partnerRole,
-                                     setting: scenario.setting, goals: scenario.steps.map(\.goal)), messages: batch)
+                     scenario: .init(scenario), messages: batch)
     }
 }

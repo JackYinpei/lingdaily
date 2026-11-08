@@ -71,6 +71,8 @@ struct AIPracticeRequest: Codable {
         let partnerRole: String
         let setting: String
         let goals: [String]
+        /// Omitted when the scenario has none, so requests match older servers.
+        var persona: String? = nil
     }
     struct Message: Codable {
         let role: PracticeMessage.Role
@@ -90,7 +92,17 @@ struct AIPracticeRequest: Codable {
     var model: String? = nil
     /// Omitted for standard, so default requests are unchanged for older servers.
     var level: String? = nil
+    /// Omitted when following the scenario's persona.
+    var attitude: String? = nil
     var reviewItems: [ReviewTarget]? = nil
+}
+
+extension AIPracticeRequest.Scenario {
+    /// What the server needs to play the partner of a local scenario.
+    init(_ scenario: PracticeScenario) {
+        self.init(title: scenario.title, partner: scenario.partner, partnerRole: scenario.partnerRole,
+                  setting: scenario.setting, goals: scenario.steps.map(\.goal), persona: scenario.persona)
+    }
 }
 
 struct AIPracticeResponse: Codable {
@@ -112,6 +124,8 @@ struct AIScenarioResponse: Codable {
     struct Draft: Codable {
         let title, subtitle, category, partner, partnerRole, setting: String
         let steps: [Step]
+        /// Older servers and cached daily scenarios have none.
+        var persona: String? = nil
     }
     let requestId: UUID
     let model: String
@@ -134,6 +148,6 @@ extension AIScenarioResponse.Draft {
             steps: steps.enumerated().map { index, step in
                 PracticeStep(id: "step-\(index)", goal: step.goal, prompt: step.prompt, translation: step.translation,
                     hint: step.hint, keywords: step.keywords, expression: step.expression, meaning: step.meaning)
-            })
+            }, persona: PracticeScenario.cleanPersona(persona))
     }
 }

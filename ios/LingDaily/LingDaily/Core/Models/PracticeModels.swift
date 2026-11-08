@@ -21,6 +21,8 @@ struct PracticeScenario: Codable, Equatable, Identifiable {
     let partnerRole: String
     let setting: String
     let steps: [PracticeStep]
+    /// How the partner treats the learner (Chinese), e.g. 嘴硬、反怪你. Optional so older scenarios still decode.
+    var persona: String? = nil
 }
 
 /// How hard the partner makes it: vocabulary, sentence length and follow-up pressure.
@@ -37,6 +39,41 @@ enum PracticeLevel: String, CaseIterable, Identifiable {
     }
     static func current(defaults: UserDefaults = .standard) -> PracticeLevel {
         defaults.string(forKey: key).flatMap(PracticeLevel.init(rawValue:)) ?? .standard
+    }
+}
+
+extension PracticeScenario {
+    static let personaLimit = 120
+    /// A trimmed, bounded persona; nil when empty.
+    static func cleanPersona(_ text: String?) -> String? {
+        let trimmed = String((text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(personaLimit))
+        return trimmed.isEmpty ? nil : trimmed
+    }
+    /// The same scenario with a learner-edited persona, used for one rehearsal only.
+    func withPersona(_ text: String?) -> PracticeScenario {
+        var copy = self
+        copy.persona = Self.cleanPersona(text)
+        return copy
+    }
+}
+
+/// How the partner treats the learner. `natural` follows the scenario's persona and is never sent.
+enum PracticeAttitude: String, CaseIterable, Identifiable {
+    case friendly, natural, tough
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .friendly: return "好说话"
+        case .natural: return "按场景"
+        case .tough: return "难缠"
+        }
+    }
+    var note: String {
+        switch self {
+        case .friendly: return "对方讲道理、愿意配合，适合先把话说顺。"
+        case .natural: return "对方按自己的性格和立场来，理亏也可能嘴硬。"
+        case .tough: return "对方嘴硬、找借口、反咬一口，你得坚持住。"
+        }
     }
 }
 
@@ -77,11 +114,13 @@ struct PracticeSession: Codable, Equatable, Identifiable {
     private(set) var level: String? = nil
     /// Up to three 词库 expressions the partner looks for a chance to bring back.
     private(set) var reviewItems: [ReviewTarget]? = nil
+    /// Raw `PracticeAttitude`; nil follows the scenario. A string so a newer value never breaks decoding.
+    private(set) var attitude: String? = nil
     /// Post-conversation suggestions; optional so pre-feature archives still decode.
     private(set) var sentenceReviews: [SentenceReviewRecord]? = nil
 
     init(scenario: PracticeScenario, goal: String = "", context: String = "", useAI: Bool = false,
-         level: PracticeLevel = .standard, reviewItems: [ReviewTarget] = [], now: Date = Date()) {
+         level: PracticeLevel = .standard, attitude: PracticeAttitude = .natural, reviewItems: [ReviewTarget] = [], now: Date = Date()) {
         precondition(!scenario.steps.isEmpty)
         id = UUID()
         self.scenario = scenario
@@ -95,10 +134,14 @@ struct PracticeSession: Codable, Equatable, Identifiable {
             text: scenario.steps[0].prompt, stepIndex: 0, createdAt: now)]
         ai = useAI ? AIPracticeState(pending: AIPendingRequest(id: UUID(), action: .start)) : nil
         self.level = level == .standard ? nil : level.rawValue
+        self.attitude = attitude == .natural ? nil : attitude.rawValue
         self.reviewItems = reviewItems.isEmpty ? nil : Array(reviewItems.prefix(3))
     }
 
     var practiceLevel: PracticeLevel { level.flatMap(PracticeLevel.init(rawValue:)) ?? .standard }
+    var partnerAttitude: PracticeAttitude { attitude.flatMap(PracticeAttitude.init(rawValue:)) ?? .natural }
+    /// What requests send: only values the server knows, nil for the scenario's own persona.
+    var requestAttitude: String? { partnerAttitude == .natural ? nil : partnerAttitude.rawValue }
 
     var title: String { personalGoal.isEmpty ? scenario.title : personalGoal }
     var step: PracticeStep { scenario.steps[min(stepIndex, scenario.steps.count - 1)] }
@@ -115,10 +158,9 @@ struct PracticeSession: Codable, Equatable, Identifiable {
         guard let pending = ai?.pending else { return nil }
         return AIPracticeRequest(requestId: pending.id, sessionId: id, action: pending.action,
             stepIndex: stepIndex, goal: personalGoal, context: context,
-            scenario: .init(title: scenario.title, partner: scenario.partner,
-                partnerRole: scenario.partnerRole, setting: scenario.setting, goals: scenario.steps.map(\.goal)),
+            scenario: .init(scenario),
             messages: messages.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.suffix(24).map { .init(role: $0.role, kind: $0.kind, text: live == nil ? $0.text : String($0.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1200)), stepIndex: $0.stepIndex) },
-            level: level, reviewItems: reviewItems)
+            level: level, attitude: requestAttitude, reviewItems: reviewItems)
     }
     var currentFeedback: AIFeedback? {
         guard let user = messages.last(where: { $0.role == .user && $0.stepIndex == stepIndex }) else { return nil }

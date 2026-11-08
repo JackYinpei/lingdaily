@@ -187,6 +187,26 @@ describe('iOS Live development token', () => {
     expect(review.split('UNTRUSTED_SCENARIO_JSON:')[0]).not.toContain('availability')
     expect(liveTokenRequestSchema.safeParse({ ...body(), level: 'expert' }).success).toBe(false)
   })
+  it('plays a realistic character instead of a warm assistant, within boundaries', async () => {
+    const instruction = async input => {
+      expect((await POST(request(input))).status).toBe(200)
+      return create.mock.calls.at(-1)[0].config.liveConnectConstraints.config.systemInstruction
+    }
+    const natural = await instruction(body())
+    expect(natural).toContain('not a helpful assistant')
+    expect(natural).toContain('greet only if they would')
+    expect(natural).toContain('BOUNDARIES')
+    expect(natural).not.toContain('Speak warmly')
+    expect(natural).not.toContain('Start with a brief greeting')
+    expect(natural).not.toContain('ATTITUDE')
+    const tough = await instruction({ ...body(), attitude: 'tough', scenario: { ...body().scenario, persona: '嘴硬，反怪你' } })
+    expect(tough).toContain('hardest realistic version')
+    expect(tough.split('UNTRUSTED_SCENARIO_JSON:')[1]).toContain('嘴硬，反怪你')
+    expect(tough.split('UNTRUSTED_SCENARIO_JSON:')[0]).not.toContain('嘴硬，反怪你')
+    expect(await instruction({ ...body(), attitude: 'friendly' })).toContain('cooperative version')
+    expect(liveTokenRequestSchema.safeParse({ ...body(), attitude: 'hostile' }).success).toBe(false)
+    expect(liveTokenRequestSchema.safeParse({ ...body(), scenario: { ...body().scenario, persona: 'x'.repeat(301) } }).success).toBe(false)
+  })
   it('sanitizes upstream failures and never falls back to unconstrained tokens', async () => {
     create.mockRejectedValue(new Error('synthetic-server-secret provider body wss://private'))
     const response = await POST(request())

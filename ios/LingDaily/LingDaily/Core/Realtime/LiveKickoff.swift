@@ -8,7 +8,7 @@ import Foundation
 /// its last question, so the cue depends on who spoke last.
 enum LiveKickoff {
     static func fresh(_ scenario: PracticeScenario) -> String {
-        "You are \(scenario.partner) (\(scenario.partnerRole)); I am the learner. Open the conversation in character as \(scenario.partner): greet me and ask your first question for the current task. Never say my lines."
+        "You are \(scenario.partner) (\(scenario.partnerRole)); I am the learner. Open the conversation in character as \(scenario.partner), the way you really would at this moment (greet me only if you would), and lead into the current task. Never say my lines."
     }
 
     static func replyToLearner(_ scenario: PracticeScenario) -> String {

@@ -10,13 +10,12 @@ struct LiveTokenRequest: Encodable {
     var pauseMs: Int? = nil
     /// Omitted for standard and when empty, so default requests match older servers.
     let level: String?
+    let attitude: String?
     let reviewItems: [ReviewTarget]?
     init(session: PracticeSession) {
-        scenario = .init(title: session.scenario.title, partner: session.scenario.partner,
-                         partnerRole: session.scenario.partnerRole, setting: session.scenario.setting,
-                         goals: session.scenario.steps.map(\.goal))
+        scenario = .init(session.scenario)
         goal = session.personalGoal; context = session.context; stepIndex = session.stepIndex
-        level = session.level; reviewItems = session.reviewItems
+        level = session.level; attitude = session.requestAttitude; reviewItems = session.reviewItems
         messages = session.messages.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.suffix(12).map { .init(role: $0.role, text: String($0.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2000))) }
     }
 }

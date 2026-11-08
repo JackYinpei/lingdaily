@@ -216,10 +216,10 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 | `GET/POST /api/auth/[...nextauth]` | NextAuth | 登录、OAuth callback、session |
 | `POST /api/realtime-token` | 登录 | Gemini Live 一次性 token |
 | `POST /api/ios/auth/apple` | 公开（需有效 Apple token） | iOS Apple 登录，签发 iOS 会话 |
-| `POST /api/ios/practice`、`/scenario`、`/live-token` | iOS 会话 | 原生练习、场景生成、Live 临时 token |
+| `POST /api/ios/practice`、`/scenario`、`/live-token` | iOS 会话 | 原生练习、场景生成、Live 临时 token；对方按场景 `persona` 演真实的人（理亏会嘴硬、甩锅），可选 `attitude: friendly\|tough` 覆盖，有不辱骂/不威胁的底线 |
 | `GET /api/ios/models` | iOS 会话 | App 可选模型清单（按功能：practice/suggest/translate/live），见 `app/lib/ios/models.js` |
 | `POST /api/ios/scenario-ideas` | iOS 会话 | 新建场景页「换一批」：生成 3 条不重复的场景灵感 |
-| `GET /api/ios/scenarios` | 公开 | App 内置场景清单（version + 三步练习计划），App 缓存，离线回退内置 4 个 |
+| `GET /api/ios/scenarios` | 公开 | App 内置场景清单（version + 对方 `persona` + 三步练习计划），App 缓存，离线回退内置 4 个 |
 | `GET /api/ios/today` | iOS 会话 | 最近 7 天内最新一期播客（摘要、音频、8 个生词）及共享的新闻练习场景；无则 `today: null` |
 | `GET/POST /api/ios/usage` | iOS 会话 | 本人近 30 天 token 用量（不含价格）；POST 为 App 上报一次 Live 连接的用量（reportId 幂等） |
 | `GET /api/admin/usage`（页面 `/admin/usage`） | `ADMIN_EMAILS` | iOS AI 用量后台：按天/功能/模型/用户汇总 token 与估算花费 |

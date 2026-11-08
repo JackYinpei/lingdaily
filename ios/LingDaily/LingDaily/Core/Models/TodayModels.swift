@@ -46,6 +46,7 @@ struct ScenarioCatalogResponse: Decodable {
                 && scenario.id.range(of: "^[a-z][a-z0-9-]{1,39}$", options: .regularExpression) != nil
                 && !scenario.id.hasPrefix("custom-") && !scenario.id.hasPrefix("today-")
                 && texts.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.count <= 400 }
+                && (scenario.persona?.count ?? 0) <= 400
                 && seen.insert(scenario.id).inserted
         }
     }

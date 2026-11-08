@@ -162,6 +162,7 @@ export async function generateSuggestion(body, userId) {
   const payload = {
     scenario: body.scenario, personalGoal: body.goal, context: body.context,
     currentTask: body.scenario.goals[body.stepIndex], stepIndex: body.stepIndex, recentMessages: body.messages,
+    ...(body.attitude ? { partnerAttitude: body.attitude } : {}),
     ...(body.reviewItems?.length ? { reviewItems: body.reviewItems } : {}),
   }
   const { model, data } = await generateStructured({

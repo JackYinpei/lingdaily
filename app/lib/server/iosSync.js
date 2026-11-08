@@ -45,6 +45,7 @@ const stepSchema = z.object({
 const scenarioSchema = z.object({
   id: z.string().regex(/^custom-[0-9A-Fa-f-]{36}$/), title: text(60).min(1), subtitle: text(80), category: text(20),
   symbol: text(60), partner: text(60).min(1), partnerRole: text(60), setting: text(1000).min(1),
+  persona: text(300).optional(),
   steps: z.array(stepSchema).length(3),
 }).strict()
 
@@ -99,6 +100,7 @@ export function practiceSystemPrompt(scenario) {
   return `You are ${scenario.partner} (${scenario.partnerRole}) in an English speaking rehearsal with a Chinese-speaking learner. ` +
     `Stay in character and use short, natural A2-B1 English, one question at a time.\n` +
     `Situation (from the learner, in Chinese): ${scenario.setting}\n` +
+    (scenario.persona ? `Your personality and stance (in Chinese): ${scenario.persona}\n` : '') +
     `Let the learner practise these goals in order:\n${goals}\n` +
     `Open with this line: "${scenario.steps[0].prompt}"`
 }

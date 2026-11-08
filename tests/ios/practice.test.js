@@ -15,7 +15,8 @@ import { POST as POST_SUGGEST } from '@/app/api/ios/suggest/route'
 import { POST as POST_IDEAS } from '@/app/api/ios/scenario-ideas/route'
 import {
   practiceRequestSchema, parsePracticeTurn, buildPracticeContext, practiceInstruction, SYSTEM_INSTRUCTION,
-  newsScenarioPayload, suggestionRequestSchema,
+  newsScenarioPayload, suggestionRequestSchema, PARTNER_CHARACTER, SCENARIO_INSTRUCTION, SCENARIO_RESPONSE_SCHEMA,
+  IDEAS_INSTRUCTION, SUGGESTION_INSTRUCTION, scenarioDraftSchema,
 } from '@/app/lib/ios/practice'
 import { authorizeDevelopmentPractice, createPracticeCoordinator } from '@/app/lib/server/iosPractice'
 
@@ -180,7 +181,7 @@ describe('learner-described scenarios', () => {
   const step = index => ({ goal: ['说明情况', '商量方案', '确认安排'][index], prompt: 'Hi, what brings you here?', translation: '你好，有什么事？',
     hint: '先说明来意。', keywords: 'deposit · move out', expression: 'I would like to talk about my deposit.', meaning: '我想谈谈押金。' })
   const draft = { title: '要回押金', subtitle: '和房东商量退押金', category: '日常', partner: 'Morgan', partnerRole: '房东',
-    setting: '你下周搬走，想确认押金何时退还。', steps: [0, 1, 2].map(step) }
+    setting: '你下周搬走，想确认押金何时退还。', persona: '想多扣点钱，一口咬定是你弄坏的', steps: [0, 1, 2].map(step) }
   const scenarioRequest = (payload, credential = token) => new Request('http://localhost:8000/api/ios/scenario', {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${credential}` }, body: JSON.stringify(payload),
   })
@@ -209,6 +210,18 @@ describe('learner-described scenarios', () => {
     const response = await POST_SCENARIO(scenarioRequest({ requestId: randomUUID(), description: '点咖啡' }))
     expect(response.status).toBe(502)
     expect(generate).toHaveBeenCalledTimes(2)
+  })
+  it('describes how the partner behaves and keeps conflicts realistic', () => {
+    expect(SCENARIO_RESPONSE_SCHEMA.required).toContain('persona')
+    const { persona, ...withoutPersona } = draft
+    expect(persona).toBeTruthy()
+    expect(scenarioDraftSchema.safeParse(withoutPersona).success).toBe(false)
+    expect(scenarioDraftSchema.safeParse({ ...draft, persona: '长'.repeat(81) }).success).toBe(false)
+    expect(SCENARIO_INSTRUCTION).toContain('Complaints, conflicts and arguments')
+    expect(SCENARIO_INSTRUCTION).toContain('rather than apologise or help')
+    expect(SCENARIO_INSTRUCTION).not.toContain('never sexual, hateful, violent or dangerous')
+    expect(IDEAS_INSTRUCTION).toContain('difficult, rude or unfair person')
+    expect(SUGGESTION_INSTRUCTION).toContain('stand their ground')
   })
 })
 
@@ -296,8 +309,8 @@ describe('scenario ideas (换一批)', () => {
 describe('speaking level and review items', () => {
   const review = [{ text: 'availability', meaning: '空闲时间' }, { text: 'move the launch', meaning: '推迟上线' }]
   it('keeps the standard prompt unchanged and adjusts it only when asked', () => {
-    expect(practiceInstruction({})).toBe(SYSTEM_INSTRUCTION)
-    expect(practiceInstruction({ level: 'standard' })).toBe(SYSTEM_INSTRUCTION)
+    expect(practiceInstruction({})).toBe(`${SYSTEM_INSTRUCTION}\n${PARTNER_CHARACTER}`)
+    expect(practiceInstruction({ level: 'standard' })).toBe(`${SYSTEM_INSTRUCTION}\n${PARTNER_CHARACTER}`)
     const easy = practiceInstruction({ level: 'easy' })
     expect(easy).toContain('A1-A2')
     expect(easy).toContain('under 30 English words')
@@ -305,6 +318,22 @@ describe('speaking level and review items', () => {
     expect(practiceInstruction({ level: 'challenge' })).toContain('ONE realistic complication')
     expect(practiceInstruction({ reviewItems: review })).toContain('REVIEW:')
     expect(practiceInstruction({ reviewItems: review })).not.toContain('availability')
+  })
+  it('plays the partner in character and follows the chosen attitude', () => {
+    const natural = practiceInstruction({})
+    expect(natural).toContain('not a helpful assistant')
+    expect(natural).toContain('Never apologise first')
+    expect(natural).toContain('BOUNDARIES')
+    expect(natural).not.toContain('ATTITUDE')
+    expect(practiceInstruction({ attitude: 'tough' })).toContain('hardest realistic version')
+    expect(practiceInstruction({ attitude: 'friendly' })).toContain('cooperative version')
+    expect(practiceInstruction({ level: 'easy' })).not.toContain('Be patient')
+    expect(practiceRequestSchema.safeParse({ ...body(), attitude: 'tough' }).success).toBe(true)
+    expect(practiceRequestSchema.safeParse({ ...body(), attitude: 'hostile' }).success).toBe(false)
+    const persona = { ...body(), scenario: { ...body().scenario, persona: '嘴硬，不耐烦' } }
+    expect(practiceRequestSchema.safeParse(persona).success).toBe(true)
+    expect(buildPracticeContext({ ...persona, attitude: 'tough' })).toMatchObject({ partnerAttitude: 'tough', scenario: { persona: '嘴硬，不耐烦' } })
+    expect(buildPracticeContext(body())).not.toHaveProperty('partnerAttitude')
   })
   it('accepts at most three review items and only known levels', () => {
     expect(practiceRequestSchema.safeParse({ ...body(), level: 'easy', reviewItems: review }).success).toBe(true)

@@ -69,7 +69,7 @@ final class PracticeViewModel: ObservableObject {
         isLoading = false
         errorMessage = nil
         session = PracticeSession(scenario: session.scenario, goal: session.personalGoal, context: session.context,
-                                  useAI: true, level: session.practiceLevel, reviewItems: reviewItems)
+                                  useAI: true, level: session.practiceLevel, attitude: session.partnerAttitude, reviewItems: reviewItems)
     }
 
     func keepDraft(_ text: String) { session.keepDraft(text) }

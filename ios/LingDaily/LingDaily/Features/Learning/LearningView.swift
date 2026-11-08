@@ -279,7 +279,8 @@ struct SessionDetailView: View {
                 Button(startsNew ? "再练一次" : "继续这次对话") {
                     speech.stopAll()
                     activeSession = startsNew
-                        ? PracticeSession(scenario: session.scenario, goal: session.personalGoal, context: session.context, useAI: true)
+                        ? PracticeSession(scenario: session.scenario, goal: session.personalGoal, context: session.context, useAI: true,
+                                          attitude: session.partnerAttitude)
                         : session
                 }
                 .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("resume-rehearsal")

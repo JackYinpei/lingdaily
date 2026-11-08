@@ -154,6 +154,14 @@ describe('iOS cloud sync into the shared tables', () => {
     expect(db.tables.scenarios).toHaveLength(0)
   })
 
+  it('keeps the partner persona of own scenarios and briefs the web partner with it', async () => {
+    const withPersona = scenario({ persona: '想多扣押金，不轻易松口' })
+    const { data } = await call(POST, userA, { scenarios: { upsert: [withPersona] } })
+    expect(db.tables.scenarios[0].system_prompt).toContain('想多扣押金，不轻易松口')
+    expect(data.scenarios).toEqual([withPersona])
+    expect((await call(POST, userA, { scenarios: { upsert: [scenario({ persona: 'x'.repeat(301) })] } })).status).toBe(400)
+  })
+
   it('isolates accounts and refuses the local development pairing', async () => {
     await call(POST, userA, { sessions: { upsert: [session()] }, expressions: { upsert: [{ text: 'x', meaning: 'y', source: '', createdAt: '2026-10-05T10:00:00.000Z' }] } })
     const other = await call(GET, userB, undefined, 'GET')

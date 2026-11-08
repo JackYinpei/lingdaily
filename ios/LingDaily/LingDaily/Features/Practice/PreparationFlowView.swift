@@ -11,12 +11,21 @@ struct PreparationFlowView: View {
     @State private var addsContext = false
     @State private var reviewItems: [ReviewTarget] = []
     @State private var quickReview = false
+    @State private var attitude: PracticeAttitude = .natural
+    /// The partner's persona for this rehearsal; editing it never changes the saved scenario.
+    @State private var persona: String
+    @State private var editsPersona = false
     @AppStorage("preferVoicePractice") private var voiceMode = true
     @AppStorage(PracticeLevel.key) private var levelRaw = PracticeLevel.standard.rawValue
     @AppStorage(ReviewPicker.enabledKey) private var reviewEnabled = true
     @FocusState private var fieldFocused: Bool
 
     private var level: PracticeLevel { PracticeLevel(rawValue: levelRaw) ?? .standard }
+
+    init(scenario: PracticeScenario) {
+        self.scenario = scenario
+        _persona = State(initialValue: scenario.persona ?? "")
+    }
 
     var body: some View {
         if let session {
@@ -48,6 +57,7 @@ struct PreparationFlowView: View {
                             }.pickerStyle(.segmented).accessibilityIdentifier("practice-level")
                             Text(Self.levelNote(level)).font(.caption).foregroundColor(Brand.secondary)
                         }
+                        partner
                         if reviewEnabled && !reviewItems.isEmpty { review }
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(alignment: .firstTextBaseline) {
@@ -78,8 +88,8 @@ struct PreparationFlowView: View {
                         }.pickerStyle(.segmented).accessibilityIdentifier("preparation-mode")
                         Button {
                             fieldFocused = false
-                            session = PracticeSession(scenario: scenario, goal: goal, context: context, useAI: true,
-                                                      level: level, reviewItems: reviewEnabled ? reviewItems : [])
+                            session = PracticeSession(scenario: scenario.withPersona(persona), goal: goal, context: context, useAI: true,
+                                                      level: level, attitude: attitude, reviewItems: reviewEnabled ? reviewItems : [])
                         } label: { Text(voiceMode ? "进入语音通话" : "开始文字对话") }
                             .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("start-rehearsal")
                     } else {
@@ -96,6 +106,26 @@ struct PreparationFlowView: View {
                 ReviewView(title: "快速过一遍", cards: scenario.steps.map {
                     ReviewCard(id: $0.id, text: $0.expression, meaning: $0.meaning, label: $0.goal)
                 })
+            }
+        }
+    }
+
+    /// 对方态度: how hard the partner pushes back, and who they are in this scene.
+    private var partner: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("对方态度").font(.headline).foregroundColor(Brand.ink)
+            Picker("对方态度", selection: $attitude) {
+                ForEach(PracticeAttitude.allCases) { Text($0.label).tag($0) }
+            }.pickerStyle(.segmented).accessibilityIdentifier("partner-attitude")
+            Text(attitude.note).font(.caption).foregroundColor(Brand.secondary)
+            if editsPersona {
+                field("比如：觉得自己没错，嘴硬又不耐烦", text: $persona, limit: PracticeScenario.personaLimit)
+                    .accessibilityIdentifier("partner-persona")
+            } else {
+                Button { editsPersona = true } label: {
+                    Label(persona.isEmpty ? "描述一下对方的性格" : "改一改对方的性格", systemImage: "pencil")
+                }.font(.subheadline).foregroundColor(Brand.secondary).frame(minHeight: 44)
+                    .accessibilityIdentifier("edit-persona")
             }
         }
     }
@@ -133,6 +163,11 @@ struct PreparationFlowView: View {
             Text(scenario.title).font(.title.bold()).foregroundColor(Brand.ink)
             Text(scenario.setting).font(.body).foregroundColor(Brand.inkOnTone).lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
+            if let shown = PracticeScenario.cleanPersona(persona) {
+                Text("\(scenario.partner)：\(shown)").font(.subheadline).foregroundColor(Brand.inkOnTone)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("partner-persona-summary")
+            }
         }
         .padding(22).frame(maxWidth: .infinity, alignment: .leading)
         .background(Brand.tone(scenario.id))

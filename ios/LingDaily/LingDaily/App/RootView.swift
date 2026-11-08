@@ -7,21 +7,13 @@ struct RootView: View {
     @State private var showsAIConsent = false
     @State private var tab = 0
     var body: some View {
-        NavigationView {
-            TabView(selection: $tab) {
-                PracticeHomeView()
-                    .tabItem { Label("练习", systemImage: "bubble.left.and.bubble.right") }.tag(0)
-                LearningView()
-                    .tabItem { Label("学习", systemImage: "book.closed") }.tag(1)
-                SettingsView()
-                    .tabItem { Label("我的", systemImage: "person") }.tag(2)
+        Group {
+            if #available(iOS 16.0, *) {
+                NavigationStack { tabs }
+            } else {
+                NavigationView { tabs }.navigationViewStyle(.stack)
             }
-            // A tapped reminder opens its scenario from the practice page.
-            .onReceive(reminders.$pendingScenarioID) { if $0 != nil { tab = 0 } }
-            .navigationBarHidden(true)
-            .safeAreaInset(edge: .top, spacing: 0) { StorageBanner() }
         }
-        .navigationViewStyle(.stack)
         .tint(Brand.accent)
         .accentColor(Brand.accent)
         .sheet(isPresented: $showsAIConsent) { AIDataConsentView() }
@@ -35,6 +27,21 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: AIDataConsent.requested).receive(on: RunLoop.main)) { _ in
             showsAIConsent = true
         }
+    }
+
+    private var tabs: some View {
+        TabView(selection: $tab) {
+            PracticeHomeView()
+                .tabItem { Label("练习", systemImage: "bubble.left.and.bubble.right") }.tag(0)
+            LearningView()
+                .tabItem { Label("学习", systemImage: "book.closed") }.tag(1)
+            SettingsView()
+                .tabItem { Label("我的", systemImage: "person") }.tag(2)
+        }
+        // A tapped reminder opens its scenario from the practice page.
+        .onReceive(reminders.$pendingScenarioID) { if $0 != nil { tab = 0 } }
+        .navigationBarHidden(true)
+        .safeAreaInset(edge: .top, spacing: 0) { StorageBanner() }
     }
 
     private func offerAIConsent() {

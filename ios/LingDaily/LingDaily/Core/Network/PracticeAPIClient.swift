@@ -177,6 +177,14 @@ final class PracticeAPIClient: PracticeServing {
         return result
     }
 
+    func reviewSentences(_ request: SentenceReviewRequest) async throws -> [SentenceReviewRecord] {
+        var request = request
+        request.model = AIModelPreference.model(for: .practice)
+        let result: SentenceReviewResponse = try await post("api/ios/review", request, maxBytes: 256 * 1024)
+        guard let records = result.records(for: request) else { throw PracticeNetworkError.invalidReply }
+        return records
+    }
+
     /// Generates a three-step scenario from the learner's own description of an upcoming conversation.
     func createScenario(from description: String) async throws -> PracticeScenario {
         let request = AIScenarioRequest(requestId: UUID(), description: String(description.prefix(300)))
@@ -279,7 +287,7 @@ final class PracticeAPIClient: PracticeServing {
                                                           maxBytes: Int = 24 * 1024, method: String = "POST",
                                                           session: URLSession = PracticeAPIClient.session) async throws -> Result {
         // Account, sync, usage and model-list requests do not send content to Gemini.
-        let aiPaths: Set<String> = ["api/ios/practice", "api/ios/scenario", "api/ios/scenario-ideas",
+        let aiPaths: Set<String> = ["api/ios/practice", "api/ios/review", "api/ios/scenario", "api/ios/scenario-ideas",
                                     "api/ios/translate", "api/ios/suggest", "api/ios/live-token"]
         if aiPaths.contains(path), !aiConsent() {
             NotificationCenter.default.post(name: AIDataConsent.requested, object: nil)

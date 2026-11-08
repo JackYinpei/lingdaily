@@ -17,8 +17,13 @@ enum TabBarStyle {
 
 extension View {
     /// iOS 15-compatible programmatic pushes. Destinations inherit the same environment and navigation stack.
-    func pushDestination<Destination: View>(isPresented: Binding<Bool>, @ViewBuilder destination: () -> Destination) -> some View {
-        background(NavigationLink(isActive: isPresented, destination: destination, label: { EmptyView() }).hidden())
+    @ViewBuilder
+    func pushDestination<Destination: View>(isPresented: Binding<Bool>, @ViewBuilder destination: @escaping () -> Destination) -> some View {
+        if #available(iOS 16.0, *) {
+            navigationDestination(isPresented: isPresented, destination: destination)
+        } else {
+            background(NavigationLink(isActive: isPresented, destination: destination, label: { EmptyView() }).hidden())
+        }
     }
 
     func pushDestination<Item, Destination: View>(item: Binding<Item?>, @ViewBuilder destination: @escaping (Item) -> Destination) -> some View {
@@ -50,13 +55,25 @@ private struct ItemNavigationLink<Item, Destination: View>: View {
     @State private var lastItem: Item?
     let destination: (Item) -> Destination
 
+    private var presented: Binding<Bool> {
+        Binding(get: { item != nil }, set: { if !$0 { item = nil } })
+    }
+
+    @ViewBuilder private var content: some View {
+        if let value = item ?? lastItem {
+            destination(value).onDisappear { if item == nil { lastItem = nil } }
+        }
+    }
+
     var body: some View {
-        NavigationLink(isActive: Binding(get: { item != nil }, set: { if !$0 { item = nil } })) {
-            if let value = item ?? lastItem {
-                destination(value).onDisappear { if item == nil { lastItem = nil } }
+        Group {
+            if #available(iOS 16.0, *) {
+                Color.clear.frame(width: 0, height: 0)
+                    .navigationDestination(isPresented: presented) { content }
+            } else {
+                NavigationLink(isActive: presented) { content } label: { EmptyView() }.hidden()
             }
-        } label: { EmptyView() }
-        .hidden()
+        }
         .onChange(of: item != nil) { if $0 { lastItem = item } }
     }
 }

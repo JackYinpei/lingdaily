@@ -28,6 +28,8 @@ final class PracticeStore: ObservableObject {
     }
 
     func save(_ session: PracticeSession, collecting items: [AILearningItem] = []) {
+        var session = session
+        if let saved = archive.sessions.first(where: { $0.id == session.id }) { session.mergeSentenceReviews(from: saved) }
         let knownExpressions = Set(archive.expressions.map(\.id))
         archive.upsert(session)
         archive.collect(items, source: session.scenario.title)

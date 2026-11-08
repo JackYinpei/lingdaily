@@ -98,31 +98,28 @@ enum PracticeStats {
     }
 }
 
-/// One line per task on the summary: the coached rewrite when there is one, else the learner's own words.
+/// One card per learner message, in conversation order, with its own suggestion underneath.
 struct SummaryLine: Identifiable, Equatable {
-    let id: Int
+    let id: UUID
     let goal: String
     let text: String
     let meaning: String
     let isOwnWords: Bool
+    let original: String
+    let note: String
 }
 
 extension PracticeSession {
     var summaryLines: [SummaryLine] {
-        scenario.steps.indices.compactMap { index in
-            let goal = scenario.steps[index].goal
-            guard let ai else {
-                let step = scenario.steps[index]
-                return SummaryLine(id: index, goal: goal, text: step.expression, meaning: step.meaning, isOwnWords: false)
-            }
-            if let record = ai.feedbacks.last(where: { $0.stepIndex == index }) {
-                return SummaryLine(id: index, goal: goal, text: record.feedback.revised, meaning: record.feedback.meaning, isOwnWords: false)
-            }
-            // No note on this task (Live only coaches what needs it): keep what the learner said.
-            let said = messages.filter { $0.role == .user && $0.stepIndex == index }
-                .map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }.max { $0.count < $1.count }
-            guard let said, !said.isEmpty else { return nil }
-            return SummaryLine(id: index, goal: goal, text: String(said.prefix(300)), meaning: "", isOwnWords: true)
+        learnerMessages.map { message in
+            let reviewed = sentenceReview(for: message)
+            let feedback = feedback(for: message.id)
+            let revised = reviewed?.revised ?? feedback?.revised ?? ""
+            let hasRewrite = !revised.isEmpty && revised != message.text
+            return SummaryLine(id: message.id, goal: scenario.steps[message.stepIndex].goal,
+                text: hasRewrite ? revised : message.text,
+                meaning: hasRewrite ? (reviewed?.meaning ?? feedback?.meaning ?? "") : "", isOwnWords: !hasRewrite,
+                original: message.text, note: hasRewrite ? (reviewed?.note ?? feedback?.note ?? "") : "")
         }
     }
 }

@@ -5,6 +5,7 @@ import { GoogleGenAI } from '@google/genai'
 import { getServerGeminiApiKey, getServerGeminiBaseUrl } from './geminiConfig'
 import { resolveModel } from '../ios/models'
 import { recordUsage, tokensFromUsageMetadata } from './aiUsage'
+import { parseSentenceReview, SENTENCE_REVIEW_INSTRUCTION, SENTENCE_REVIEW_SCHEMA } from '../ios/review'
 import {
   buildPracticeContext, IDEAS_INSTRUCTION, IDEAS_RESPONSE_SCHEMA, NEWS_SCENARIO_INSTRUCTION, newsScenarioPayload,
   parseIdeas, parsePracticeTurn, parseScenarioDraft, parseSuggestion, parseTranslation, practiceInstruction,
@@ -187,6 +188,18 @@ export async function generateIdeas(body, userId) {
   return { requestId: body.requestId, model, ideas: data }
 }
 
+export async function generateSentenceReview(body, userId) {
+  const payload = { scenario: body.scenario, learnerMessages: body.messages }
+  const { model, data } = await generateStructured({
+    systemInstruction: SENTENCE_REVIEW_INSTRUCTION, responseSchema: SENTENCE_REVIEW_SCHEMA,
+    payload, retryPayload: { ...payload, formatReminder: 'Return exactly one item for EVERY provided messageId. Empty strings mean no improvement needed. Preserve learner meaning and perspective.' },
+    parse: raw => parseSentenceReview(raw, body.messages), temperature: 0.2, maxOutputTokens: 8192,
+    model: resolveModel('practice', body.model, practiceModel()), usage: { userId, feature: 'practice' },
+    invalidMessage: '这次的表达建议不完整，请重试。', unavailableMessage: '暂时无法整理表达建议，原话已保留。',
+  })
+  return { requestId: body.requestId, model, items: data }
+}
+
 // Per-user single-process budget. Cached practice replies do not acquire a
 // slot; each single-use Live credential does acquire a fresh slot.
 export function createUserLimiter({ now = Date.now, maxConcurrent = 2, maxPerMinute = 20 } = {}) {
@@ -259,6 +272,7 @@ export const performScenarioRequest = (body, userId) => coordinated('scenario', 
 export const performTranslationRequest = (body, userId) => coordinated('translate', generateTranslation)(body, userId)
 export const performSuggestionRequest = (body, userId) => coordinated('suggest', generateSuggestion)(body, userId)
 export const performIdeasRequest = (body, userId) => coordinated('ideas', generateIdeas)(body, userId)
+export const performSentenceReviewRequest = (body, userId) => coordinated('review', generateSentenceReview)(body, userId)
 
 // ---- HTTP helpers shared by the /api/ios/* routes ----
 

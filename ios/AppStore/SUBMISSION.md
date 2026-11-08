@@ -2,6 +2,8 @@
 
 ## 1.6（构建 9）：2026-11-06
 
+2026-11-07 复核：**1.6（9）已可分发**；价格与销售范围逐地区列表中，中国大陆为「可供应」，共 175 个地区。Apple 国区 lookup 与 `search?term=LingDaily&country=cn&entity=software` 均返回本 App 1.6（`id6824758752`）。此前「中国大陆缺少 ICP」是历史状态，不再代表当前供应情况。
+
 **2026-11-06 20:53（Asia/Shanghai）正式送审，Apple 回执「已提交 1 个项目」，审核详情显示「等待审核」，通过后自动向所有用户发布。**
 
 - [本次审核详情](https://appstoreconnect.apple.com/apps/6824758752/distribution/reviewsubmissions/details/fa1889c0-7397-4881-9937-e1d393a41e6c)；提交 ID：`fa1889c0-7397-4881-9937-e1d393a41e6c`。

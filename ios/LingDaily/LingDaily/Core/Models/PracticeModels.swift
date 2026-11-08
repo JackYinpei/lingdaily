@@ -77,6 +77,8 @@ struct PracticeSession: Codable, Equatable, Identifiable {
     private(set) var level: String? = nil
     /// Up to three 词库 expressions the partner looks for a chance to bring back.
     private(set) var reviewItems: [ReviewTarget]? = nil
+    /// Post-conversation suggestions; optional so pre-feature archives still decode.
+    private(set) var sentenceReviews: [SentenceReviewRecord]? = nil
 
     init(scenario: PracticeScenario, goal: String = "", context: String = "", useAI: Bool = false,
          level: PracticeLevel = .standard, reviewItems: [ReviewTarget] = [], now: Date = Date()) {
@@ -280,6 +282,28 @@ struct PracticeSession: Codable, Equatable, Identifiable {
         return true
     }
     mutating func endLive(now: Date = Date()) { live?.endedAt = now; updatedAt = now }
+
+    @discardableResult
+    mutating func applySentenceReviews(_ records: [SentenceReviewRecord], now: Date = Date()) -> Bool {
+        guard !records.isEmpty, Set(records.map(\.id)).count == records.count,
+              records.allSatisfy({ record in learnerMessages.contains { $0.id == record.id && $0.text == record.original } }) else { return false }
+        let ids = Set(records.map(\.id))
+        sentenceReviews = (sentenceReviews ?? []).filter { !ids.contains($0.id) } + records
+        updatedAt = now
+        return true
+    }
+
+    /// A late background save of the conversation must not erase completed review batches.
+    mutating func mergeSentenceReviews(from saved: PracticeSession) {
+        guard id == saved.id else { return }
+        let missing = (saved.sentenceReviews ?? []).filter { record in
+            !(sentenceReviews ?? []).contains { $0.id == record.id }
+                && learnerMessages.contains { $0.id == record.id && $0.text == record.original }
+        }
+        guard !missing.isEmpty else { return }
+        sentenceReviews = (sentenceReviews ?? []) + missing
+        updatedAt = max(updatedAt, saved.updatedAt)
+    }
 
     var isValid: Bool {
         !scenario.steps.isEmpty && stepIndex >= 0 && stepIndex < scenario.steps.count

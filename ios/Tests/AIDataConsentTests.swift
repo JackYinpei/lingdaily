@@ -30,6 +30,9 @@ final class AIDataConsentTests: XCTestCase {
         let practice = PracticeSession(scenario: scenario, useAI: true)
         let withOpeningLine = PracticeSession(scenario: scenario)
         let calls: [() async throws -> Void] = [
+            { _ = try await api.reviewSentences(.init(requestId: UUID(), sessionId: practice.id,
+                scenario: .init(title: "Synthetic", partner: "Alex", partnerRole: "Barista", setting: "Cafe", goals: ["a", "b", "c"]),
+                messages: [.init(messageId: UUID(), text: "Synthetic answer", precedingPartner: "Hello")])) },
             { _ = try await api.createScenario(from: "Synthetic cafe") },
             { _ = try await api.scenarioIdeas(avoiding: []) },
             { _ = try await api.translate("Hello") },

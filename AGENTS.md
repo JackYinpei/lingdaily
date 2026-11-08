@@ -225,6 +225,7 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 | `GET /api/admin/usage`（页面 `/admin/usage`） | `ADMIN_EMAILS` | iOS AI 用量后台：按天/功能/模型/用户汇总 token 与估算花费 |
 | `POST /api/ios/suggest` | iOS 会话 | 通话中卡住时的回复建议：中文提示 + 关键词 + 学习者视角英文参考句及中文意思 |
 | `POST /api/ios/translate` | iOS 会话 | 按需把对方一句话译成中文（Live 字幕没有自带翻译），结果存进该消息并随云同步 |
+| `POST /api/ios/review` | iOS 会话 | 对话结束后的逐句表达复盘：每批最多 4 条用户原话，按消息 ID 返回自然改写/中文意思/解释；已自然则保留原句。沿用 practice 模型选择、鉴权、按用户缓存/限流和用量统计 |
 | `GET/POST /api/ios/sync` | iOS 会话 | 原生云同步：上传待同步改动并返回账号云端快照（写入下方共享表）；POST 带 `knownSessions` 时只回传有变化的会话，其余列在 `unchangedSessions` |
 | `POST /api/ios/account/delete` | iOS 会话 + Apple 二次确认 | 永久删除账号（含网页数据）与 Supabase auth 用户，可选撤销 Apple 授权 |
 | `POST /api/gemini-token` | 登录，已弃用 | 上一个接口的兼容别名，带 Deprecation/Sunset header |

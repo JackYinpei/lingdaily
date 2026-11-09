@@ -1,5 +1,16 @@
 # LingDaily App Store 发布记录
 
+## 1.7（构建 20）：2026-11-09
+
+**2026-11-09 11:19:44（Asia/Shanghai）本机签名 Release 归档（版本提交 `9991a15`）上传成功（`Upload succeeded`）。尚未在 App Store Connect 创建 1.7 商店版本、关联构建和提交审核；这几步需要在网页上手动完成。**
+
+- 相比 1.6 新增：对话结束后的逐句表达复盘（`11face6`）；对方性格与「对方态度：好说话 / 按场景 / 难缠」，场景卡显示并可临时修改对方性格（`4a9b666`）。服务端部分已随 main 部署上线，线上场景目录为 version 4、25 个场景。
+- 构建号跳到 20：`11face6`、`4a9b666` 推送 main 后 Xcode Cloud 按 1.6 继续构建（从 10 起，具体用到几号未在后台核实），这些上传会因 1.6 train 已关闭而失败。用 20 避免与 Cloud 撞号。
+- 验证：Swift 110 项（3 个显式联网测试跳过，0 失败）；`npm run check` 通过（零 warning ESLint、JS 252 通过 1 跳过、隔离迁移测试、生产构建）；签名真机归档与上传成功。
+- 发布包核实为 `com.qcy.LingDaily` / `1.7` / `20`，最低 iOS 15，包含隐私清单，`ITSAppUsesNonExemptEncryption=false`，不包含 `AIConnection.json`；后台 audio 模式保持用于播客。
+- 未验证：真机 Live 通话中「难缠」角色的语气情绪。本轮发布准备未调用真实模型。
+- 归档及日志位于 `/tmp/LingDaily-1.7-20.xcarchive`、`/tmp/lingdaily-17-*.log`，不纳入 Git；未跟踪的 `marketing/` 未改动。
+
 ## 1.6（构建 9）：2026-11-06
 
 2026-11-07 复核：**1.6（9）已可分发**；价格与销售范围逐地区列表中，中国大陆为「可供应」，共 175 个地区。Apple 国区 lookup 与 `search?term=LingDaily&country=cn&entity=software` 均返回本 App 1.6（`id6824758752`）。此前「中国大陆缺少 ICP」是历史状态，不再代表当前供应情况。

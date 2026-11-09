@@ -3,16 +3,16 @@
   "appleID": "6824758752",
   "bundleID": "com.qcy.LingDaily",
   "teamID": "8AJ84729BZ",
-  "version": "1.6",
-  "build": "9",
+  "version": "1.7",
+  "build": "20",
   "minimumIOS": "15.0",
   "platforms": [
     "iPhone",
     "iPad"
   ],
   "appStoreConnect": "https://appstoreconnect.apple.com/apps/6824758752/distribution",
-  "submissionStatus": "Ready for Distribution",
-  "sourceCommit": "3dfefa7",
+  "submissionStatus": "Uploaded; store version 1.7 not yet created or submitted",
+  "sourceCommit": "9991a15",
   "category": "Education",
   "ageRating": "18+ (regional variations; legacy OS 17+)",
   "price": "Free",
@@ -37,25 +37,22 @@
   "screenshots": "screenshots/manifest.json",
   "uploadedScreenshotCount": 4,
   "checks": {
-    "swiftPassed": 96,
-    "swiftNetworkSkipped": 3,
-    "fullJSTests": 240,
+    "swiftExecuted": 110,
+    "swiftSkipped": 3,
+    "fullJSTests": 252,
     "jsSkipped": 1,
     "eslint": "Passed with zero warnings",
-    "isolatedMigrations": "Passed after starting Docker Desktop",
+    "isolatedMigrations": "Passed",
     "productionBuild": "Passed",
     "deviceArchiveAndDistributionUpload": "Passed",
-    "releaseBundle": "1.6 (9), iOS 15+, privacy manifest present, no AIConnection.json, non-exempt encryption false",
-    "appStoreSubmissionValidation": "Passed",
-    "simulatorRelease": "Passed; online scenario catalog and daily/study filters verified"
+    "releaseBundle": "1.7 (20), iOS 15+, privacy manifest present, no AIConnection.json, non-exempt encryption false"
   },
   "notes": [
-    "Version 1.6 (9) is Ready for Distribution; China mainland is available and the public cn search API returns LingDaily 1.6.",
-    "No real-model tests were run during release preparation.",
-    "Mac and Apple Vision Pro compatibility distribution remain disabled.",
-    "Latest source before the version bump was c4e958b, matching origin/main.",
-    "Cloud uploads 1.5 (5), (7) and (8) failed because the approved 1.5 train was closed; the project is now 1.6.",
-    "Cloud next build number set to 10 to avoid the local upload 9."
+    "Build 1.7 (20) uploaded from the local Mac on 2026-11-09; App Store Connect version creation, build selection and submission are still manual.",
+    "New since 1.6: per-sentence review after a conversation (11face6) and partner personality / attitude picker (4a9b666).",
+    "Live voice emotion on a real device has not been verified yet.",
+    "Build 20 skips ahead because Xcode Cloud consumed an unknown number of 1.6 builds (from 10) after the 11face6/4a9b666 pushes; those uploads target the closed 1.6 train.",
+    "Mac and Apple Vision Pro compatibility distribution remain disabled."
   ],
   "xcodeCloud": {
     "productID": "6f77c7a0-8a53-4090-a296-d4ae0c15f700",
@@ -71,20 +68,14 @@
     "url": "https://appstoreconnect.apple.com/teams/c4b10a53-eda5-4e5b-b385-e2b18b0e121c/xcode-cloud/products/6f77c7a0-8a53-4090-a296-d4ae0c15f700/groups"
   },
   "previousRelease": {
-    "version": "1.5",
-    "build": "3",
-    "submissionID": "43d37525-7a3f-4844-a69d-2b726744c6fb",
-    "submissionURL": "https://appstoreconnect.apple.com/apps/6824758752/distribution/reviewsubmissions/details/43d37525-7a3f-4844-a69d-2b726744c6fb",
-    "submittedAt": "2026-10-29T22:18:00+08:00",
-    "testFlightBuildID": "f71942ac-6ad5-415d-a1e6-be481e460ae2",
-    "sourceCommit": "7afd381",
-    "status": "Ready for Distribution (verified 2026-11-06)"
+    "version": "1.6",
+    "build": "9",
+    "submissionID": "fa1889c0-7397-4881-9937-e1d393a41e6c",
+    "submissionURL": "https://appstoreconnect.apple.com/apps/6824758752/distribution/reviewsubmissions/details/fa1889c0-7397-4881-9937-e1d393a41e6c",
+    "submittedAt": "2026-11-06T20:53:00+08:00",
+    "testFlightBuildID": "9fe4f7f9-39f0-43ac-b139-a917bc40f06b",
+    "sourceCommit": "3dfefa7",
+    "status": "Ready for Distribution (verified 2026-11-07)"
   },
-  "uploadedAt": "2026-11-06T20:49:16+08:00",
-  "testFlightBuildID": "9fe4f7f9-39f0-43ac-b139-a917bc40f06b",
-  "submissionID": "fa1889c0-7397-4881-9937-e1d393a41e6c",
-  "submissionURL": "https://appstoreconnect.apple.com/apps/6824758752/distribution/reviewsubmissions/details/fa1889c0-7397-4881-9937-e1d393a41e6c",
-  "submittedAt": "2026-11-06T20:53:00+08:00",
-  "receipt": "已提交 1 个项目",
-  "availabilityVerifiedAt": "2026-11-07T22:30:00+08:00"
+  "uploadedAt": "2026-11-09T11:19:44+08:00"
 }

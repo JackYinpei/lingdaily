@@ -1,6 +1,18 @@
 # LingDaily App Store 发布记录
 
-## 1.7（构建 20）：2026-11-09
+## 1.8（构建 21）：2026-11-09
+
+**2026-11-09 13:55:55（Asia/Shanghai）本机签名 Release 归档（版本提交 `ebab6b4`）上传成功（`Upload succeeded`）。尚未在 App Store Connect 创建 1.8 商店版本、关联构建和提交审核。1.7（构建 20）上传后没有送审，直接由 1.8 取代。**
+
+- 相比 1.6 新增：逐句复盘（`11face6`）；对方性格（`4a9b666`）；准备页「对方的脾气」二维面板，拖动对方头像，横轴好商量 ↔ 不让步、纵轴冷静 ↔ 情绪外放，取代 1.7 的三段态度选择（`22ad43d`）。
+- 服务端 `22ad43d` 已在上传前部署成功；1.7 的 `attitude` 字段继续兼容。
+- 验证：Swift 113 项（3 个显式联网测试跳过，0 失败）；`npm run check` 通过（零 warning ESLint、JS 254 通过 1 跳过、隔离迁移测试、生产构建）；iPhone 16 Pro 模拟器截图确认面板正中、右上（浅色）、右下（深色）三种状态。
+- 第一次导出时与 App Store Connect 的连接断开（-1005），网络恢复后重试成功。
+- 发布包核实为 `com.qcy.LingDaily` / `1.8` / `21`，最低 iOS 15，包含隐私清单，`ITSAppUsesNonExemptEncryption=false`，不包含 `AIConnection.json`。
+- 未验证：真机上的拖动手感、与页面滚动的手势冲突、震动反馈；Live 语气。本轮发布准备未调用真实模型。
+- 归档及日志：`/tmp/LingDaily-1.8-21.xcarchive`、`/tmp/lingdaily-18-*.log`，不纳入 Git。
+
+## 1.7（构建 20，已上传、未送审，由 1.8 取代）：2026-11-09
 
 **2026-11-09 11:19:44（Asia/Shanghai）本机签名 Release 归档（版本提交 `9991a15`）上传成功（`Upload succeeded`）。尚未在 App Store Connect 创建 1.7 商店版本、关联构建和提交审核；这几步需要在网页上手动完成。**
 

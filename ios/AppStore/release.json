@@ -3,16 +3,16 @@
   "appleID": "6824758752",
   "bundleID": "com.qcy.LingDaily",
   "teamID": "8AJ84729BZ",
-  "version": "1.7",
-  "build": "20",
+  "version": "1.8",
+  "build": "21",
   "minimumIOS": "15.0",
   "platforms": [
     "iPhone",
     "iPad"
   ],
   "appStoreConnect": "https://appstoreconnect.apple.com/apps/6824758752/distribution",
-  "submissionStatus": "Uploaded; store version 1.7 not yet created or submitted",
-  "sourceCommit": "9991a15",
+  "submissionStatus": "Uploaded; store version 1.8 not yet created or submitted (1.7 build 20 was uploaded but never submitted)",
+  "sourceCommit": "ebab6b4",
   "category": "Education",
   "ageRating": "18+ (regional variations; legacy OS 17+)",
   "price": "Free",
@@ -37,21 +37,24 @@
   "screenshots": "screenshots/manifest.json",
   "uploadedScreenshotCount": 4,
   "checks": {
-    "swiftExecuted": 110,
+    "swiftExecuted": 113,
     "swiftSkipped": 3,
-    "fullJSTests": 252,
+    "fullJSTests": 254,
     "jsSkipped": 1,
     "eslint": "Passed with zero warnings",
     "isolatedMigrations": "Passed",
     "productionBuild": "Passed",
-    "deviceArchiveAndDistributionUpload": "Passed",
-    "releaseBundle": "1.7 (20), iOS 15+, privacy manifest present, no AIConnection.json, non-exempt encryption false"
+    "serverDeploy": "22ad43d Build and Deploy succeeded before upload",
+    "deviceArchiveAndDistributionUpload": "Passed (first export failed on a lost connection to App Store Connect; retry succeeded)",
+    "releaseBundle": "1.8 (21), iOS 15+, privacy manifest present, no AIConnection.json, non-exempt encryption false",
+    "simulatorScreens": "Preparation page temperament pad: centre, top-right (light) and lower-right (dark) on iPhone 16 Pro"
   },
   "notes": [
-    "Build 1.7 (20) uploaded from the local Mac on 2026-11-09; App Store Connect version creation, build selection and submission are still manual.",
-    "New since 1.6: per-sentence review after a conversation (11face6) and partner personality / attitude picker (4a9b666).",
-    "Live voice emotion on a real device has not been verified yet.",
-    "Build 20 skips ahead because Xcode Cloud consumed an unknown number of 1.6 builds (from 10) after the 11face6/4a9b666 pushes; those uploads target the closed 1.6 train.",
+    "Build 1.8 (21) uploaded from the local Mac on 2026-11-09; App Store Connect version creation, build selection and submission are still manual.",
+    "1.8 replaces the 1.7 attitude picker with a two-axis temperament pad (22ad43d) and also carries everything from 1.7: per-sentence review and partner personality.",
+    "1.7 (20) was uploaded but not submitted; submit 1.8 instead.",
+    "Not verified: real touch dragging, scroll/gesture conflict and haptics on a device; Live voice emotion on a real device.",
+    "Build numbers 20/21 skip ahead of Xcode Cloud, which keeps uploading its own builds on every main push.",
     "Mac and Apple Vision Pro compatibility distribution remain disabled."
   ],
   "xcodeCloud": {
@@ -77,5 +80,12 @@
     "sourceCommit": "3dfefa7",
     "status": "Ready for Distribution (verified 2026-11-07)"
   },
-  "uploadedAt": "2026-11-09T11:19:44+08:00"
+  "uploadedAt": "2026-11-09T13:55:55+08:00",
+  "skippedRelease": {
+    "version": "1.7",
+    "build": "20",
+    "sourceCommit": "9991a15",
+    "uploadedAt": "2026-11-09T11:19:44+08:00",
+    "status": "Uploaded, never submitted"
+  }
 }

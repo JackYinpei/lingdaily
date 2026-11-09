@@ -8,7 +8,7 @@ import { recordUsage, tokensFromUsageMetadata } from './aiUsage'
 import { parseSentenceReview, SENTENCE_REVIEW_INSTRUCTION, SENTENCE_REVIEW_SCHEMA } from '../ios/review'
 import {
   buildPracticeContext, IDEAS_INSTRUCTION, IDEAS_RESPONSE_SCHEMA, NEWS_SCENARIO_INSTRUCTION, newsScenarioPayload,
-  parseIdeas, parsePracticeTurn, parseScenarioDraft, parseSuggestion, parseTranslation, practiceInstruction,
+  parseIdeas, parsePracticeTurn, parseScenarioDraft, parseSuggestion, parseTranslation, partnerStyleContext, practiceInstruction,
   RESPONSE_SCHEMA, SCENARIO_INSTRUCTION, SCENARIO_RESPONSE_SCHEMA, suggestionInstruction, suggestionResponseSchema,
   TRANSLATION_INSTRUCTION, TRANSLATION_RESPONSE_SCHEMA,
 } from '../ios/practice'
@@ -162,7 +162,7 @@ export async function generateSuggestion(body, userId) {
   const payload = {
     scenario: body.scenario, personalGoal: body.goal, context: body.context,
     currentTask: body.scenario.goals[body.stepIndex], stepIndex: body.stepIndex, recentMessages: body.messages,
-    ...(body.attitude ? { partnerAttitude: body.attitude } : {}),
+    ...partnerStyleContext(body),
     ...(body.reviewItems?.length ? { reviewItems: body.reviewItems } : {}),
   }
   const { model, data } = await generateStructured({

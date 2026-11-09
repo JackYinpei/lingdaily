@@ -15,6 +15,7 @@ struct LiveSuggestionRequest: Encodable {
     var model: String? = nil
     let level: String?
     let attitude: String?
+    let temperament: PartnerTemperament?
     let reviewItems: [ReviewTarget]?
 
     init?(session: PracticeSession) {
@@ -23,7 +24,7 @@ struct LiveSuggestionRequest: Encodable {
         requestId = UUID()
         scenario = live.scenario; goal = live.goal; context = live.context
         stepIndex = live.stepIndex; messages = live.messages
-        level = live.level; attitude = live.attitude; reviewItems = live.reviewItems
+        level = live.level; attitude = live.attitude; temperament = live.temperament; reviewItems = live.reviewItems
     }
 }
 

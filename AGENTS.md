@@ -216,7 +216,7 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 | `GET/POST /api/auth/[...nextauth]` | NextAuth | 登录、OAuth callback、session |
 | `POST /api/realtime-token` | 登录 | Gemini Live 一次性 token |
 | `POST /api/ios/auth/apple` | 公开（需有效 Apple token） | iOS Apple 登录，签发 iOS 会话 |
-| `POST /api/ios/practice`、`/scenario`、`/live-token` | iOS 会话 | 原生练习、场景生成、Live 临时 token；对方按场景 `persona` 演真实的人（理亏会嘴硬、甩锅），可选 `attitude: friendly\|tough` 覆盖，有不辱骂/不威胁的底线 |
+| `POST /api/ios/practice`、`/scenario`、`/live-token` | iOS 会话 | 原生练习、场景生成、Live 临时 token；对方按场景 `persona` 演真实的人（理亏会嘴硬、甩锅），可选 `temperament: {pushback, emotion}`（−2…2，准备页二维「脾气」面板；1.7 的 `attitude: friendly\|tough` 仍兼容，temperament 优先）覆盖，有不辱骂/不威胁的底线 |
 | `GET /api/ios/models` | iOS 会话 | App 可选模型清单（按功能：practice/suggest/translate/live），见 `app/lib/ios/models.js` |
 | `POST /api/ios/scenario-ideas` | iOS 会话 | 新建场景页「换一批」：生成 3 条不重复的场景灵感 |
 | `GET /api/ios/scenarios` | 公开 | App 内置场景清单（version + 对方 `persona` + 三步练习计划），App 缓存，离线回退内置 4 个 |

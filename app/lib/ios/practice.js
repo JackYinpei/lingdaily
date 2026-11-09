@@ -17,6 +17,10 @@ export const reviewItemsSchema = z.array(z.object({ text: text(80), meaning: tex
 // How the partner treats the learner, picked on the preparation page; absent means as the scenario's persona says.
 export const PRACTICE_ATTITUDES = Object.freeze(['friendly', 'tough'])
 export const attitudeSchema = z.enum(PRACTICE_ATTITUDES).optional()
+// Where the learner dragged the partner on the preparation page's two-axis pad, -2..2 per
+// axis; 0 follows scenario.persona on that axis. Replaces attitude from app 1.8 on.
+const temperamentLevel = z.number().int().min(-2).max(2)
+export const temperamentSchema = z.object({ pushback: temperamentLevel, emotion: temperamentLevel }).strict().optional()
 
 export const practiceScenarioSchema = z.object({
     title: text(100), partner: text(80), partnerRole: text(100), setting: text(1000),
@@ -33,8 +37,32 @@ const PARTNER_ATTITUDE = Object.freeze({
   friendly: 'ATTITUDE (chosen by the learner): play a cooperative version of this person. Whatever scenario.persona says, be reasonable and willing to work it out; you may still have your own constraints, but accept fair points readily and never get rude.',
   tough: 'ATTITUDE (chosen by the learner, to prepare for difficult people): play the hardest realistic version of this person. Be defensive, stubborn and impatient, interrupt with excuses or counter-accusations, and concede only when the learner states their point clearly and repeats it firmly. Still follow BOUNDARIES.',
 })
-/** CHARACTER, BOUNDARIES and the learner's attitude choice, if any. */
-export function partnerCharacterRule(attitude) {
+const PUSHBACK = Object.freeze({
+  '-2': 'very cooperative: agreeable and keen to sort it out; accept the learner\'s points readily, offer solutions yourself and never get rude',
+  '-1': 'fairly cooperative: reasonable and willing to work it out; keep your own constraints but accept fair points without much resistance',
+  1: 'resistant: defensive; make excuses and play things down, and give ground only after the learner makes a clear point',
+  2: 'very resistant: stubborn; counter-accuse, shift the blame and cut in with excuses, and concede only when the learner states their point clearly and repeats it firmly',
+})
+const EMOTION = Object.freeze({
+  '-2': 'very restrained: calm, flat and matter-of-fact; coolly polite or curt, short sentences, no exclamations, never raise your voice',
+  '-1': 'composed: an even tone; your feelings show only slightly',
+  1: 'expressive: your feelings show clearly in your words and tone (enthusiasm, impatience or irritation, whichever fits)',
+  2: 'very expressive: vivid and animated; strong reactions, exclamations and sighs where natural',
+})
+
+/** The non-zero axes of a temperament as English phrases, or null when it follows the persona. */
+export function temperamentNote(temperament) {
+  const parts = [
+    PUSHBACK[temperament?.pushback] && `how readily you give way — ${PUSHBACK[temperament.pushback]}`,
+    EMOTION[temperament?.emotion] && `how much emotion you show — ${EMOTION[temperament.emotion]}`,
+  ].filter(Boolean)
+  return parts.length ? parts.join('; ') : null
+}
+
+/** CHARACTER, BOUNDARIES and the learner's choice: a temperament wins over the older attitude. */
+export function partnerCharacterRule(attitude, temperament) {
+  const note = temperamentNote(temperament)
+  if (note) return `${PARTNER_CHARACTER}\nSTYLE (chosen by the learner; overrides scenario.persona on these points and keeps the rest of it): ${note}. In speech this also sets the emotion in your voice. Still follow BOUNDARIES.`
   return PARTNER_ATTITUDE[attitude] ? `${PARTNER_CHARACTER}\n${PARTNER_ATTITUDE[attitude]}` : PARTNER_CHARACTER
 }
 
@@ -50,6 +78,7 @@ export const practiceRequestSchema = z.object({
   model: requestedModelSchema,
   level: levelSchema,
   attitude: attitudeSchema,
+  temperament: temperamentSchema,
   reviewItems: reviewItemsSchema,
 }).strict().superRefine((body, ctx) => {
   const last = body.messages.at(-1)
@@ -141,12 +170,19 @@ const LEVEL_SPEECH = Object.freeze({
 const REVIEW_RULE = 'REVIEW: reviewItems are expressions this learner collected in earlier practice. When it fits the conversation, create a natural chance for the learner to use one of them, e.g. ask a question whose natural answer needs it. Never say a review item yourself before the learner has, never quiz or test the learner on it, and never force it into an unrelated turn. hint and keywords may point toward a review item when it fits the current task.'
 
 /** SYSTEM_INSTRUCTION adjusted for the learner's level, the partner's attitude and optional review items. */
-export function practiceInstruction({ level, attitude, reviewItems } = {}) {
+export function practiceInstruction({ level, attitude, temperament, reviewItems } = {}) {
   let instruction = SYSTEM_INSTRUCTION
   if (LEVEL_SPEECH[level]) instruction = instruction.replace(LEVEL_SENTENCE, LEVEL_SPEECH[level])
   if (level === 'easy') instruction = instruction.replace(LENGTH_SENTENCE, 'Keep reply to 1-2 sentences (under 30 English words).')
-  instruction = `${instruction}\n${partnerCharacterRule(attitude)}`
+  instruction = `${instruction}\n${partnerCharacterRule(attitude, temperament)}`
   return reviewItems?.length ? `${instruction}\n${REVIEW_RULE}` : instruction
+}
+
+/** How the learner asked the partner to behave, for payloads; the temperament wins over attitude. */
+export function partnerStyleContext(body) {
+  const note = temperamentNote(body.temperament)
+  if (note) return { partnerStyle: note }
+  return body.attitude ? { partnerAttitude: body.attitude } : {}
 }
 
 export function buildPracticeContext(body) {
@@ -154,7 +190,7 @@ export function buildPracticeContext(body) {
   return {
     action: body.action, currentTaskIndex: body.stepIndex,
     learnerPersonalGoal: body.goal, learnerBackground: body.context, scenario: body.scenario,
-    ...(body.attitude ? { partnerAttitude: body.attitude } : {}),
+    ...partnerStyleContext(body),
     learnerLatestAnswer: body.action === 'answer' ? learners.at(-1)?.text : null,
     learnerOriginalAnswer: learners.find(message => message.kind === 'answer')?.text ?? null,
     ...(body.reviewItems?.length ? { reviewItems: body.reviewItems } : {}),
@@ -304,6 +340,7 @@ export const suggestionRequestSchema = z.object({
   model: requestedModelSchema,
   level: levelSchema,
   attitude: attitudeSchema,
+  temperament: temperamentSchema,
   reviewItems: reviewItemsSchema,
 }).strict()
 

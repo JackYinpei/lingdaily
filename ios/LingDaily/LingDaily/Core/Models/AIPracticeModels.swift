@@ -94,6 +94,7 @@ struct AIPracticeRequest: Codable {
     var level: String? = nil
     /// Omitted when following the scenario's persona.
     var attitude: String? = nil
+    var temperament: PartnerTemperament? = nil
     var reviewItems: [ReviewTarget]? = nil
 }
 

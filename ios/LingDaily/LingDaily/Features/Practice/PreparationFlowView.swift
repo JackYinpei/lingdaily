@@ -11,7 +11,8 @@ struct PreparationFlowView: View {
     @State private var addsContext = false
     @State private var reviewItems: [ReviewTarget] = []
     @State private var quickReview = false
-    @State private var attitude: PracticeAttitude = .natural
+    /// The partner's avatar on the 脾气 pad, each axis -1...1; the centre is the scenario's persona.
+    @State private var padPoint = CGPoint.zero
     /// The partner's persona for this rehearsal; editing it never changes the saved scenario.
     @State private var persona: String
     @State private var editsPersona = false
@@ -21,6 +22,7 @@ struct PreparationFlowView: View {
     @FocusState private var fieldFocused: Bool
 
     private var level: PracticeLevel { PracticeLevel(rawValue: levelRaw) ?? .standard }
+    private var temperament: PartnerTemperament { PartnerTemperament(x: padPoint.x, y: padPoint.y) }
 
     init(scenario: PracticeScenario) {
         self.scenario = scenario
@@ -89,7 +91,7 @@ struct PreparationFlowView: View {
                         Button {
                             fieldFocused = false
                             session = PracticeSession(scenario: scenario.withPersona(persona), goal: goal, context: context, useAI: true,
-                                                      level: level, attitude: attitude, reviewItems: reviewEnabled ? reviewItems : [])
+                                                      level: level, temperament: temperament, reviewItems: reviewEnabled ? reviewItems : [])
                         } label: { Text(voiceMode ? "进入语音通话" : "开始文字对话") }
                             .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("start-rehearsal")
                     } else {
@@ -110,14 +112,22 @@ struct PreparationFlowView: View {
         }
     }
 
-    /// 对方态度: how hard the partner pushes back, and who they are in this scene.
+    /// 对方的脾气: drag the partner around a two-axis pad, then optionally rewrite who they are.
     private var partner: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("对方态度").font(.headline).foregroundColor(Brand.ink)
-            Picker("对方态度", selection: $attitude) {
-                ForEach(PracticeAttitude.allCases) { Text($0.label).tag($0) }
-            }.pickerStyle(.segmented).accessibilityIdentifier("partner-attitude")
-            Text(attitude.note).font(.caption).foregroundColor(Brand.secondary)
+            Text("对方的脾气").font(.headline).foregroundColor(Brand.ink)
+            TemperamentPad(scenario: scenario, point: $padPoint)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(temperament.label.map { "\(scenario.partner)：\($0)" } ?? "按场景设定。拖动头像，让对方更好商量或更难缠、更冷静或更激动。")
+                    .font(.caption).foregroundColor(Brand.secondary).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityHidden(true)
+                Spacer(minLength: 0)
+                if !temperament.isScenario {
+                    Button("回到场景设定") { withAnimation(.easeOut(duration: 0.2)) { padPoint = .zero } }
+                        .font(.caption).foregroundColor(Brand.secondary).frame(minHeight: 44)
+                        .accessibilityIdentifier("reset-temperament")
+                }
+            }
             if editsPersona {
                 field("比如：觉得自己没错，嘴硬又不耐烦", text: $persona, limit: PracticeScenario.personaLimit)
                     .accessibilityIdentifier("partner-persona")
@@ -183,4 +193,78 @@ struct PreparationFlowView: View {
             .focused($fieldFocused)
             .onChange(of: text.wrappedValue) { text.wrappedValue = String($0.prefix(limit)) }
     }
+}
+
+/// A two-axis pad for how the partner behaves: 好商量 ↔ 不让步 across, 冷静 ↔ 情绪外放 up.
+/// The knob is the partner's own avatar. Dragging is continuous; each axis has five levels and
+/// entering a new one ticks, so the learner feels the steps the model can actually play.
+private struct TemperamentPad: View {
+    let scenario: PracticeScenario
+    /// Each axis -1...1, up is more emotion.
+    @Binding var point: CGPoint
+    private let knob: CGFloat = 40
+    private var temperament: PartnerTemperament { PartnerTemperament(x: point.x, y: point.y) }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            let inset = knob / 2 + 8
+            let span = CGSize(width: max(size.width - inset * 2, 1), height: max(size.height - inset * 2, 1))
+            ZStack {
+                Path { path in
+                    path.move(to: CGPoint(x: size.width / 2, y: 30))
+                    path.addLine(to: CGPoint(x: size.width / 2, y: size.height - 30))
+                    path.move(to: CGPoint(x: 16, y: size.height / 2))
+                    path.addLine(to: CGPoint(x: size.width - 16, y: size.height / 2))
+                }
+                .stroke(Brand.line, lineWidth: 1)
+                Avatar(scenario: scenario, size: knob)
+                    .overlay(Circle().stroke(Brand.ink, lineWidth: 1.5))
+                    .position(x: inset + (point.x + 1) / 2 * span.width, y: inset + (1 - point.y) / 2 * span.height)
+            }
+            .contentShape(Rectangle())
+            // Wins over the page's scroll so a drag that starts on the pad moves the partner.
+            .highPriorityGesture(DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    let before = temperament
+                    point = CGPoint(x: Self.clamp((value.location.x - inset) / span.width * 2 - 1),
+                                    y: Self.clamp(1 - (value.location.y - inset) / span.height * 2))
+                    if temperament != before { UISelectionFeedbackGenerator().selectionChanged() }
+                }
+                .onEnded { _ in
+                    // The centre is a single setting, so it snaps there.
+                    if temperament.isScenario { withAnimation(.easeOut(duration: 0.2)) { point = .zero } }
+                })
+        }
+        .frame(height: 176)
+        // Under the knob, so the partner is never hidden by a label.
+        .background(ZStack {
+            axisLabel("情绪外放").padding(.top, 8).frame(maxHeight: .infinity, alignment: .top)
+            axisLabel("冷静").padding(.bottom, 8).frame(maxHeight: .infinity, alignment: .bottom)
+            axisLabel("好商量").padding(.leading, 14).offset(y: -12).frame(maxWidth: .infinity, alignment: .leading)
+            axisLabel("不让步").padding(.trailing, 14).offset(y: -12).frame(maxWidth: .infinity, alignment: .trailing)
+        })
+        .background(Brand.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Brand.line))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("对方的脾气")
+        .accessibilityValue(temperament.label ?? "按场景设定")
+        .accessibilityAction(named: "更好商量") { step(pushback: -1) }
+        .accessibilityAction(named: "更不让步") { step(pushback: 1) }
+        .accessibilityAction(named: "更冷静") { step(emotion: -1) }
+        .accessibilityAction(named: "更情绪外放") { step(emotion: 1) }
+        .accessibilityIdentifier("partner-temperament")
+    }
+
+    private func axisLabel(_ text: String) -> some View {
+        Text(text).font(.caption2).foregroundColor(Brand.secondary)
+    }
+
+    private func step(pushback: Int = 0, emotion: Int = 0) {
+        let next = temperament.moved(pushback: pushback, emotion: emotion).point
+        point = CGPoint(x: next.x, y: next.y)
+    }
+
+    private static func clamp(_ value: CGFloat) -> CGFloat { min(max(value, -1), 1) }
 }

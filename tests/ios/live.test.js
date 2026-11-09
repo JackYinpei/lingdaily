@@ -205,6 +205,12 @@ describe('iOS Live development token', () => {
     expect(tough.split('UNTRUSTED_SCENARIO_JSON:')[0]).not.toContain('嘴硬，反怪你')
     expect(await instruction({ ...body(), attitude: 'friendly' })).toContain('cooperative version')
     expect(liveTokenRequestSchema.safeParse({ ...body(), attitude: 'hostile' }).success).toBe(false)
+    const restrained = await instruction({ ...body(), attitude: 'tough', temperament: { pushback: 2, emotion: -2 } })
+    expect(restrained).toContain('very resistant')
+    expect(restrained).toContain('very restrained')
+    expect(restrained).toContain('emotion in your voice')
+    expect(restrained).not.toContain('hardest realistic version')
+    expect(liveTokenRequestSchema.safeParse({ ...body(), temperament: { pushback: -3, emotion: 0 } }).success).toBe(false)
     expect(liveTokenRequestSchema.safeParse({ ...body(), scenario: { ...body().scenario, persona: 'x'.repeat(301) } }).success).toBe(false)
   })
   it('sanitizes upstream failures and never falls back to unconstrained tokens', async () => {

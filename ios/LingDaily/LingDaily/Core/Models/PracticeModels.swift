@@ -57,24 +57,53 @@ extension PracticeScenario {
     }
 }
 
-/// How the partner treats the learner. `natural` follows the scenario's persona and is never sent.
+/// The 1.7 three-way choice. Only decoded from older rehearsals now; 1.8 places the partner with `PartnerTemperament`.
 enum PracticeAttitude: String, CaseIterable, Identifiable {
     case friendly, natural, tough
     var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .friendly: return "好说话"
-        case .natural: return "按场景"
-        case .tough: return "难缠"
-        }
+}
+
+/// Where the learner dragged the partner on the preparation page's two-axis pad, -2...2 per axis.
+/// The centre follows the scenario's persona and is never sent.
+struct PartnerTemperament: Codable, Equatable, Hashable {
+    static let levels = -2...2
+    static let scenario = PartnerTemperament(pushback: 0, emotion: 0)
+    /// 好商量 (-2) ... 不让步 (2)
+    let pushback: Int
+    /// 冷静 (-2) ... 情绪外放 (2)
+    let emotion: Int
+
+    init(pushback: Int, emotion: Int) {
+        self.pushback = min(max(pushback, Self.levels.lowerBound), Self.levels.upperBound)
+        self.emotion = min(max(emotion, Self.levels.lowerBound), Self.levels.upperBound)
     }
-    var note: String {
-        switch self {
-        case .friendly: return "对方讲道理、愿意配合，适合先把话说顺。"
-        case .natural: return "对方按自己的性格和立场来，理亏也可能嘴硬。"
-        case .tough: return "对方嘴硬、找借口、反咬一口，你得坚持住。"
-        }
+
+    /// A point on the pad, each axis -1...1 with up meaning more emotion, at its nearest level.
+    init(x: Double, y: Double) {
+        self.init(pushback: Int((x * 2).rounded()), emotion: Int((y * 2).rounded()))
     }
+
+    /// Never fails, so a shape from a newer app cannot make a whole rehearsal undecodable.
+    init(from decoder: Decoder) throws {
+        let values = try? decoder.container(keyedBy: CodingKeys.self)
+        self.init(pushback: (try? values?.decodeIfPresent(Int.self, forKey: .pushback)) ?? 0,
+                  emotion: (try? values?.decodeIfPresent(Int.self, forKey: .emotion)) ?? 0)
+    }
+
+    var isScenario: Bool { self == .scenario }
+    /// The centre of this level's cell on the pad.
+    var point: (x: Double, y: Double) { (Double(pushback) / 2, Double(emotion) / 2) }
+    func moved(pushback dx: Int = 0, emotion dy: Int = 0) -> PartnerTemperament {
+        PartnerTemperament(pushback: pushback + dx, emotion: emotion + dy)
+    }
+
+    /// e.g. "寸步不让、情绪激动"; nil at the centre.
+    var label: String? {
+        let words = [Self.pushbackWords[pushback], Self.emotionWords[emotion]].compactMap { $0 }
+        return words.isEmpty ? nil : words.joined(separator: "、")
+    }
+    private static let pushbackWords = [-2: "很好商量", -1: "愿意配合", 1: "有点难缠", 2: "寸步不让"]
+    private static let emotionWords = [-2: "冷淡克制", -1: "语气平稳", 1: "情绪外露", 2: "情绪激动"]
 }
 
 /// An expression from the learner's own 词库 that the partner tries to bring back.
@@ -114,13 +143,16 @@ struct PracticeSession: Codable, Equatable, Identifiable {
     private(set) var level: String? = nil
     /// Up to three 词库 expressions the partner looks for a chance to bring back.
     private(set) var reviewItems: [ReviewTarget]? = nil
-    /// Raw `PracticeAttitude`; nil follows the scenario. A string so a newer value never breaks decoding.
+    /// Raw `PracticeAttitude` from 1.7; nil follows the scenario. A string so a newer value never breaks decoding.
     private(set) var attitude: String? = nil
+    /// Where the learner placed the partner; nil is the centre (the scenario's persona).
+    private(set) var temperament: PartnerTemperament? = nil
     /// Post-conversation suggestions; optional so pre-feature archives still decode.
     private(set) var sentenceReviews: [SentenceReviewRecord]? = nil
 
     init(scenario: PracticeScenario, goal: String = "", context: String = "", useAI: Bool = false,
-         level: PracticeLevel = .standard, attitude: PracticeAttitude = .natural, reviewItems: [ReviewTarget] = [], now: Date = Date()) {
+         level: PracticeLevel = .standard, attitude: PracticeAttitude = .natural, temperament: PartnerTemperament = .scenario,
+         reviewItems: [ReviewTarget] = [], now: Date = Date()) {
         precondition(!scenario.steps.isEmpty)
         id = UUID()
         self.scenario = scenario
@@ -135,6 +167,7 @@ struct PracticeSession: Codable, Equatable, Identifiable {
         ai = useAI ? AIPracticeState(pending: AIPendingRequest(id: UUID(), action: .start)) : nil
         self.level = level == .standard ? nil : level.rawValue
         self.attitude = attitude == .natural ? nil : attitude.rawValue
+        self.temperament = temperament.isScenario ? nil : temperament
         self.reviewItems = reviewItems.isEmpty ? nil : Array(reviewItems.prefix(3))
     }
 
@@ -142,6 +175,9 @@ struct PracticeSession: Codable, Equatable, Identifiable {
     var partnerAttitude: PracticeAttitude { attitude.flatMap(PracticeAttitude.init(rawValue:)) ?? .natural }
     /// What requests send: only values the server knows, nil for the scenario's own persona.
     var requestAttitude: String? { partnerAttitude == .natural ? nil : partnerAttitude.rawValue }
+    var partnerTemperament: PartnerTemperament { temperament ?? .scenario }
+    /// Sent only off-centre; the server lets it win over an older attitude.
+    var requestTemperament: PartnerTemperament? { partnerTemperament.isScenario ? nil : partnerTemperament }
 
     var title: String { personalGoal.isEmpty ? scenario.title : personalGoal }
     var step: PracticeStep { scenario.steps[min(stepIndex, scenario.steps.count - 1)] }
@@ -160,7 +196,7 @@ struct PracticeSession: Codable, Equatable, Identifiable {
             stepIndex: stepIndex, goal: personalGoal, context: context,
             scenario: .init(scenario),
             messages: messages.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.suffix(24).map { .init(role: $0.role, kind: $0.kind, text: live == nil ? $0.text : String($0.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1200)), stepIndex: $0.stepIndex) },
-            level: level, attitude: requestAttitude, reviewItems: reviewItems)
+            level: level, attitude: requestAttitude, temperament: requestTemperament, reviewItems: reviewItems)
     }
     var currentFeedback: AIFeedback? {
         guard let user = messages.last(where: { $0.role == .user && $0.stepIndex == stepIndex }) else { return nil }

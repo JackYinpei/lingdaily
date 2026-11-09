@@ -280,7 +280,7 @@ struct SessionDetailView: View {
                     speech.stopAll()
                     activeSession = startsNew
                         ? PracticeSession(scenario: session.scenario, goal: session.personalGoal, context: session.context, useAI: true,
-                                          attitude: session.partnerAttitude)
+                                          attitude: session.partnerAttitude, temperament: session.partnerTemperament)
                         : session
                 }
                 .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("resume-rehearsal")

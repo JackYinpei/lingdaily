@@ -72,6 +72,50 @@ final class PartnerAttitudeTests: XCTestCase {
         XCTAssertEqual(response.makeScenario()?.persona, "想多扣钱，不轻易松口")
     }
 
+    func testPadPointsSnapToFiveLevelsPerAxisAndClamp() {
+        XCTAssertEqual(PartnerTemperament(x: 0.2, y: -0.2), .scenario, "Near the centre follows the scenario")
+        XCTAssertEqual(PartnerTemperament(x: 1, y: 1), PartnerTemperament(pushback: 2, emotion: 2))
+        XCTAssertEqual(PartnerTemperament(x: 0.3, y: -0.8), PartnerTemperament(pushback: 1, emotion: -2))
+        XCTAssertEqual(PartnerTemperament(pushback: 9, emotion: -9), PartnerTemperament(pushback: 2, emotion: -2))
+        XCTAssertEqual(PartnerTemperament.scenario.moved(pushback: -1).point.x, -0.5)
+        XCTAssertNil(PartnerTemperament.scenario.label)
+        XCTAssertEqual(PartnerTemperament(pushback: 2, emotion: 2).label, "寸步不让、情绪激动")
+        XCTAssertEqual(PartnerTemperament(pushback: 0, emotion: -2).label, "冷淡克制")
+    }
+
+    func testTemperamentIsSentOnlyOffCentreAndEverywhere() throws {
+        let centre = PracticeSession(scenario: scenario(), useAI: true, temperament: .scenario)
+        XCTAssertNil(centre.temperament)
+        XCTAssertNil(try json(XCTUnwrap(centre.pendingAIRequest))["temperament"])
+        XCTAssertNil(try json(LiveTokenRequest(session: centre))["temperament"])
+
+        let fiery = PracticeSession(scenario: scenario(), useAI: true, temperament: PartnerTemperament(pushback: 2, emotion: 1))
+        let expected: [String: Int] = ["pushback": 2, "emotion": 1]
+        XCTAssertEqual(try json(XCTUnwrap(fiery.pendingAIRequest))["temperament"] as? [String: Int], expected)
+        XCTAssertEqual(try json(LiveTokenRequest(session: fiery))["temperament"] as? [String: Int], expected)
+        let scripted = PracticeSession(scenario: scenario(), temperament: PartnerTemperament(pushback: 2, emotion: 1))
+        XCTAssertEqual(try json(XCTUnwrap(LiveSuggestionRequest(session: scripted)))["temperament"] as? [String: Int], expected)
+    }
+
+    func testTemperamentSurvivesTheArchiveAndOddShapesNeverBreakDecoding() throws {
+        let cool = PracticeSession(scenario: scenario(), useAI: true, temperament: PartnerTemperament(pushback: 1, emotion: -2))
+        XCTAssertEqual(try JSONDecoder().decode(PracticeSession.self, from: JSONEncoder().encode(cool)).partnerTemperament,
+                       PartnerTemperament(pushback: 1, emotion: -2))
+        var raw = try json(cool)
+        raw["temperament"] = ["pushback": 7, "emotion": "loud"]
+        XCTAssertEqual(try JSONDecoder().decode(PracticeSession.self, from: JSONSerialization.data(withJSONObject: raw)).partnerTemperament,
+                       PartnerTemperament(pushback: 2, emotion: 0))
+        raw["temperament"] = "furious"
+        XCTAssertEqual(try JSONDecoder().decode(PracticeSession.self, from: JSONSerialization.data(withJSONObject: raw)).partnerTemperament,
+                       .scenario)
+        // A 1.7 rehearsal keeps its attitude when practised again.
+        raw.removeValue(forKey: "temperament")
+        raw["attitude"] = "tough"
+        let older = try JSONDecoder().decode(PracticeSession.self, from: JSONSerialization.data(withJSONObject: raw))
+        XCTAssertEqual(older.requestAttitude, "tough")
+        XCTAssertNil(older.requestTemperament)
+    }
+
     func testKickoffNoLongerForcesAGreeting() {
         let kickoff = LiveKickoff.fresh(scenario())
         XCTAssertFalse(kickoff.contains("greet me and ask"))

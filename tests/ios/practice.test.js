@@ -335,6 +335,29 @@ describe('speaking level and review items', () => {
     expect(buildPracticeContext({ ...persona, attitude: 'tough' })).toMatchObject({ partnerAttitude: 'tough', scenario: { persona: '嘴硬，不耐烦' } })
     expect(buildPracticeContext(body())).not.toHaveProperty('partnerAttitude')
   })
+  it('places the partner on the temperament pad, overriding the older attitude and only the axes moved', () => {
+    const fiery = practiceInstruction({ temperament: { pushback: 2, emotion: 2 } })
+    expect(fiery).toContain('STYLE (chosen by the learner')
+    expect(fiery).toContain('very resistant')
+    expect(fiery).toContain('very expressive')
+    expect(fiery).toContain('Still follow BOUNDARIES')
+    const cool = practiceInstruction({ attitude: 'tough', temperament: { pushback: -1, emotion: 0 } })
+    expect(cool).toContain('fairly cooperative')
+    expect(cool).not.toContain('how much emotion')
+    expect(cool).not.toContain('hardest realistic version')
+    // The centre is the scenario's own persona, so an older attitude still applies.
+    const centre = practiceInstruction({ attitude: 'tough', temperament: { pushback: 0, emotion: 0 } })
+    expect(centre).not.toContain('STYLE')
+    expect(centre).toContain('hardest realistic version')
+    expect(practiceRequestSchema.safeParse({ ...body(), temperament: { pushback: -2, emotion: 1 } }).success).toBe(true)
+    for (const temperament of [{ pushback: 3, emotion: 0 }, { pushback: 0.5, emotion: 0 }, { pushback: 1 }, { pushback: 1, emotion: 1, mood: 1 }]) {
+      expect(practiceRequestSchema.safeParse({ ...body(), temperament }).success).toBe(false)
+    }
+    const context = buildPracticeContext({ ...body(), attitude: 'tough', temperament: { pushback: 0, emotion: -2 } })
+    expect(context.partnerStyle).toContain('very restrained')
+    expect(context).not.toHaveProperty('partnerAttitude')
+    expect(buildPracticeContext({ ...body(), temperament: { pushback: 0, emotion: 0 } })).not.toHaveProperty('partnerStyle')
+  })
   it('accepts at most three review items and only known levels', () => {
     expect(practiceRequestSchema.safeParse({ ...body(), level: 'easy', reviewItems: review }).success).toBe(true)
     expect(practiceRequestSchema.safeParse({ ...body(), level: 'expert' }).success).toBe(false)
@@ -366,6 +389,22 @@ describe('speaking level and review items', () => {
     expect(sent.config.responseSchema.properties.reply.description).toContain('A1-A2')
     expect(sent.config.systemInstruction).toContain('reviewItems')
     expect(JSON.parse(sent.contents[0].parts[0].text).reviewItems).toEqual(review.slice(0, 1))
+  })
+  it('tells stuck-in-call suggestions how the learner set the partner up', async () => {
+    const suggestion = { hint: '坚持要他道歉。', keywords: 'my right of way', reply: 'I had the right of way.', meaning: '我有先行权。' }
+    generate.mockResolvedValueOnce({ text: JSON.stringify(suggestion), candidates: [{ finishReason: 'STOP' }], modelVersion: 'test-model' })
+    const input = {
+      requestId: randomUUID(), goal: '', context: '', stepIndex: 0, temperament: { pushback: 2, emotion: 1 },
+      scenario: { title: 'Near miss', partner: 'Blake', partnerRole: 'Driver', setting: '对方掉头差点撞到你。', goals: ['质问', '驳斥', '坚持'] },
+      messages: [{ role: 'partner', text: 'You came out of nowhere!' }],
+    }
+    const response = await POST_SUGGEST(new Request('http://localhost:8000/api/ios/suggest', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(input),
+    }))
+    expect(response.status).toBe(200)
+    const payload = JSON.parse(generate.mock.calls.at(-1)[0].contents[0].parts[0].text)
+    expect(payload.partnerStyle).toContain('very resistant')
+    expect(payload.partnerStyle).toContain('expressive')
   })
 })
 

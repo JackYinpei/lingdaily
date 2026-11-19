@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
@@ -7,16 +8,31 @@ import { normalizePodcastShownotes } from '@/app/lib/podcast/shownotes'
 
 export const dynamic = 'force-dynamic'
 
-export default async function PodcastEpisodePage({ params }) {
-  const { date } = await params
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) notFound()
-
-  let episode
+const loadEpisode = cache(async (date) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
   try {
-    episode = await getPodcastEpisode(date)
+    return await getPodcastEpisode(date)
   } catch (error) {
     console.error('[podcasts/episode] Failed to load episode:', error)
+    return null
   }
+})
+
+export async function generateMetadata({ params }) {
+  const { date } = await params
+  const episode = await loadEpisode(date)
+  if (!episode) return {}
+
+  const shownotes = normalizePodcastShownotes(episode)
+  const metadata = { title: `${episode.title || episode.date} | LingDaily Podcasts` }
+  const description = shownotes.summaryZh || shownotes.summaryEn
+  if (description) metadata.description = description
+  return metadata
+}
+
+export default async function PodcastEpisodePage({ params }) {
+  const { date } = await params
+  const episode = await loadEpisode(date)
   if (!episode) notFound()
 
   const chunks = Array.isArray(episode.content?.chunks) ? episode.content.chunks : []

@@ -67,6 +67,7 @@ export default function Home() {
     const [isMuted, setIsMuted] = useState(false);
     const [history, setHistory] = useState([]);
     const [error, setError] = useState(null);
+    const [saveError, setSaveError] = useState(false);
     const [isRestoringConversation, setIsRestoringConversation] = useState(true);
     const [isTopicHistoryLoading, setIsTopicHistoryLoading] = useState(false);
 
@@ -186,13 +187,14 @@ export default function Home() {
 
     // UI strings ...
     const uiText = useMemo(() => ({
-        en: { history: 'History', vocab: 'Vocabulary' },
-        zh: { history: '对话历史', vocab: '生词本' },
-        ja: { history: '履歴', vocab: '単語帳' },
+        en: { history: 'History', vocab: 'Vocabulary', saveFailed: 'This conversation could not be saved. It will be retried as the conversation continues.' },
+        zh: { history: '对话历史', vocab: '生词本', saveFailed: '对话未能保存，将在对话继续时自动重试。' },
+        ja: { history: '履歴', vocab: '単語帳', saveFailed: '会話を保存できませんでした。会話が続くと自動で再試行します。' },
     }[uiLangCode]), [uiLangCode]);
 
     // Persist sequentially so an older response cannot overwrite a newer
     // snapshot. Revision conflicts merge messages by itemId and retry once.
+    // Resolves to 'saved' | 'skipped' | 'failed'.
     const persistConversation = useCallback(async (
         news,
         conversationHistory,
@@ -207,7 +209,7 @@ export default function Home() {
             identityGeneration === identityGenerationRef.current
             && userId === (userSession?.user?.id || null)
         );
-        if (!news || !hasUserMessage(conversationHistory) || !userId || !isCurrentIdentity()) return;
+        if (!news || !hasUserMessage(conversationHistory) || !userId || !isCurrentIdentity()) return 'skipped';
 
         // Correction cards are UI-only advisory items; never persist them.
         const persistableHistory = Array.isArray(conversationHistory)
@@ -221,7 +223,7 @@ export default function Home() {
         let expectedRevision = conversationMetaRef.current.get(newsKey)?.revision ?? 0;
 
         for (let attempt = 0; attempt < 2; attempt += 1) {
-            if (!isCurrentIdentity()) return;
+            if (!isCurrentIdentity()) return 'skipped';
             const payload = {
                 newsKey,
                 newsTitle: news.originalTitle || news.title || news.id || 'Untitled',
@@ -241,7 +243,7 @@ export default function Home() {
                     keepalive,
                 });
                 const json = await res.json().catch(() => ({}));
-                if (!isCurrentIdentity()) return;
+                if (!isCurrentIdentity()) return 'skipped';
 
                 if (res.status === 409) {
                     const current = [json.current, json.conflict, json.data]
@@ -270,9 +272,11 @@ export default function Home() {
 
                 if (!res.ok) {
                     console.error('Failed to persist chat history:', json?.error || res.status);
-                    return;
+                    setSaveError(true);
+                    return 'failed';
                 }
-                if (json?.skipped) return;
+                setSaveError(false);
+                if (json?.skipped) return 'skipped';
 
                 const saved = json?.data;
                 if (saved?.id) {
@@ -295,12 +299,14 @@ export default function Home() {
                     historyRef.current = visibleHistory;
                     if (attempt > 0) setHistory(visibleHistory);
                 }
-                return;
-            } catch (saveError) {
-                console.error('Error saving chat history:', saveError);
-                return;
+                return 'saved';
+            } catch (persistError) {
+                console.error('Error saving chat history:', persistError);
+                if (isCurrentIdentity()) setSaveError(true);
+                return 'failed';
             }
         }
+        return 'failed';
     }, [userSession?.user?.id]);
 
     const enqueueConversationPersist = useCallback((snapshot) => {
@@ -436,6 +442,7 @@ export default function Home() {
         topicGenerationRef.current += 1;
         conversationMetaRef.current.clear();
         conversationBaselineRef.current.clear();
+        setSaveError(false);
         selectedNewsRef.current = null;
         historyRef.current = [];
         skipNextNewsLoadRef.current = false;
@@ -1085,6 +1092,11 @@ export default function Home() {
                         {error && (
                             <div className="bg-red-50 border border-red-200 text-red-600 p-2 rounded mb-2 text-sm">
                                 {error}
+                            </div>
+                        )}
+                        {saveError && (
+                            <div role="status" className="bg-destructive/10 border border-destructive/30 text-destructive p-2 rounded mb-2 text-sm">
+                                {uiText.saveFailed}
                             </div>
                         )}
                         <History

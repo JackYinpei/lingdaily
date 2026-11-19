@@ -119,6 +119,20 @@ export const reconcilePersistSnapshot = (pending, live) => {
     return { ...pending, history: mergeConversationHistory(pending.history, live.history) };
 };
 
+export const historyContainsSnapshot = (savedHistory, snapshot) => {
+    const savedByKey = new Map((savedHistory || []).map(item => [conversationItemKey(item), item]));
+    return (snapshot || []).filter(item => item?.role !== 'system').every(item => {
+        const saved = savedByKey.get(conversationItemKey(item));
+        if (!saved || saved.role !== item.role || saved.type !== item.type) return false;
+        if (item.type === 'correction') {
+            return Object.entries(item.correction || {}).every(([field, value]) => saved.correction?.[field] === value);
+        }
+        if (item.metadata?.isFinal && !saved.metadata?.isFinal) return false;
+        if (saved.metadata?.isFinal && !item.metadata?.isFinal) return true;
+        return extractMessageText(saved).includes(extractMessageText(item));
+    });
+};
+
 export const compactHistoryForKeepalive = (historyItems, maxBytes = 40000) => {
     const items = sanitizeHistoryCorrections(historyItems).filter(item => item?.role !== 'system');
     if (!items.length) return [];

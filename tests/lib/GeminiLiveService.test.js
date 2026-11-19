@@ -318,6 +318,52 @@ describe('Gemini Live microphone permission', () => {
     }
   })
 
+  it.each(['before approval', 'after approval'])('plays the first PCM received %s after a 29-second permission wait even with pending resume promises', async timing => {
+    vi.useFakeTimers()
+    const { service, config } = createService()
+    try {
+      let approve
+      navigator.mediaDevices.getUserMedia.mockImplementation(() => new Promise(resolve => { approve = resolve }))
+      service.primeOutputAudio()
+      const { connection, socket } = await openSocket(service)
+      const setup = socket.onmessage({ data: JSON.stringify({ setupComplete: true }) })
+      await vi.advanceTimersByTimeAsync(29000)
+      const context = service.outputAudioContext
+      context.state = 'suspended'
+      context.resume = vi.fn(() => new Promise(() => {}))
+      const audio = () => socket.onmessage({ data: JSON.stringify({ serverContent: {
+        outputTranscription: { text: 'Audible reply' },
+        modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm;rate=24000', data: pcmBase64(16384, -16384) } }] },
+      } }) })
+      let playback
+      if (timing === 'before approval') {
+        playback = audio()
+        for (let i = 0; i < 15; i++) await Promise.resolve()
+        expect(service.pendingAudioParts).toHaveLength(1)
+        context.resume.mockImplementation(async () => { context.state = 'running' })
+      }
+      approve({ getTracks: () => [{ stop: vi.fn() }] })
+      await setup
+      await expect(connection).resolves.toBe(true)
+      if (timing === 'after approval') {
+        playback = audio()
+        for (let i = 0; i < 15; i++) await Promise.resolve()
+        expect(service.pendingAudioParts).toHaveLength(1)
+        context.state = 'running'
+        context.emit('statechange')
+      }
+      await playback
+      expect(context.bufferSources).toHaveLength(2)
+      expect(Array.from(context.bufferSources[1].buffer.getChannelData(0))).toEqual([0.5, -0.5])
+      expect(service.pendingAudioParts).toHaveLength(0)
+      expect(config.onPlaybackError).not.toHaveBeenCalled()
+      expect(service.micStreamHold).toBe(true)
+    } finally {
+      service.disconnect()
+      vi.useRealTimers()
+    }
+  })
+
   it('still times out when the server never completes setup', async () => {
     vi.useFakeTimers()
     try {

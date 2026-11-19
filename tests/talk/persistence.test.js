@@ -75,6 +75,32 @@ async function mountAndConnect(strict = false) {
 }
 
 describe('talk persistence lifecycle', () => {
+  it.each([0, 1])('silently accepts an already-saved navigation snapshot after %i conflict retries', async missingAttempts => {
+    await mountAndConnect(true)
+    const originalFetch = fetchMock.getMockImplementation()
+    fetchMock.mockImplementation(async (url, options) => {
+      const response = await originalFetch(url, options)
+      if (options?.method !== 'POST') return response
+      const payload = posts.at(-1)
+      return Response.json({ error: 'This conversation was updated in another session', current: {
+        id: 'saved', revision: posts.length + 1,
+        history: posts.length <= missingAttempts ? [user] : payload.history,
+      } }, { status: 409 })
+    })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await act(async () => state.config.onMessage('Final reply', true, 'model'))
+    await act(async () => vi.advanceTimersByTimeAsync(400))
+    expect(posts).toHaveLength(0)
+    await act(async () => root.unmount())
+    expect(posts).toHaveLength(missingAttempts + 1)
+    expect(posts.every(post => post.keepalive)).toBe(true)
+    expect(error).not.toHaveBeenCalled()
+    responseHistory = posts.at(-1).history
+    root = createRoot(container)
+    await mountAndConnect(true)
+    expect(state.props.history.at(-1).content[0].text).toBe('Final reply')
+  })
+
   it.each(['Second message', 'First message'])('keeps two accepted text sends unique through StrictMode save, unload merge and resume (%s)', async secondText => {
     responseHistory = []
     await mountAndConnect(true)

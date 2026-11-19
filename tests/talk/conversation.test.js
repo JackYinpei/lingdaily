@@ -7,6 +7,7 @@ import {
   getNewsKey,
   mergeConversationHistory,
   reconcilePersistSnapshot,
+  historyContainsSnapshot,
 } from '@/app/talk/_lib/conversation'
 
 function message({
@@ -216,5 +217,23 @@ describe('unload snapshot reconciliation', () => {
     expect(reconcilePersistSnapshot(null, pending)).toBe(pending)
     expect(reconcilePersistSnapshot(pending, null)).toBe(pending)
     expect(reconcilePersistSnapshot(null, null)).toBeNull()
+  })
+})
+
+describe('already-persisted snapshots', () => {
+  const partial = message({ id: 'a', role: 'assistant', text: 'Hello', isFinal: false })
+  const final = message({ id: 'a', role: 'assistant', text: 'Hello there', isFinal: true })
+  it('accepts equal or more complete saved items while ignoring system context', () => {
+    expect(historyContainsSnapshot([final], [final])).toBe(true)
+    expect(historyContainsSnapshot([final], [partial])).toBe(true)
+    expect(historyContainsSnapshot([final], [message({ id: 'system', role: 'system', text: 'Context' }), partial])).toBe(true)
+  })
+  it('does not swallow missing IDs, incomplete finalization or changed corrections', () => {
+    expect(historyContainsSnapshot([], [final])).toBe(false)
+    expect(historyContainsSnapshot([partial], [final])).toBe(false)
+    expect(historyContainsSnapshot([{ ...final, itemId: 'other' }], [final])).toBe(false)
+    const card = { itemId: 'c', type: 'correction', role: 'assistant', correction: { original: 'old', corrected: 'new' } }
+    expect(historyContainsSnapshot([card], [card])).toBe(true)
+    expect(historyContainsSnapshot([card], [{ ...card, correction: { ...card.correction, corrected: 'different' } }])).toBe(false)
   })
 })

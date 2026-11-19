@@ -23,6 +23,7 @@ import {
     extractMessageText,
     getNewsKey,
     hasUserMessage,
+    historyContainsSnapshot,
     mergeConversationHistory,
     reconcilePersistSnapshot,
 } from './_lib/conversation';
@@ -261,11 +262,16 @@ export default function Home() {
                 });
                 const json = await res.json().catch(() => ({}));
                 if (!isCurrentSave()) return 'skipped';
+                let saved = json?.data;
+                let alreadySaved = false;
 
                 if (res.status === 409) {
                     const current = [json.current, json.conflict, json.data]
                         .find((value) => value && typeof value === 'object');
-                    if (attempt === 0 && current && Array.isArray(current.history)) {
+                    alreadySaved = current && Array.isArray(current.history)
+                        && historyContainsSnapshot(current.history, historyToSave);
+                    if (alreadySaved) saved = current;
+                    else if (attempt === 0 && current && Array.isArray(current.history)) {
                         historyToSave = mergeConversationHistory(current.history, historyToSave);
                         expectedRevision = current.revision ?? null;
                         conversationBaselineRef.current.set(newsKey, historyToSave);
@@ -287,7 +293,7 @@ export default function Home() {
                     }
                 }
 
-                if (!res.ok) {
+                if (!res.ok && !alreadySaved) {
                     console.error('Failed to persist chat history:', json?.error || res.status);
                     setSaveError(true);
                     return 'failed';
@@ -295,7 +301,6 @@ export default function Home() {
                 setSaveError(false);
                 if (json?.skipped) return 'skipped';
 
-                const saved = json?.data;
                 if (saved?.id) {
                     const existingMeta = conversationMetaRef.current.get(newsKey);
                     const savedRevision = saved.revision ?? expectedRevision;

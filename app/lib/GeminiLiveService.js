@@ -199,10 +199,15 @@ export class GeminiLiveServiceImpl {
     resumeOutputAudio() {
         const context = this.outputAudioContext;
         if (!context || context.state === 'closed') return Promise.resolve();
-        if (context.state === 'running') return Promise.resolve();
+        if (context.state === 'running') {
+            this._pendingAudioFlush?.();
+            return Promise.resolve();
+        }
 
         try {
-            return Promise.resolve(context.resume()).catch((error) => {
+            return Promise.resolve(context.resume()).then(() => {
+                if (context === this.outputAudioContext && context.state === 'running') this._pendingAudioFlush?.();
+            }).catch((error) => {
                 console.warn("Could not resume output AudioContext:", error);
             });
         } catch (error) {
@@ -213,6 +218,7 @@ export class GeminiLiveServiceImpl {
 
     invalidatePlayback() {
         this.playbackEpoch += 1;
+        this._pendingFlushCleanup?.();
         this.pendingAudioParts = [];
         this.sources.forEach((source) => { try { source.stop(); } catch (_) { } });
         this.sources.clear();
@@ -595,9 +601,9 @@ export class GeminiLiveServiceImpl {
 
             this.mediaSource.connect(this.scriptProcessor);
             this.scriptProcessor.connect(inputAudioContext.destination);
-            // Acquiring the mic on the connect gesture can leave the OUTPUT
+            // Acquiring the mic can leave the OUTPUT
             // context suspended on some browsers, which is what silenced the
-            // first model turn. Resume it now (still within the gesture) and
+            // first model turn. Resume it again after permission and
             // flush anything that was buffered while it was locked.
             this.resumeOutputAudio();
             return true;
@@ -826,18 +832,15 @@ export class GeminiLiveServiceImpl {
         }
 
         const context = this.outputAudioContext;
-        await this.outputAudioReadyPromise;
+        await Promise.resolve();
         if (playbackEpoch !== this.playbackEpoch || context !== this.outputAudioContext) return;
-        await this.resumeOutputAudio();
-        if (playbackEpoch !== this.playbackEpoch || context !== this.outputAudioContext) return;
-
         // The context can still be 'suspended' here — most often for the very
         // first model turn, when autoplay unlock from the connect click has not
         // yet taken effect. Instead of dropping this audio (which made the first
         // reply silent until a later gesture), stash it and flush automatically
         // once the context reaches 'running'.
         if (!context || context.state !== 'running') {
-            if (context && context.state === 'suspended') {
+            if (context && (context.state === 'suspended' || context.state === 'interrupted')) {
                 this.queuePendingAudio(audioParts, playbackEpoch, context);
                 return;
             }
@@ -857,25 +860,35 @@ export class GeminiLiveServiceImpl {
         this._pendingFlushContext = context;
 
         const flush = () => {
+            if (playbackEpoch !== this.playbackEpoch || context !== this.outputAudioContext) {
+                cleanup();
+                return;
+            }
             if (context.state !== 'running') {
                 // Nudge again — a resume() may have been swallowed while locked.
                 this.resumeOutputAudio();
                 return;
             }
-            context.removeEventListener('statechange', flush);
-            if (this._pendingFlushContext === context) this._pendingFlushContext = null;
-            if (playbackEpoch !== this.playbackEpoch || context !== this.outputAudioContext) {
-                this.pendingAudioParts = [];
-                return;
-            }
+            cleanup();
             const queued = this.pendingAudioParts;
             this.pendingAudioParts = [];
             this.scheduleAudioParts(queued, playbackEpoch, context);
         };
 
+        const cleanup = () => {
+            context.removeEventListener('statechange', flush);
+            if (this._pendingAudioFlush === flush) {
+                this._pendingAudioFlush = null;
+                this._pendingFlushCleanup = null;
+                this._pendingFlushContext = null;
+            }
+        };
+
+        this._pendingAudioFlush = flush;
+        this._pendingFlushCleanup = cleanup;
         context.addEventListener('statechange', flush);
         // Also try immediately in case it flips to running between checks.
-        this.resumeOutputAudio().then(flush);
+        this.resumeOutputAudio();
     }
 
     scheduleAudioParts(audioParts, playbackEpoch, context) {

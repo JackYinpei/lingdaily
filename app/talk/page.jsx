@@ -32,6 +32,13 @@ import {
     createNewsContextMessage,
 } from './_lib/prompts';
 import { cancelLiveConnectionAttempt, fetchRealtimeTokenAfterPriming } from './_lib/liveConnection';
+import {
+    clearSelectedNewsFromStorage,
+    loadSelectedNewsFromStorage,
+    loadTalkModeFromStorage,
+    saveSelectedNewsToStorage,
+    saveTalkModeToStorage,
+} from './_lib/storage';
 
 export default function Home() {
     const { data: userSession, status: sessionStatus } = useSession()
@@ -127,7 +134,7 @@ export default function Home() {
         }
         setMode(newMode);
         setSelectedNews(null);
-        try { localStorage.setItem('talk-mode', newMode); } catch (_) { /* ignore */ }
+        saveTalkModeToStorage(newMode);
     }, [cancelLiveConnection]);
 
     const handleArticleSelect = useCallback((news) => {
@@ -156,7 +163,7 @@ export default function Home() {
             title: patch.title || current.title,
         };
         selectedNewsRef.current = updated;
-        try { localStorage.setItem('selectedNews', JSON.stringify(updated)); } catch (_) { /* ignore */ }
+        saveSelectedNewsToStorage(updated);
 
         // Do not abort an in-flight history request merely because an optional
         // headline translation arrived. The updated ref will still be used for
@@ -403,25 +410,6 @@ export default function Home() {
         };
     }, []);
 
-    // localStorage helpers for selected news
-    const saveSelectedNewsToStorage = (news) => {
-        try {
-            localStorage.setItem('selectedNews', JSON.stringify(news));
-        } catch (error) {
-            console.error('Failed to save selectedNews to localStorage:', error);
-        }
-    };
-
-    const loadSelectedNewsFromStorage = () => {
-        try {
-            const saved = localStorage.getItem('selectedNews');
-            return saved ? JSON.parse(saved) : null;
-        } catch (error) {
-            console.error('Failed to load selectedNews from localStorage:', error);
-            return null;
-        }
-    };
-
     // Never carry a private topic, transcript, or pending connection across an
     // in-place sign-in/sign-out or account switch.
     useEffect(() => {
@@ -450,7 +438,7 @@ export default function Home() {
         setSelectedNews(null);
         setHistory([]);
         setIsTopicHistoryLoading(false);
-        try { localStorage.removeItem('selectedNews'); } catch (_) { /* ignore */ }
+        clearSelectedNewsFromStorage();
     }, [cancelLiveConnection, sessionStatus, userSession?.user?.id]);
 
     // Flush the current transcript before a language switch causes topic
@@ -525,14 +513,12 @@ export default function Home() {
                     setMode(isScenario ? 'scenario' : 'news');
                     setSelectedNews(restoredNews);
                     setHistory(restoredHistory);
-                    try { localStorage.setItem('talk-mode', isScenario ? 'scenario' : 'news'); } catch (_) { /* ignore */ }
+                    saveTalkModeToStorage(isScenario ? 'scenario' : 'news');
                     return;
                 }
 
-                try {
-                    const savedMode = localStorage.getItem('talk-mode');
-                    if (savedMode === 'news' || savedMode === 'scenario') setMode(savedMode);
-                } catch (_) { /* ignore */ }
+                const savedMode = loadTalkModeFromStorage();
+                if (savedMode) setMode(savedMode);
                 const savedNews = loadSelectedNewsFromStorage();
                 if (savedNews) setSelectedNews(savedNews);
             } catch (restoreError) {

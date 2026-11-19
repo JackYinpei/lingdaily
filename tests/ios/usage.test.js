@@ -29,7 +29,7 @@ vi.mock('@/app/lib/history/server', async original => ({
 
 import { POST as SUGGEST } from '@/app/api/ios/suggest/route'
 import { GET as OWN_USAGE, POST as REPORT_LIVE } from '@/app/api/ios/usage/route'
-import { estimateCost, tokensFromUsageMetadata, usageSummary } from '@/app/lib/server/aiUsage'
+import { estimateCost, pricingTable, tokensFromUsageMetadata, usageSummary } from '@/app/lib/server/aiUsage'
 import { issueIOSSession } from '@/app/lib/server/iosAuth'
 
 const userA = '11111111-2222-4333-8444-555555555555'
@@ -86,6 +86,18 @@ describe('token accounting', () => {
     expect(data.total).toMatchObject({ calls: 1, total_tokens: 510 })
     expect(data.total.cost).toBeUndefined()
     expect(data.byFeature.map(row => row.key)).toEqual(['live'])
+  })
+
+  it('treats malformed AI_PRICING_JSON as unpriced and warns without logging the value', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(pricingTable({ AI_PRICING_JSON: '{"m": {input:0.1}}' })).toEqual({})
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn.mock.calls[0].join(' ')).not.toContain('input:0.1')
+      expect(pricingTable({ AI_PRICING_JSON: '{"m":{"input":0.1,"output":0.4}}' })).toEqual({ m: { input: 0.1, output: 0.4 } })
+      expect(pricingTable({})).toEqual({})
+      expect(warn).toHaveBeenCalledTimes(1)
+    } finally { warn.mockRestore() }
   })
 
   it('estimates cost only for priced models, billing thinking as output and audio at its own rate', async () => {

@@ -67,7 +67,10 @@ export function pricingTable(env = process.env) {
   try {
     const parsed = JSON.parse(env.AI_PRICING_JSON || '{}')
     return parsed && typeof parsed === 'object' ? parsed : {}
-  } catch { return {} }
+  } catch {
+    console.warn('[ai-usage] AI_PRICING_JSON is not valid JSON; costs will show as unpriced')
+    return {}
+  }
 }
 
 /** Estimated USD for aggregated counters of one model, or null when the model has no price. */

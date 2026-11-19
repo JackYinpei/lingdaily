@@ -3,6 +3,7 @@ import Image from "next/image"
 import { Card } from "@/app/components/ui/card"
 import { Badge } from "@/app/components/ui/badge"
 import { cn } from "@/app/lib/utils"
+import { Check, Newspaper } from 'lucide-react'
 
 // Kagi serves feed thumbnails from kagiproxy.com. Those go through our own image
 // optimizer (resized, cached, same origin) instead of each browser fetching the
@@ -29,19 +30,24 @@ export function NewsCard({
   return (
     <Card
       className={cn(
-        "cursor-pointer transition-all duration-200 hover:shadow-md w-full h-full flex flex-col overflow-hidden p-0",
-        isSelected ? "ring-2 ring-inset ring-primary bg-accent/10" : "hover:bg-card/80",
+        "feature-topic-card cursor-pointer transition-colors duration-200 w-full h-full flex flex-col overflow-hidden p-0",
+        isSelected ? "bg-secondary" : "hover:bg-card/80",
         showCompactSelected && "max-h-[25vh]",
         useMobileActiveLayout && !isSelected && "opacity-90"
       )}
       onClick={(e) => {
         onSelect && onSelect(e)
       }}
+      role="button"
+      tabIndex={0}
+      aria-pressed={isSelected}
+      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect?.(event); } }}
     >
-      <div className="p-2 pb-1 flex flex-col h-full">
+      <div className="p-4 flex flex-col h-full gap-2">
         {!useMobileActiveLayout && (
           <div className="flex items-center justify-between mb-1">
             <Badge variant="secondary" className="text-xs">
+              <Newspaper size={12} aria-hidden="true" />
               {news.category}
             </Badge>
             <span className="text-xs text-muted-foreground">
@@ -51,6 +57,7 @@ export function NewsCard({
                 day: "numeric",
               })}
             </span>
+            {isSelected && <Check size={14} className="text-primary" aria-hidden="true" />}
           </div>
         )}
 

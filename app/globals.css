@@ -4,6 +4,53 @@
 
 @custom-variant dark (&:is(.dark *));
 
+.feature-app {
+  --background: #f8f6f0;
+  --foreground: #282e29;
+  --card: #fffdf8;
+  --card-foreground: #282e29;
+  --popover: #fffdf8;
+  --popover-foreground: #282e29;
+  --primary: #af442b;
+  --primary-foreground: #fffdf8;
+  --secondary: #eceee3;
+  --secondary-foreground: #3e4938;
+  --muted: #eceee3;
+  --muted-foreground: #686e62;
+  --accent: #eceee3;
+  --accent-foreground: #282e29;
+  --border: #dcded2;
+  --input: #dcded2;
+  --ring: #af442b;
+  --brand: #af442b;
+  --brand-from: #7a856c;
+  --brand-to: #7a856c;
+  --feature-serif: 'Iowan Old Style', 'Palatino Linotype', 'Noto Serif CJK SC', 'Songti SC', 'Yu Mincho', Georgia, serif;
+}
+
+.dark .feature-app {
+  --background: #202620;
+  --foreground: #eeeede;
+  --card: #292f28;
+  --card-foreground: #eeeede;
+  --popover: #292f28;
+  --popover-foreground: #eeeede;
+  --primary: #e4a088;
+  --primary-foreground: #242820;
+  --secondary: #30392c;
+  --secondary-foreground: #d5ddc8;
+  --muted: #30392c;
+  --muted-foreground: #b3b6a8;
+  --accent: #30392c;
+  --accent-foreground: #eeeede;
+  --border: #454d40;
+  --input: #454d40;
+  --ring: #e4a088;
+  --brand: #e4a088;
+  --brand-from: #a3b58d;
+  --brand-to: #a3b58d;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

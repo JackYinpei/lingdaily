@@ -1,0 +1,93 @@
+// @vitest-environment jsdom
+
+import React, { act } from 'react'
+import { createRoot } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const state = vi.hoisted(() => ({ nativeCode: 'en', toggleTheme: vi.fn() }))
+vi.mock('@/app/contexts/LanguageContext', () => ({
+  useLanguage: () => ({ nativeLanguage: { code: state.nativeCode }, learningLanguage: { code: 'en' } }),
+}))
+vi.mock('@/app/contexts/ThemeContext', () => ({ useTheme: () => ({ theme: 'system', toggleTheme: state.toggleTheme }) }))
+vi.mock('next/link', () => ({ default: ({ href, children, ...props }) => React.createElement('a', { ...props, href: typeof href === 'string' ? href : `${href.pathname}?${new URLSearchParams(href.query)}` }, children) }))
+vi.mock('next-auth/react', () => ({ useSession: () => ({ status: 'authenticated', data: { user: { id: 'test-user' } } }) }))
+vi.mock('@/app/components/LanguageSelector', () => ({ default: () => React.createElement('span', null, 'English') }))
+
+import FeatureShell from '@/app/components/FeatureShell'
+import HistoryClient from '@/app/history/history-client'
+import ProgressClient from '@/app/progress/progress-client'
+import VocabularyPage from '@/app/vocabulary/page'
+import { featureCopy } from '@/app/lib/featureCopy'
+
+let container
+let root
+beforeEach(() => {
+  globalThis.React = React
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true
+  state.nativeCode = 'en'
+  container = document.createElement('div')
+  document.body.append(container)
+  root = createRoot(container)
+})
+afterEach(async () => {
+  await act(async () => root.unmount())
+  container.remove()
+  vi.unstubAllGlobals()
+})
+
+async function render(Component, props) {
+  await act(async () => { root.render(React.createElement(Component, props)); })
+}
+function respond(data) { return { ok: true, json: async () => data } }
+
+describe('editorial feature pages', () => {
+  it.each([['en', 'History'], ['zh-CN', '对话历史'], ['ja', '会話履歴']])('shows icon navigation and current-page semantics for %s', async (code, label) => {
+    state.nativeCode = code
+    await render(FeatureShell, { active: 'history' })
+    const active = container.querySelector('[aria-current="page"]')
+    expect(active.textContent).toBe(label)
+    expect(active.getAttribute('href')).toBe('/history')
+    expect(active.querySelector('svg[aria-hidden="true"]')).not.toBeNull()
+    expect(container.querySelectorAll('nav a')).toHaveLength(5)
+    await act(async () => container.querySelector('.feature-theme-toggle').click())
+    expect(state.toggleTheme).toHaveBeenCalled()
+  })
+
+  it('keeps source filters and continuation URLs while using English history copy', async () => {
+    const fetchMock = vi.fn(async () => respond({ data: [{ id: 'conversation-1', title: 'At the café', sourceType: 'scenario', userTurnCount: 4, updatedAt: '2026-01-10T12:00:00Z' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await render(HistoryClient)
+    expect(container.querySelector('h1').textContent).toBe(featureCopy.en.historyTitle)
+    expect(container.querySelector('a[href="/talk?conversation=conversation-1"]').textContent).toContain('Continue conversation')
+    const news = [...container.querySelectorAll('.feature-filters button')].find(button => button.textContent === 'News')
+    await act(async () => news.click())
+    expect(news.getAttribute('aria-pressed')).toBe('true')
+    expect(fetchMock.mock.calls.at(-1)[0]).toContain('sourceType=news')
+  })
+
+  it.each([['en', 'Start practicing'], ['ja', '練習を始める']])('localizes history empty states in %s', async (lang, action) => {
+    state.nativeCode = lang
+    vi.stubGlobal('fetch', vi.fn(async () => respond({ data: [] })))
+    await render(HistoryClient)
+    expect(container.querySelector('.feature-empty').textContent).toContain(action)
+  })
+
+  it.each(['en', 'zh', 'ja'])('localizes progress data and labels in %s', async (lang) => {
+    state.nativeCode = lang
+    vi.stubGlobal('fetch', vi.fn(async (url) => respond({ data: url.includes('/items') ? [] : { totalConversations: 3, lastActiveDate: '2026-01-10', recent7Days: [{ date: '2026-01-10', userTurns: 8 }] } })))
+    await render(ProgressClient)
+    expect(container.querySelector('h1').textContent).toBe(featureCopy[lang].progressTitle)
+    expect(container.textContent).toContain(featureCopy[lang].savedWords)
+    expect(container.querySelector('[role="list"]').getAttribute('aria-label')).toBe(featureCopy[lang].recentLabel)
+  })
+
+  it('uses a normal practice action, not error styling, for empty vocabulary', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => respond({ data: [] })))
+    await render(VocabularyPage)
+    const action = container.querySelector('.feature-empty a')
+    expect(action.textContent).toContain('Start chatting')
+    expect(action.getAttribute('href')).toBe('/talk')
+    expect(action.className).toContain('feature-action')
+    expect(action.className).not.toMatch(/red|destructive/)
+  })
+})

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
-  ArrowLeft,
   BookOpen,
   CalendarDays,
   Flame,
@@ -14,6 +13,8 @@ import {
 
 import { Button } from '@/app/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card'
+import FeatureShell, { FeatureHeading, useFeatureLocale } from '@/app/components/FeatureShell'
+import { featureCopy, featureDateLocale } from '@/app/lib/featureCopy'
 
 const EMPTY_PROGRESS = {
   totalConversations: 0,
@@ -33,18 +34,18 @@ function safeCount(value) {
   return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0
 }
 
-function formatDay(value) {
+function formatDay(value, locale) {
   if (!value) return '--'
   const date = new Date(`${value}T00:00:00`)
   if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' }).format(date)
+  return new Intl.DateTimeFormat(locale, { month: 'numeric', day: 'numeric' }).format(date)
 }
 
-function formatLastActive(value) {
-  if (!value) return '尚未开始学习'
+function formatLastActive(value, locale, t) {
+  if (!value) return t.notStarted
   const date = new Date(`${value}T00:00:00`)
   if (Number.isNaN(date.getTime())) return value
-  return `最近学习：${new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }).format(date)}`
+  return `${t.lastActive}: ${new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long', day: 'numeric' }).format(date)}`
 }
 
 function ProgressRing({ percent }) {
@@ -78,6 +79,9 @@ function ProgressRing({ percent }) {
 }
 
 export default function ProgressClient() {
+  const lang = useFeatureLocale()
+  const t = featureCopy[lang]
+  const locale = featureDateLocale[lang]
   const [progress, setProgress] = useState(EMPTY_PROGRESS)
   const [vocabCount, setVocabCount] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -94,16 +98,16 @@ export default function ProgressClient() {
         signal,
       })
       const payload = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(payload.error || '请求失败，请稍后重试')
+      if (!response.ok) throw new Error(payload.error || t.requestFailed)
       setProgress({ ...EMPTY_PROGRESS, ...(payload.data || {}) })
     } catch (fetchError) {
       if (fetchError.name !== 'AbortError') {
-        setError(fetchError.message || '加载学习进度失败')
+        setError(fetchError.message || t.progressFailed)
       }
     } finally {
       if (!signal?.aborted) setLoading(false)
     }
-  }, [])
+  }, [t])
 
   // Vocabulary count is a best-effort enrichment; a failure here must not block
   // the main progress view, so it is loaded and errored independently.
@@ -150,40 +154,23 @@ export default function ProgressClient() {
   const weekTurns = recentDays.reduce((sum, day) => sum + day.userTurns, 0)
 
   const metrics = [
-    { label: '对话总数', value: safeCount(progress.totalConversations), suffix: '次', icon: MessagesSquare },
-    { label: '你的发言', value: safeCount(progress.totalUserTurns), suffix: '轮', icon: TrendingUp },
-    { label: '累计学习', value: safeCount(progress.activeDays), suffix: '天', icon: CalendarDays },
-    { label: '连续学习', value: safeCount(progress.currentStreak), suffix: '天', icon: Flame },
+    { label: t.conversations, value: safeCount(progress.totalConversations), suffix: t.times, icon: MessagesSquare },
+    { label: t.yourTurns, value: safeCount(progress.totalUserTurns), suffix: t.turnUnit, icon: TrendingUp },
+    { label: t.activeDays, value: safeCount(progress.activeDays), suffix: t.days, icon: CalendarDays },
+    { label: t.streak, value: safeCount(progress.currentStreak), suffix: t.days, icon: Flame },
   ]
 
   return (
-    <main className="relative min-h-screen text-foreground">
-      <div aria-hidden className="bg-aurora grain-overlay pointer-events-none fixed inset-0 -z-10" />
-      <header className="sticky top-0 z-20 border-b border-border/60 bg-background/70 backdrop-blur">
-        <div className="container mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-4">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/talk">
-                <ArrowLeft aria-hidden />
-                返回对话
-              </Link>
-            </Button>
-            <div>
-              <h1 className="text-xl font-bold">学习进度</h1>
-              <p className="text-xs text-muted-foreground">用真实的对话数据记录每一步</p>
-            </div>
-          </div>
-          <span className="text-xs text-muted-foreground">{formatLastActive(progress.lastActiveDate)}</span>
-        </div>
-      </header>
-
-      <div className="container mx-auto max-w-5xl px-4 py-8">
+    <FeatureShell active="progress">
+      <FeatureHeading number="05" eyebrow={t.progressEyebrow} title={t.progressTitle} description={t.progressDescription} icon={TrendingUp} />
+      <p className="feature-count mb-6">{formatLastActive(progress.lastActiveDate, locale, t)}</p>
+      <div>
         {error ? (
           <div role="alert" className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
             <span>{error}</span>
             <Button type="button" size="sm" variant="outline" onClick={() => void loadProgress()}>
               <RefreshCw aria-hidden />
-              重试
+              {t.retry}
             </Button>
           </div>
         ) : null}
@@ -191,30 +178,30 @@ export default function ProgressClient() {
         {loading ? (
           <div className="flex min-h-64 items-center justify-center" role="status">
             <RefreshCw className="mr-2 size-5 animate-spin text-muted-foreground" aria-hidden />
-            <span className="text-sm text-muted-foreground">正在统计学习进度…</span>
+            <span className="text-sm text-muted-foreground">{t.loadingProgress}</span>
           </div>
         ) : (
           <>
             {/* Highlight cards mirroring the homepage dashboard preview */}
-            <section aria-label="今日概览" className="grid gap-4 lg:grid-cols-3">
+            <section aria-label={t.todayOverview} className="grid gap-4 lg:grid-cols-3">
               {/* Today's progress ring */}
               <Card className="bg-card/70 backdrop-blur">
                 <CardHeader>
-                  <CardTitle className="text-base">今日学习进度</CardTitle>
+                  <CardTitle className="text-base">{t.todayProgress}</CardTitle>
                 </CardHeader>
                 <CardContent className="flex items-center gap-5">
                   <div className="relative grid shrink-0 place-items-center">
                     <ProgressRing percent={todayPercent} />
                     <div className="absolute text-center">
                       <span className="block text-xl font-bold leading-none">{todayPercent}%</span>
-                      <span className="block text-[10px] text-muted-foreground">目标 {DAILY_TURN_GOAL} 轮</span>
+                      <span className="block text-[10px] text-muted-foreground">{t.goal} {DAILY_TURN_GOAL} {t.turnUnit}</span>
                     </div>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">今日发言</p>
+                    <p className="text-sm text-muted-foreground">{t.todayTurns}</p>
                     <p className="text-2xl font-bold">
                       {todayTurns}
-                      <span className="ml-1 text-sm font-normal text-muted-foreground">/ {DAILY_TURN_GOAL} 轮</span>
+                      <span className="ml-1 text-sm font-normal text-muted-foreground">/ {DAILY_TURN_GOAL} {t.turnUnit}</span>
                     </p>
                   </div>
                 </CardContent>
@@ -223,15 +210,15 @@ export default function ProgressClient() {
               {/* Vocabulary mastery */}
               <Card className="bg-card/70 backdrop-blur">
                 <CardHeader>
-                  <CardTitle className="text-base">词汇掌握</CardTitle>
+                  <CardTitle className="text-base">{t.vocabulary}</CardTitle>
                 </CardHeader>
                 <CardContent className="flex items-end justify-between">
                   <div>
-                    <p className="text-xs text-muted-foreground">熟悉单词</p>
+                    <p className="text-xs text-muted-foreground">{t.savedWords}</p>
                     <p className="text-3xl font-bold">{vocabCount ?? '—'}</p>
                   </div>
                   <Link href="/vocabulary" className="text-sm text-brand hover:underline">
-                    生词本 →
+                    {t.vocabulary} →
                   </Link>
                 </CardContent>
               </Card>
@@ -239,17 +226,17 @@ export default function ProgressClient() {
               {/* This week summary */}
               <Card className="bg-card/70 backdrop-blur">
                 <CardHeader>
-                  <CardTitle className="text-base">本周学习量表</CardTitle>
+                  <CardTitle className="text-base">{t.week}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="mb-3 flex justify-between text-sm">
                     <div>
-                      <p className="text-xs text-muted-foreground">本周发言</p>
-                      <p className="text-xl font-bold">{weekTurns} 轮</p>
+                      <p className="text-xs text-muted-foreground">{t.weekTurns}</p>
+                      <p className="text-xl font-bold">{weekTurns} {t.turnUnit}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-muted-foreground">连续学习</p>
-                      <p className="text-xl font-bold text-brand">{safeCount(progress.currentStreak)} 天</p>
+                      <p className="text-xs text-muted-foreground">{t.streak}</p>
+                      <p className="text-xl font-bold text-brand">{safeCount(progress.currentStreak)} {t.days}</p>
                     </div>
                   </div>
                   <div className="flex h-16 items-end justify-between gap-1" aria-hidden>
@@ -274,7 +261,7 @@ export default function ProgressClient() {
 
             {/* All-time metrics */}
             <section aria-labelledby="overview-heading" className="mt-6">
-              <h2 id="overview-heading" className="sr-only">学习数据概览</h2>
+              <h2 id="overview-heading" className="sr-only">{t.overview}</h2>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 {metrics.map((metric) => {
                   const Icon = metric.icon
@@ -297,21 +284,21 @@ export default function ProgressClient() {
             {/* Detailed weekly chart */}
             <Card className="mt-6 bg-card/70 backdrop-blur">
               <CardHeader>
-                <CardTitle>最近 7 天发言</CardTitle>
-                <p className="text-sm text-muted-foreground">只统计你在学习对话中的发言轮数</p>
+                <CardTitle>{t.recentTurns}</CardTitle>
+                <p className="text-sm text-muted-foreground">{t.recentDescription}</p>
               </CardHeader>
               <CardContent>
                 {recentDays.length === 0 ? (
                   <div className="py-12 text-center text-sm text-muted-foreground">
-                    完成一次对话后，这里会显示每天的练习记录。
+                    {t.noProgress}
                   </div>
                 ) : (
-                  <div className="grid h-56 grid-cols-7 items-end gap-2" role="list" aria-label="最近七天发言轮数">
+                  <div className="grid h-56 grid-cols-7 items-end gap-2" role="list" aria-label={t.recentLabel}>
                     {recentDays.map((day) => {
                       const height = day.userTurns === 0 ? 4 : Math.max(12, Math.round((day.userTurns / maxTurns) * 144))
                       return (
                         <div key={day.date} className="flex h-full min-w-0 flex-col items-center justify-end" role="listitem">
-                          <span className="mb-2 text-xs font-medium" aria-label={`${day.date}，${day.userTurns} 轮发言`}>
+                          <span className="mb-2 text-xs font-medium" aria-label={`${day.date}, ${day.userTurns} ${t.turnUnit}`}>
                             {day.userTurns}
                           </span>
                           <div
@@ -319,7 +306,7 @@ export default function ProgressClient() {
                             style={{ height: `${height}px` }}
                             aria-hidden
                           />
-                          <span className="mt-2 truncate text-[11px] text-muted-foreground">{formatDay(day.date)}</span>
+                          <span className="mt-2 truncate text-[11px] text-muted-foreground">{formatDay(day.date, locale)}</span>
                         </div>
                       )
                     })}
@@ -328,21 +315,21 @@ export default function ProgressClient() {
               </CardContent>
             </Card>
 
-            <section className="mt-6 grid gap-4 sm:grid-cols-2" aria-label="学习记录入口">
+            <section className="mt-6 grid gap-4 sm:grid-cols-2" aria-label={t.records}>
               <Link href="/history" className="group rounded-xl border border-border bg-card/70 p-5 backdrop-blur transition-colors hover:border-brand/40 hover:bg-card">
                 <MessagesSquare className="mb-3 size-6 text-brand" aria-hidden />
-                <h2 className="font-semibold">对话历史</h2>
-                <p className="mt-1 text-sm text-muted-foreground">查看过去的新闻与场景练习，继续上次对话。</p>
+                <h2 className="font-semibold">{t.history}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{t.historyLink}</p>
               </Link>
               <Link href="/vocabulary" className="group rounded-xl border border-border bg-card/70 p-5 backdrop-blur transition-colors hover:border-brand/40 hover:bg-card">
                 <BookOpen className="mb-3 size-6 text-brand" aria-hidden />
-                <h2 className="font-semibold">生词本</h2>
-                <p className="mt-1 text-sm text-muted-foreground">复习对话中识别并保存的单词、短语和语法。</p>
+                <h2 className="font-semibold">{t.vocabulary}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{t.vocabLink}</p>
               </Link>
             </section>
           </>
         )}
       </div>
-    </main>
+    </FeatureShell>
   )
 }

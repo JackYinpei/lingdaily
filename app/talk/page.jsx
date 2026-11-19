@@ -10,7 +10,8 @@ import ScenarioFeed from "@/app/components/ScenarioFeed";
 import { ModeToggle } from "@/app/components/ModeToggle";
 import { History } from "@/app/components/History";
 
-import Link from 'next/link';
+import { MessagesSquare, Newspaper, Users } from 'lucide-react';
+import FeatureShell, { FeatureHeading } from '@/app/components/FeatureShell';
 import { useLanguage } from '@/app/contexts/LanguageContext';
 import { GeminiLiveServiceImpl } from '@/app/lib/GeminiLiveService';
 import OnboardingGuide from '@/app/components/OnboardingGuide';
@@ -969,47 +970,20 @@ export default function Home() {
     }, [cancelLiveConnection]);
 
     return (
-        <div className="min-h-screen bg-background">
-            {/* Header */}
-            <header className="border-b border-border bg-card hidden md:block">
-                <div className="container mx-auto px-4 py-4">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h1 className="text-2xl font-bold text-card-foreground">
-                                {activeLanguagePair.learningLanguage.label} Learning Hub
-                            </h1>
-                            <p className="text-muted-foreground mt-1">
-                                Learn {activeLanguagePair.learningLanguage.label} through news and AI conversation
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-4">
-                            <Link
-                                href="/history"
-                                className="px-4 py-2 border border-border text-foreground rounded hover:bg-accent transition-colors text-sm font-medium"
-                            >
-                                {uiText?.history || '对话历史'}
-                            </Link>
-                            <Link
-                                href="/vocabulary"
-                                className="px-4 py-2 border border-border text-foreground rounded hover:bg-accent transition-colors text-sm font-medium"
-                            >
-                                {uiText?.vocab || '生词本'}
-                            </Link>
-                        </div>
-                    </div>
-                </div>
-            </header>
+        <FeatureShell active="talk" className="feature-practice">
+            <FeatureHeading number="01" eyebrow={uiLangCode === 'zh' ? '你的口语练习室' : uiLangCode === 'ja' ? 'あなたの会話練習室' : 'Your conversation studio'} title={uiLangCode === 'zh' ? '从一个话题，聊开去。' : uiLangCode === 'ja' ? 'ひとつの話題から、話そう。' : 'One topic. A world to say.'} description={uiLangCode === 'zh' ? '选一条新闻，或走进一个场景。用自己的话，练习真实的表达。' : uiLangCode === 'ja' ? 'ニュースやシナリオを選び、自分の言葉で話してみましょう。' : 'Choose a story or step into a scenario. Practice expressing what you really mean.'} icon={MessagesSquare} />
 
             {/* Main Content */}
             <div
-                className="container mx-auto px-4 py-2 flex flex-col h-screen lg:h-auto lg:min-h-0"
+                className="flex flex-col min-h-0"
                 style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}
             >
-                <div className="flex flex-col lg:flex-row lg:gap-6 flex-1 min-h-0 lg:h-[calc(100vh-140px)]">
+                <div className="feature-practice-layout flex-col lg:flex-row">
                     {/* Mobile Cards - 在中等屏幕以下显示 */}
                     {isDesktopLayout === false && <div className="lg:hidden flex-shrink-0">
                         <div className="flex items-center justify-between mb-1">
-                            <h2 className="text-xl font-semibold text-foreground">
+                            <h2 className="feature-topic-title">
+                                {mode === 'news' ? <Newspaper size={16} aria-hidden="true" /> : <Users size={16} aria-hidden="true" />}
                                 {mode === 'news' ? 'Latest News' : (uiLangCode === 'zh' ? '场景练习' : uiLangCode === 'ja' ? 'シナリオ' : 'Scenarios')}
                             </h2>
                             <ModeToggle mode={mode} onToggle={handleModeToggle} lang={uiLangCode} />
@@ -1040,9 +1014,10 @@ export default function Home() {
                     </div>}
 
                     {/* Desktop Cards - 在大屏幕以上显示 */}
-                    {isDesktopLayout === true && <div className="hidden lg:flex lg:w-[40%] flex-col min-h-0 h-[calc(100vh-140px)]">
+                    {isDesktopLayout === true && <div className="hidden lg:flex lg:w-[36%] flex-col min-h-0 h-full">
                         <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-xl font-semibold text-foreground">
+                            <h2 className="feature-topic-title">
+                                {mode === 'news' ? <Newspaper size={16} aria-hidden="true" /> : <Users size={16} aria-hidden="true" />}
                                 {mode === 'news' ? 'Latest News' : (uiLangCode === 'zh' ? '场景练习' : uiLangCode === 'ja' ? 'シナリオ' : 'Scenarios')}
                             </h2>
                             <ModeToggle mode={mode} onToggle={handleModeToggle} lang={uiLangCode} />
@@ -1074,7 +1049,7 @@ export default function Home() {
                     </div>}
 
                     {/* Chat Interface - Full width on mobile, 70% on desktop */}
-                    <div className="flex-1 lg:w-[70%] flex flex-col min-h-0 lg:h-[calc(100vh-140px)]">
+                    <div className="flex-1 lg:w-[64%] flex flex-col min-h-0 min-h-[420px] lg:min-h-0 h-[65dvh] lg:h-full">
                         {error && (
                             <div className="bg-red-50 border border-red-200 text-red-600 p-2 rounded mb-2 text-sm">
                                 {error}
@@ -1113,6 +1088,6 @@ export default function Home() {
                 </div>
             </div>
             <OnboardingGuide lang={uiLangCode} />
-        </div>
+        </FeatureShell>
     )
 }

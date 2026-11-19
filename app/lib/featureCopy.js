@@ -1,0 +1,43 @@
+export const featureCopy = {
+  en: {
+    historyTitle: 'Conversations, continued.', historyDescription: 'A record of what you said, and a place to pick up where you left off.', historyEyebrow: 'Your conversation archive',
+    all: 'All', news: 'News', scenario: 'Scenarios', practice: 'App practice', newsConversation: 'News conversation', scenarioPractice: 'Scenario practice', conversation: 'Conversation',
+    unknownTime: 'Unknown date', requestFailed: 'Something went wrong. Please try again.', loadFailed: 'Could not load your conversations.', deleteFailed: 'Could not delete this conversation.',
+    confirmDelete: (title) => `Delete “${title}”? This cannot be undone.`, untitled: 'Untitled conversation', retry: 'Try again', loadingHistory: 'Opening your archive…',
+    noHistory: 'Your next conversation starts here.', noHistoryDescription: 'After a news or scenario conversation, you can return to it here.', noFilterHistory: 'No conversations in this category yet. Try another category or start a new practice.',
+    start: 'Start practicing', turns: 'turns', continue: 'Continue conversation', continueApp: 'Continue in the app', noPreview: 'Continue practicing to see the full conversation.', delete: 'Delete', loadMore: 'Load more', loadingMore: 'Loading…', filters: 'Filter conversations',
+    progressTitle: 'A little, every day.', progressDescription: 'Your learning, measured in real conversations. Not a leaderboard, just your own rhythm.', progressEyebrow: 'Your learning journal',
+    notStarted: 'Your first practice is still ahead.', lastActive: 'Last practiced', progressFailed: 'Could not load your progress.', loadingProgress: 'Gathering your practice history…',
+    conversations: 'Conversations', yourTurns: 'Speaking turns', activeDays: 'Active days', streak: 'Current streak', times: '', turnUnit: 'turns', days: 'days', todayOverview: 'Today at a glance', todayProgress: 'Today’s practice', goal: 'Goal', todayTurns: 'Turns today',
+    vocabulary: 'Vocabulary', savedWords: 'Saved learning items', week: 'This week', weekTurns: 'Speaking turns', overview: 'Learning overview', recentTurns: 'The past seven days', recentDescription: 'Only your own speaking turns in learning conversations are counted.',
+    noProgress: 'After your first conversation, your daily practice will appear here.', recentLabel: 'Speaking turns over the past seven days', records: 'Your learning collection', history: 'Conversation history', historyLink: 'Revisit a news story or pick up a scenario where you left off.', vocabLink: 'Return to the words, phrases and grammar you saved in conversation.',
+  },
+  zh: {
+    historyTitle: '聊过的，值得接着聊。', historyDescription: '每一段对话，都是你用外语表达自己的记录。随时回来，接着上次的话题。', historyEyebrow: '你的对话档案',
+    all: '全部', news: '新闻', scenario: '场景', practice: 'App 练习', newsConversation: '新闻对话', scenarioPractice: '场景练习', conversation: '学习对话',
+    unknownTime: '时间未知', requestFailed: '请求失败，请稍后重试', loadFailed: '加载历史记录失败', deleteFailed: '删除失败，请稍后重试',
+    confirmDelete: (title) => `确定删除“${title}”吗？删除后无法恢复。`, untitled: '未命名对话', retry: '重试', loadingHistory: '正在打开对话档案…',
+    noHistory: '从第一段对话开始。', noHistoryDescription: '完成一次新闻或场景对话后，记录会出现在这里。', noFilterHistory: '当前分类下暂无记录，可以切换分类或开始一次新练习。',
+    start: '开始练习', turns: '次发言', continue: '继续对话', continueApp: '在 App 中继续', noPreview: '暂无对话摘要，继续练习即可查看完整上下文。', delete: '删除', loadMore: '加载更多', loadingMore: '正在加载…', filters: '对话类型筛选',
+    progressTitle: '每天一点，慢慢积累。', progressDescription: '用真实的对话记录你的学习。不必与谁比较，找到自己的节奏就好。', progressEyebrow: '你的学习手记',
+    notStarted: '从第一次练习开始记录', lastActive: '最近学习', progressFailed: '加载学习进度失败', loadingProgress: '正在整理学习记录…',
+    conversations: '对话总数', yourTurns: '你的发言', activeDays: '累计学习', streak: '连续学习', times: '次', turnUnit: '轮', days: '天', todayOverview: '今日概览', todayProgress: '今日练习', goal: '目标', todayTurns: '今日发言',
+    vocabulary: '生词本', savedWords: '已保存的学习项', week: '本周学习', weekTurns: '本周发言', overview: '学习数据概览', recentTurns: '最近七天的练习', recentDescription: '只统计你在学习对话中的发言轮数。',
+    noProgress: '完成一次对话后，这里会显示每天的练习记录。', recentLabel: '最近七天发言轮数', records: '学习记录入口', history: '对话历史', historyLink: '查看过去的新闻与场景练习，继续上次对话。', vocabLink: '复习对话中识别并保存的单词、短语和语法。',
+  },
+  ja: {
+    historyTitle: '会話の続きを、ここから。', historyDescription: '自分の言葉で話した記録。いつでも戻って、前回の話題を続けましょう。', historyEyebrow: 'あなたの会話アーカイブ',
+    all: 'すべて', news: 'ニュース', scenario: 'シナリオ', practice: 'アプリ練習', newsConversation: 'ニュース会話', scenarioPractice: 'シナリオ練習', conversation: '学習会話',
+    unknownTime: '日付不明', requestFailed: '問題が発生しました。もう一度お試しください。', loadFailed: '会話を読み込めませんでした。', deleteFailed: '会話を削除できませんでした。',
+    confirmDelete: (title) => `「${title}」を削除しますか？元には戻せません。`, untitled: '無題の会話', retry: '再試行', loadingHistory: '会話を読み込み中…',
+    noHistory: '最初の会話を始めましょう。', noHistoryDescription: 'ニュースやシナリオで会話すると、ここに記録されます。', noFilterHistory: 'このカテゴリにはまだ会話がありません。別のカテゴリを選ぶか、練習を始めましょう。',
+    start: '練習を始める', turns: '発言', continue: '会話を続ける', continueApp: 'アプリで続ける', noPreview: '練習を続けると、会話全体を確認できます。', delete: '削除', loadMore: 'もっと見る', loadingMore: '読み込み中…', filters: '会話を絞り込む',
+    progressTitle: '毎日、少しずつ。', progressDescription: '本当の会話で、学びを記録。誰かと比べず、自分のリズムを見つけましょう。', progressEyebrow: 'あなたの学習ノート',
+    notStarted: '最初の練習から記録が始まります', lastActive: '前回の練習', progressFailed: '学習記録を読み込めませんでした。', loadingProgress: '学習記録を整理中…',
+    conversations: '会話数', yourTurns: '発言数', activeDays: '学習日数', streak: '連続学習', times: '回', turnUnit: '発言', days: '日', todayOverview: '今日の概要', todayProgress: '今日の練習', goal: '目標', todayTurns: '今日の発言',
+    vocabulary: '単語帳', savedWords: '保存した学習項目', week: '今週の練習', weekTurns: '今週の発言', overview: '学習の概要', recentTurns: '過去7日間の練習', recentDescription: '学習会話での自分の発言のみを集計しています。',
+    noProgress: '会話を終えると、毎日の練習記録がここに表示されます。', recentLabel: '過去7日間の発言数', records: '学習コレクション', history: '会話履歴', historyLink: 'ニュースやシナリオの練習を振り返り、会話を続けましょう。', vocabLink: '会話で保存した単語、フレーズ、文法を復習しましょう。',
+  },
+}
+
+export const featureDateLocale = { en: 'en-US', zh: 'zh-CN', ja: 'ja-JP' }

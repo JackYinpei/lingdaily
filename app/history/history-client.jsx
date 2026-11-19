@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
-  ArrowLeft,
+  ArrowRight,
   BookOpen,
   Clock3,
   MessageCircle,
@@ -15,28 +15,29 @@ import {
 } from 'lucide-react'
 
 import { Button } from '@/app/components/ui/button'
-import { Card, CardContent } from '@/app/components/ui/card'
+import FeatureShell, { FeatureHeading, useFeatureLocale } from '@/app/components/FeatureShell'
+import { featureCopy, featureDateLocale } from '@/app/lib/featureCopy'
 
 const FILTERS = [
-  { value: '', label: '全部' },
-  { value: 'news', label: '新闻' },
-  { value: 'scenario', label: '场景' },
-  { value: 'practice', label: 'App 练习' },
+  { value: '', label: 'all', icon: MessageCircle },
+  { value: 'news', label: 'news', icon: Newspaper },
+  { value: 'scenario', label: 'scenario', icon: Users },
+  { value: 'practice', label: 'practice', icon: Smartphone },
 ]
 
 const SOURCE_META = {
-  news: { label: '新闻对话', icon: Newspaper },
-  scenario: { label: '场景练习', icon: Users },
-  practice: { label: 'App 练习', icon: Smartphone },
+  news: { label: 'newsConversation', icon: Newspaper },
+  scenario: { label: 'scenarioPractice', icon: Users },
+  practice: { label: 'practice', icon: Smartphone },
 }
 
-function formatDate(value) {
-  if (!value) return '时间未知'
+function formatDate(value, locale, fallback) {
+  if (!value) return fallback
 
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '时间未知'
+  if (Number.isNaN(date.getTime())) return fallback
 
-  return new Intl.DateTimeFormat('zh-CN', {
+  return new Intl.DateTimeFormat(locale, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -45,15 +46,17 @@ function formatDate(value) {
   }).format(date)
 }
 
-async function readResponse(response) {
+async function readResponse(response, fallback) {
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(payload.error || '请求失败，请稍后重试')
+    throw new Error(payload.error || fallback)
   }
   return payload
 }
 
 export default function HistoryClient() {
+  const lang = useFeatureLocale()
+  const t = featureCopy[lang]
   const [sourceType, setSourceType] = useState('')
   const [items, setItems] = useState([])
   const [nextCursor, setNextCursor] = useState(null)
@@ -78,7 +81,7 @@ export default function HistoryClient() {
         cache: 'no-store',
         signal,
       })
-      const payload = await readResponse(response)
+      const payload = await readResponse(response, t.requestFailed)
       if (requestId !== requestIdRef.current) return
 
       const nextItems = Array.isArray(payload.data) ? payload.data : []
@@ -86,13 +89,13 @@ export default function HistoryClient() {
       setNextCursor(payload.nextCursor || null)
     } catch (fetchError) {
       if (fetchError.name === 'AbortError' || requestId !== requestIdRef.current) return
-      setError(fetchError.message || '加载历史记录失败')
+      setError(fetchError.message || t.loadFailed)
     } finally {
       if (requestId === requestIdRef.current) {
         append ? setLoadingMore(false) : setLoading(false)
       }
     }
-  }, [sourceType])
+  }, [sourceType, t])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -105,7 +108,7 @@ export default function HistoryClient() {
   }, [fetchPage, reloadToken])
 
   const handleDelete = async (item) => {
-    const confirmed = window.confirm(`确定删除“${item.title || '这段对话'}”吗？删除后无法恢复。`)
+    const confirmed = window.confirm(t.confirmDelete(item.title || t.untitled))
     if (!confirmed) return
 
     setDeletingId(item.id)
@@ -114,39 +117,20 @@ export default function HistoryClient() {
       const response = await fetch(`/api/chat-history?id=${encodeURIComponent(item.id)}`, {
         method: 'DELETE',
       })
-      await readResponse(response)
+      await readResponse(response, t.requestFailed)
       setItems((current) => current.filter((entry) => entry.id !== item.id))
     } catch (deleteError) {
-      setError(deleteError.message || '删除失败，请稍后重试')
+      setError(deleteError.message || t.deleteFailed)
     } finally {
       setDeletingId(null)
     }
   }
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border bg-card/70 backdrop-blur">
-        <div className="container mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-4">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/talk">
-                <ArrowLeft aria-hidden />
-                返回对话
-              </Link>
-            </Button>
-            <div>
-              <h1 className="text-xl font-bold">对话历史</h1>
-              <p className="text-xs text-muted-foreground">跨设备找回并继续你的学习记录</p>
-            </div>
-          </div>
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/progress">查看学习进度</Link>
-          </Button>
-        </div>
-      </header>
-
-      <div className="container mx-auto max-w-5xl px-4 py-8">
-        <div className="mb-6 flex flex-wrap items-center gap-2" aria-label="对话类型筛选">
+    <FeatureShell active="history">
+      <FeatureHeading number="02" eyebrow={t.historyEyebrow} title={t.historyTitle} description={t.historyDescription} icon={MessageCircle} />
+      <div>
+        <div className="feature-filters mb-6" aria-label={t.filters}>
           {FILTERS.map((filter) => (
             <Button
               key={filter.value || 'all'}
@@ -156,7 +140,7 @@ export default function HistoryClient() {
               aria-pressed={sourceType === filter.value}
               onClick={() => setSourceType(filter.value)}
             >
-              {filter.label}
+              <filter.icon size={14} aria-hidden="true" />{t[filter.label]}
             </Button>
           ))}
         </div>
@@ -166,7 +150,7 @@ export default function HistoryClient() {
             <span>{error}</span>
             <Button type="button" size="sm" variant="outline" onClick={() => setReloadToken((value) => value + 1)}>
               <RefreshCw aria-hidden />
-              重试
+              {t.retry}
             </Button>
           </div>
         ) : null}
@@ -174,60 +158,57 @@ export default function HistoryClient() {
         {loading ? (
           <div className="flex min-h-64 items-center justify-center" role="status">
             <RefreshCw className="mr-2 size-5 animate-spin text-muted-foreground" aria-hidden />
-            <span className="text-sm text-muted-foreground">正在加载历史记录…</span>
+            <span className="text-sm text-muted-foreground">{t.loadingHistory}</span>
           </div>
         ) : items.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center px-6 py-14 text-center">
+          <div className="feature-empty">
               <BookOpen className="mb-4 size-10 text-muted-foreground" aria-hidden />
-              <h2 className="text-lg font-semibold">这里还没有对话</h2>
+              <h2>{t.noHistory}</h2>
               <p className="mt-2 max-w-md text-sm text-muted-foreground">
-                {sourceType ? '当前分类下暂无记录，可以切换分类或开始一次新练习。' : '完成一次新闻或场景对话后，记录会出现在这里。'}
+                {sourceType ? t.noFilterHistory : t.noHistoryDescription}
               </p>
               <Button className="mt-6" asChild>
-                <Link href="/talk">开始对话</Link>
+                <Link href="/talk">{t.start}<ArrowRight aria-hidden="true" /></Link>
               </Button>
-            </CardContent>
-          </Card>
+          </div>
         ) : (
-          <div className="space-y-4">
+          <div className="feature-history-list">
             {items.map((item) => {
-              const source = SOURCE_META[item.sourceType] || { label: '学习对话', icon: MessageCircle }
+              const source = SOURCE_META[item.sourceType] || { label: 'conversation', icon: MessageCircle }
               const SourceIcon = source.icon
               return (
-                <Card key={item.id} className="gap-4 py-5">
-                  <CardContent className="px-5 md:px-6">
+                <article key={item.id}>
                     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
                       <div className="min-w-0 flex-1">
                         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                           <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1">
                             <SourceIcon className="size-3.5" aria-hidden />
-                            {source.label}
+                            {t[source.label]}
                           </span>
                           <span className="inline-flex items-center gap-1">
                             <Clock3 className="size-3.5" aria-hidden />
-                            {formatDate(item.updatedAt || item.createdAt)}
+                            {formatDate(item.updatedAt || item.createdAt, featureDateLocale[lang], t.unknownTime)}
                           </span>
-                          <span>{Number(item.userTurnCount) || 0} 次发言</span>
+                          <span>{Number(item.userTurnCount) || 0} {t.turns}</span>
                         </div>
-                        <h2 className="truncate text-lg font-semibold">{item.title || '未命名对话'}</h2>
+                        <h2 className="feature-history-title break-words">{item.title || t.untitled}</h2>
                         <p className="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">
-                          {item.preview || '暂无对话摘要，继续练习即可查看完整上下文。'}
+                          {item.preview || t.noPreview}
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         {item.sourceType === 'practice' ? (
-                          <span className="text-xs text-muted-foreground">在 App 中继续</span>
+                          <span className="text-xs text-muted-foreground">{t.continueApp}</span>
                         ) : (
                           <Button size="sm" asChild>
-                            <Link href={{ pathname: '/talk', query: { conversation: item.id } }}>继续对话</Link>
+                            <Link href={{ pathname: '/talk', query: { conversation: item.id } }}>{t.continue}<ArrowRight aria-hidden="true" /></Link>
                           </Button>
                         )}
                         <Button
                           type="button"
                           size="icon"
                           variant="outline"
-                          aria-label={`删除${item.title || '对话'}`}
+                          aria-label={`${t.delete} ${item.title || t.conversation}`}
                           disabled={deletingId === item.id}
                           onClick={() => void handleDelete(item)}
                         >
@@ -237,8 +218,7 @@ export default function HistoryClient() {
                         </Button>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
+                </article>
               )
             })}
 
@@ -251,13 +231,13 @@ export default function HistoryClient() {
                   onClick={() => void fetchPage({ cursor: nextCursor, append: true })}
                 >
                   {loadingMore ? <RefreshCw className="animate-spin" aria-hidden /> : null}
-                  {loadingMore ? '正在加载…' : '加载更多'}
+                  {loadingMore ? t.loadingMore : t.loadMore}
                 </Button>
               </div>
             ) : null}
           </div>
         )}
       </div>
-    </main>
+    </FeatureShell>
   )
 }

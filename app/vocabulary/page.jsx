@@ -5,13 +5,10 @@ import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { useLanguage } from '@/app/contexts/LanguageContext'
 import LanguageSelector from '@/app/components/LanguageSelector'
+import { ArrowRight, BookOpen, Bookmark, Layers, LetterText, MessageSquare, Shapes } from 'lucide-react'
+import FeatureShell, { FeatureHeading } from '@/app/components/FeatureShell'
 
-const TYPE_COLORS = {
-    word: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
-    phrase: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
-    grammar: 'bg-green-500/10 text-green-400 border-green-500/30',
-    other: 'bg-gray-500/10 text-gray-400 border-gray-500/30',
-}
+const TYPE_ICONS = { all: Layers, word: LetterText, phrase: MessageSquare, grammar: Shapes, other: Bookmark }
 
 export default function VocabularyPage() {
     const { data: session, status } = useSession()
@@ -110,55 +107,35 @@ export default function VocabularyPage() {
 
     if (status === 'unauthenticated') {
         return (
-            <div className="min-h-screen bg-background flex items-center justify-center px-4">
-                <div className="text-center rounded-lg border border-border bg-card p-8 max-w-sm">
-                    <div className="text-4xl mb-4">📚</div>
+            <FeatureShell active="vocabulary">
+                <div className="feature-empty mt-10">
+                    <BookOpen aria-hidden="true" />
                     <p className="text-foreground font-medium mb-5">{t.signIn}</p>
-                    <Link href="/sign-in" className="inline-flex px-4 py-2 rounded bg-primary text-primary-foreground">
+                    <Link href="/sign-in?callbackUrl=%2Fvocabulary" className="feature-action">
                         {t.signInAction}
                     </Link>
                 </div>
-            </div>
+            </FeatureShell>
         )
     }
 
     return (
-        <div className="min-h-screen bg-background">
-            <header className="border-b border-border bg-card">
-                <div className="container mx-auto px-4 py-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-4">
-                            <Link
-                                href="/talk"
-                                className="text-muted-foreground hover:text-foreground transition-colors text-sm"
-                            >
-                                ← {t.back}
-                            </Link>
-                            <h1 className="text-xl font-bold text-card-foreground">{t.title}</h1>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-4">
-                            <LanguageSelector kind="learning" label={t.language} />
-                            <span className="text-muted-foreground text-sm">
-                                {t.total} {uniqueItems.length} {t.words}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            <div className="container mx-auto px-4 py-6 max-w-4xl">
+        <FeatureShell active="vocabulary">
+            <FeatureHeading number="03" eyebrow={uiLang === 'zh' ? '你的语言收藏' : 'Your language collection'} title={uiLang === 'zh' ? '把遇见的词，变成自己的。' : 'Words worth keeping.'} description={uiLang === 'zh' ? '从真实对话中留下的单词、短语与表达，带着语境，再读一遍。' : 'Words, phrases and expressions from real conversations. Keep the context. Make them your own.'} icon={BookOpen} />
+            <div className="feature-toolbar">
+                <LanguageSelector kind="learning" label={t.language} />
+                <span className="feature-count">{t.total} {uniqueItems.length} {t.words}</span>
+            </div>
+            <div>
                 {/* Filter tabs */}
-                <div className="flex gap-2 mb-6 flex-wrap">
+                <div className="feature-filters mb-6">
                     {['all', 'word', 'phrase', 'grammar', 'other'].map(type => (
                         <button
                             key={type}
                             onClick={() => setFilter(type)}
-                            className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
-                                filter === type
-                                    ? 'bg-foreground text-background border-foreground'
-                                    : 'bg-transparent text-muted-foreground border-border hover:border-foreground/50'
-                            }`}
+                            aria-pressed={filter === type}
                         >
+                            {(() => { const Icon = TYPE_ICONS[type]; return <Icon size={14} aria-hidden="true" /> })()}
                             {type === 'all' ? t.all : t.typeLabels[type] || type}
                             {type === 'all'
                                 ? ` (${uniqueItems.length})`
@@ -179,12 +156,13 @@ export default function VocabularyPage() {
                         <div className="text-muted-foreground text-sm">{t.loading}</div>
                     </div>
                 ) : filtered.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 text-center">
-                        <div className="text-4xl mb-4">📚</div>
-                        <p className="text-foreground font-medium mb-2">{t.noWords}</p>
+                    <div className="feature-empty">
+                        <BookOpen aria-hidden="true" />
+                        <h2>{t.noWords}</h2>
                         <p className="text-muted-foreground text-sm max-w-xs">{t.noWordsDesc}</p>
-                        <Link href="/talk" className="mt-6 px-4 py-2 border border-red-500 text-red-500 rounded hover:bg-red-500 hover:text-white transition-colors text-sm">
+                        <Link href="/talk" className="feature-action mt-6">
                             {uiLang === 'zh' ? '去对话' : 'Start chatting'}
+                            <ArrowRight size={16} aria-hidden="true" />
                         </Link>
                         {hasMore && (
                             <button
@@ -198,15 +176,15 @@ export default function VocabularyPage() {
                     </div>
                 ) : (
                     <>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="feature-vocab-grid">
                             {filtered.map((item, idx) => (
                                 <div
                                     key={`${item.recordId}-${item.text}-${idx}`}
-                                    className="bg-card border border-border rounded-lg p-4 hover:border-border/80 transition-colors"
+                                    className="feature-vocab-item"
                                 >
                                     <div className="flex items-start justify-between gap-2 mb-2">
-                                        <span className="text-foreground font-semibold text-base break-all">{item.text}</span>
-                                        <span className={`text-xs px-2 py-0.5 rounded-full border flex-shrink-0 ${TYPE_COLORS[item.type] || TYPE_COLORS.other}`}>
+                                        <span className="feature-term break-words min-w-0">{item.text}</span>
+                                        <span className="feature-type shrink-0">
                                             {t.typeLabels[item.type] || item.type}
                                         </span>
                                     </div>
@@ -217,10 +195,10 @@ export default function VocabularyPage() {
                                         </p>
                                     )}
                                     {item.original && item.original !== item.text && (
-                                        <p className="text-muted-foreground text-xs mt-1 line-clamp-2">
+                                        <blockquote className="text-muted-foreground text-xs leading-6 line-clamp-2">
                                             <span className="text-muted-foreground/60">{t.original}: </span>
                                             {item.original}
-                                        </p>
+                                        </blockquote>
                                     )}
                                     {item.userMessage && (
                                         <p className="text-muted-foreground text-xs mt-1 line-clamp-2">
@@ -255,6 +233,6 @@ export default function VocabularyPage() {
                     </>
                 )}
             </div>
-        </div>
+        </FeatureShell>
     )
 }

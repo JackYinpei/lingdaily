@@ -2,6 +2,7 @@ import { cache } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
+import FeatureShell from '@/app/components/FeatureShell'
 import { formatDuration } from '@/app/lib/podcast/feed'
 import { getPodcastEpisode } from '@/app/lib/podcast/repository'
 import { normalizePodcastShownotes } from '@/app/lib/podcast/shownotes'
@@ -38,8 +39,8 @@ export default async function PodcastEpisodePage({ params }) {
   const chunks = Array.isArray(episode.content?.chunks) ? episode.content.chunks : []
   const shownotes = normalizePodcastShownotes(episode)
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <div className="container mx-auto max-w-3xl px-4 py-10">
+    <FeatureShell active="podcasts">
+      <div className="feature-reader py-10">
         <Link href="/podcasts" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-8">
           <ArrowLeft className="size-4" /> 返回播客列表
         </Link>
@@ -47,7 +48,7 @@ export default async function PodcastEpisodePage({ params }) {
         <time className="text-sm text-muted-foreground">{episode.date}</time>
         <h1 className="text-3xl font-bold mt-2 mb-3">{episode.title}</h1>
         <div className="text-xs text-muted-foreground mb-2">时长 {formatDuration(episode.duration)}</div>
-        <audio controls preload="metadata" src={episode.audioUrl} className="w-full mb-10">Your browser does not support audio playback.</audio>
+        <audio aria-label={episode.title} controls preload="metadata" src={episode.audioUrl} className="w-full mb-10">Your browser does not support audio playback.</audio>
 
         <section className="mb-12 space-y-7" aria-labelledby="shownotes-heading">
           <h2 id="shownotes-heading" className="text-2xl font-semibold">Show Notes</h2>
@@ -98,6 +99,6 @@ export default async function PodcastEpisodePage({ params }) {
           )}
         </section>
       </div>
-    </main>
+    </FeatureShell>
   )
 }

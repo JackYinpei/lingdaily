@@ -3,6 +3,7 @@
 import { Card } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { cn } from "@/app/lib/utils";
+import { Check, Users } from 'lucide-react';
 
 const difficultyConfig = {
   beginner: { label_zh: "入门", label_en: "Beginner", label_ja: "初級", color: "bg-green-600" },
@@ -17,19 +18,25 @@ export function ScenarioCard({ scenario, isSelected, onSelect, compact = false, 
   return (
     <Card
       className={cn(
-        "cursor-pointer transition-all duration-200 hover:shadow-md w-full h-full flex flex-col overflow-hidden p-0",
-        isSelected ? "ring-2 ring-inset ring-primary bg-accent/10" : "hover:bg-card/80"
+        "feature-topic-card feature-scenario-card cursor-pointer transition-colors duration-200 w-full h-full flex flex-col overflow-hidden p-0",
+        isSelected ? "bg-secondary" : "hover:bg-card/80"
       )}
       onClick={onSelect}
+      role="button"
+      tabIndex={0}
+      aria-pressed={isSelected}
+      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect?.(event); } }}
     >
-      <div className="p-3 flex flex-col h-full gap-2">
+      <div className="p-4 flex flex-col h-full gap-3">
         <div className="flex items-center gap-2">
           <Badge variant="secondary" className="text-xs">
+            <Users size={12} aria-hidden="true" />
             {scenario.category}
           </Badge>
-          <span className={cn("text-xs text-white px-1.5 py-0.5 rounded", diff.color)}>
+          <span className="text-[10px] text-muted-foreground ml-auto">
             {diff[labelKey] || diff.label_en}
           </span>
+          {isSelected && <Check size={14} className="text-primary" aria-hidden="true" />}
         </div>
 
         <h3

@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { Headphones, Home } from 'lucide-react'
+import { ArrowUpRight, AudioLines, Clock3, Headphones, Rss } from 'lucide-react'
+import FeatureShell, { FeatureHeading } from '@/app/components/FeatureShell'
 import { formatDuration } from '@/app/lib/podcast/feed'
 import { listPodcastEpisodes } from '@/app/lib/podcast/repository'
 import { normalizePodcastShownotes } from '@/app/lib/podcast/shownotes'
@@ -8,7 +9,7 @@ export const dynamic = 'force-dynamic'
 
 export const metadata = {
   title: '成杨英语日刊 | LingDaily Podcasts',
-  description: '每天十分钟，用中英双语了解国际、科技与商业热点。',
+  description: 'LL 和 DD 的中英双语新闻播客，关注国际、科技与商业。',
 }
 
 export default async function PodcastsPage() {
@@ -22,41 +23,38 @@ export default async function PodcastsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border bg-card">
-        <div className="container mx-auto px-4 py-5 flex items-center justify-between gap-4">
-          <Link href="/" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-            <Home className="size-4" /> LingDaily
-          </Link>
-          <a href="/podcasts/feed.xml" className="text-sm text-muted-foreground hover:text-foreground">RSS Feed</a>
+    <FeatureShell active="podcasts">
+      <FeatureHeading page="podcasts" />
+      <section className="feature-podcast-intro" aria-label="节目介绍">
+        <div className="feature-podcast-art" aria-hidden="true"><AudioLines strokeWidth={1.2} size={28} /><strong>LL / DD</strong><span>LINGDAILY RADIO</span></div>
+        <div className="self-center">
+          <p className="feature-eyebrow mb-3"><Headphones size={14} aria-hidden="true" /> 成杨英语日刊 中英双语</p>
+          <h2 className="flex flex-wrap gap-x-4 text-xl mb-3 font-medium"><span>国际</span><span>科技</span><span>商业</span></h2>
+          <p className="text-sm leading-7 text-muted-foreground max-w-xl">直接收听节目<br />也可以查看双语摘要和词汇表</p>
         </div>
-      </header>
-
-      <div className="container mx-auto max-w-4xl px-4 py-12">
-        <div className="flex items-center gap-3 mb-3">
-          <Headphones className="size-8" />
-          <h1 className="text-3xl md:text-4xl font-bold">成杨英语日刊</h1>
+      </section>
+      <div>
+        <div className="feature-toolbar">
+          <div><h2 className="feature-eyebrow">往期节目</h2><span className="feature-count">共 {episodes.length} 期</span></div>
+          <a href="/podcasts/feed.xml" className="feature-text-link"><Rss size={15} aria-hidden="true" /> 订阅 RSS</a>
         </div>
-        <p className="text-muted-foreground mb-10">每天十分钟，LL 和 DD 用自然英文和中文拆解全球热点。</p>
-
         {unavailable ? (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-5 text-sm">播客服务暂时不可用，请稍后再试。</div>
+          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-5 text-sm">播客服务暂时不可用 请稍后再试</div>
         ) : episodes.length === 0 ? (
-          <div className="rounded-lg border border-border bg-card p-8 text-center text-muted-foreground">第一期节目正在准备中。</div>
+          <div className="feature-empty"><Headphones aria-hidden="true" /><h2>暂无节目</h2><p>节目发布后会显示在这里</p></div>
         ) : (
-          <div className="space-y-5">
+          <div>
             {episodes.map((episode) => {
               const shownotes = normalizePodcastShownotes(episode)
               return (
-              <article key={episode.id} className="rounded-xl border border-border bg-card p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
-                  <div>
-                    <time className="text-xs text-muted-foreground">{episode.date}</time>
-                    <h2 className="text-xl font-semibold mt-1">
-                      <Link href={`/podcasts/${episode.date}`} className="hover:underline">{episode.title}</Link>
+              <article key={episode.id} className="feature-episode">
+                <time className="feature-episode-date" dateTime={episode.date}>{episode.date}</time>
+                <div className="min-w-0">
+                <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                    <h2>
+                      <Link href={`/podcasts/${episode.date}`} className="feature-episode-link hover:text-primary">{episode.title}<ArrowUpRight size={17} aria-hidden="true" /></Link>
                     </h2>
-                  </div>
-                  <span className="text-xs rounded-full border border-border px-2 py-1">{formatDuration(episode.duration)}</span>
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 size={13} aria-hidden="true" />{formatDuration(episode.duration)}</span>
                 </div>
                 {shownotes.summaryZh && (
                   <p lang="zh-CN" className="text-sm text-muted-foreground leading-relaxed mb-2">{shownotes.summaryZh}</p>
@@ -64,13 +62,14 @@ export default async function PodcastsPage() {
                 {shownotes.summaryEn && (
                   <p lang="en" className="text-sm text-muted-foreground leading-relaxed mb-4">{shownotes.summaryEn}</p>
                 )}
-                <audio controls preload="none" src={episode.audioUrl} className="w-full">Your browser does not support audio playback.</audio>
+                <audio aria-label={episode.title} controls preload="none" src={episode.audioUrl}>Your browser does not support audio playback.</audio>
+                </div>
               </article>
               )
             })}
           </div>
         )}
       </div>
-    </main>
+    </FeatureShell>
   )
 }

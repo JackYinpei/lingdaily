@@ -420,7 +420,7 @@ export default function NewsFeed({
       {categorySelectorJSX}
       <div
         ref={isMobile ? listContainerRef : null}
-        className={isMobile ? "flex gap-3 overflow-x-auto custom-scroll px-2" : "space-y-4 px-2 py-2"}
+        className={`feature-topic-list ${isMobile ? "flex gap-3 overflow-x-auto custom-scroll px-2" : "space-y-4 px-2 py-2"}`}
         style={isMobile ? {
           touchAction: 'pan-x pinch-zoom',
           scrollBehavior: 'smooth',
@@ -449,13 +449,14 @@ export default function NewsFeed({
           return (
             <div
               key={article.id}
+              data-selected={isSelected || undefined}
               {...(index === 0 ? { "data-tour": "news-card" } : {})}
               className={
                 isMobile
                   ? mobileHasSelection
-                    ? `flex-shrink-0 transition-all duration-300 ease-in-out w-full min-w-full max-w-full h-[25vh] ${isSelected ? "scale-100 opacity-100" : "scale-95 opacity-80"}`
-                    : "flex-shrink-0 transition-all duration-300 ease-in-out w-[260px] h-48"
-                  : `transition-all duration-300 ease-in-out ${isSelected ? "h-96" : "h-48"}`
+                    ? `feature-topic-entry flex-shrink-0 transition-all duration-300 ease-in-out w-full min-w-full max-w-full h-[25vh] ${isSelected ? "scale-100 opacity-100" : "scale-95 opacity-80"}`
+                    : "feature-topic-entry flex-shrink-0 transition-all duration-300 ease-in-out w-[260px] h-48"
+                  : `feature-topic-entry transition-all duration-300 ease-in-out ${isSelected ? "h-96" : "h-48"}`
               }
               ref={(el) => {
                 if (el) {

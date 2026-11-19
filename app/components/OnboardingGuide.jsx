@@ -9,26 +9,26 @@ const STEPS_ZH = [
   {
     target: '[data-tour="mode-toggle"]',
     title: "切换模式",
-    description: '点击切换到「场景」模式，体验角色扮演练习；或者跳过，使用默认的新闻模式。',
+    description: "选新闻聊观点\n或选场景练对话",
     position: "bottom",
     showSkipMode: true,
   },
   {
     target: '[data-tour="category-bar"]',
     title: "选择分类",
-    description: "左右滑动浏览不同的新闻分类，选择你感兴趣的话题。",
+    description: "左右滑动分类\n选一个想聊的话题",
     position: "bottom",
   },
   {
     target: '[data-tour="news-card"]',
     title: "选择内容",
-    description: "点击一张卡片，选择你想要讨论的新闻或场景。",
+    description: "点选新闻或场景卡片\n作为这次对话的话题",
     position: "bottom",
   },
   {
     target: '[data-tour="connect-btn"]',
     title: "开始对话",
-    description: "点击连接按钮，开始和 AI 进行英语对话练习！",
+    description: "点击连接按钮\n允许使用麦克风后就能开始",
     position: "top",
   },
 ];
@@ -37,26 +37,26 @@ const STEPS_EN = [
   {
     target: '[data-tour="mode-toggle"]',
     title: "Switch Mode",
-    description: 'Tap to switch to "Scenarios" for role-play practice, or skip to stay in News mode.',
+    description: "Choose News to discuss a story\nor Scenarios to try a role play",
     position: "bottom",
     showSkipMode: true,
   },
   {
     target: '[data-tour="category-bar"]',
     title: "Browse Categories",
-    description: "Swipe left and right to explore different news categories.",
+    description: "Swipe through the categories\nand choose a topic",
     position: "bottom",
   },
   {
     target: '[data-tour="news-card"]',
     title: "Pick a Topic",
-    description: "Tap a card to select the news or scenario you want to discuss.",
+    description: "Select a news story or scenario\nfor this conversation",
     position: "bottom",
   },
   {
     target: '[data-tour="connect-btn"]',
     title: "Start Talking",
-    description: "Tap Connect to start your English conversation with AI!",
+    description: "Select Connect\nand allow microphone access to speak",
     position: "top",
   },
 ];
@@ -65,26 +65,26 @@ const STEPS_JA = [
   {
     target: '[data-tour="mode-toggle"]',
     title: "モード切替",
-    description: "「シナリオ」モードに切り替えてロールプレイ練習、またはスキップしてニュースモードで続行。",
+    description: "ニュースについて話す\nシナリオで会話を練習する",
     position: "bottom",
     showSkipMode: true,
   },
   {
     target: '[data-tour="category-bar"]',
     title: "カテゴリを選ぶ",
-    description: "左右にスワイプしてニュースカテゴリを選択しましょう。",
+    description: "カテゴリを左右にスワイプして\n話題を選んでください",
     position: "bottom",
   },
   {
     target: '[data-tour="news-card"]',
     title: "トピックを選ぶ",
-    description: "カードをタップして、話したいニュースやシナリオを選びましょう。",
+    description: "ニュースやシナリオのカードを選んで\n今回の話題にします",
     position: "bottom",
   },
   {
     target: '[data-tour="connect-btn"]',
     title: "会話を始める",
-    description: "接続ボタンをタップして、AIとの英会話を始めましょう！",
+    description: "接続ボタンをタップして\nマイクを許可すると話せます",
     position: "top",
   },
 ];
@@ -92,9 +92,9 @@ const STEPS_JA = [
 const STEPS_MAP = { zh: STEPS_ZH, en: STEPS_EN, ja: STEPS_JA };
 
 const UI = {
-  zh: { next: "下一步", skip: "跳过", done: "开始吧！", skipMode: "跳过（使用新闻模式）", stepOf: (c, t) => `${c} / ${t}` },
-  en: { next: "Next", skip: "Skip", done: "Let's go!", skipMode: "Skip (use News mode)", stepOf: (c, t) => `${c} / ${t}` },
-  ja: { next: "次へ", skip: "スキップ", done: "始めよう！", skipMode: "スキップ（ニュースモード）", stepOf: (c, t) => `${c} / ${t}` },
+  zh: { next: "下一步", skip: "跳过", done: "知道了", skipMode: "跳过（使用新闻模式）", stepOf: (c, t) => `${c} / ${t}` },
+  en: { next: "Next", skip: "Skip", done: "Done", skipMode: "Skip (use News mode)", stepOf: (c, t) => `${c} / ${t}` },
+  ja: { next: "次へ", skip: "スキップ", done: "閉じる", skipMode: "スキップ（ニュースモード）", stepOf: (c, t) => `${c} / ${t}` },
 };
 
 export default function OnboardingGuide({ lang = "zh", onSkipToNews }) {
@@ -306,16 +306,16 @@ export default function OnboardingGuide({ lang = "zh", onSkipToNews }) {
         </div>
 
         <h3 className="text-base font-semibold text-card-foreground mb-1">{currentStep.title}</h3>
-        <p className="text-sm text-muted-foreground leading-relaxed mb-4">{currentStep.description}</p>
+        <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line mb-4">{currentStep.description}</p>
 
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <button
             onClick={finish}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="min-h-11 shrink-0 whitespace-nowrap text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             {ui.skip}
           </button>
-          <div className="flex gap-2">
+          <div className="ml-auto flex min-w-0 flex-wrap justify-end gap-2">
             {currentStep.showSkipMode && (
               <button
                 onClick={() => {
@@ -329,7 +329,7 @@ export default function OnboardingGuide({ lang = "zh", onSkipToNews }) {
             )}
             <button
               onClick={next}
-              className="text-sm px-4 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-medium transition-colors"
+              className="min-h-11 shrink-0 whitespace-nowrap text-sm px-4 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-medium transition-colors"
             >
               {isLast ? ui.done : ui.next}
             </button>

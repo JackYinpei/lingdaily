@@ -10,7 +10,9 @@ import ScenarioFeed from "@/app/components/ScenarioFeed";
 import { ModeToggle } from "@/app/components/ModeToggle";
 import { History } from "@/app/components/History";
 
-import Link from 'next/link';
+import { Newspaper, Users } from 'lucide-react';
+import FeatureShell, { FeatureHeading } from '@/app/components/FeatureShell';
+import { featureCopy } from '@/app/lib/featureCopy';
 import { useLanguage } from '@/app/contexts/LanguageContext';
 import { GeminiLiveServiceImpl } from '@/app/lib/GeminiLiveService';
 import OnboardingGuide from '@/app/components/OnboardingGuide';
@@ -68,6 +70,7 @@ export default function Home() {
         if (code.startsWith('ja')) return 'ja';
         return 'en';
     }, [nativeLanguage?.code]);
+    const pageCopy = featureCopy[uiLangCode];
 
     // Gemini Service Ref
     const serviceRef = useRef(null);
@@ -207,14 +210,14 @@ export default function Home() {
 
     // UI strings ...
     const uiText = useMemo(() => ({
-        en: { history: 'History', vocab: 'Vocabulary', saveFailed: 'This conversation could not be saved. It will be retried as the conversation continues.' },
-        zh: { history: '对话历史', vocab: '生词本', saveFailed: '对话未能保存，将在对话继续时自动重试。' },
-        ja: { history: '履歴', vocab: '単語帳', saveFailed: '会話を保存できませんでした。会話が続くと自動で再試行します。' },
+        en: { history: 'History', vocab: 'Vocabulary', saveFailed: 'This conversation could not be saved\nIt will be retried as the conversation continues' },
+        zh: { history: '对话历史', vocab: '生词本', saveFailed: '对话未能保存 继续聊天时会自动重试' },
+        ja: { history: '履歴', vocab: '単語帳', saveFailed: '会話を保存できませんでした\n会話が続くと自動で再試行します' },
     }[uiLangCode]), [uiLangCode]);
     const microphoneStatus = {
-        en: 'Waiting for microphone permission. Allow access in your browser, or cancel the connection.',
-        zh: '正在等待麦克风权限。请在浏览器中允许访问，或取消连接。',
-        ja: 'マイクの許可を待っています。ブラウザでアクセスを許可するか、接続をキャンセルしてください。',
+        en: 'Waiting for microphone permission\nAllow access in your browser or cancel the connection',
+        zh: '正在等待麦克风权限\n请在浏览器中允许访问 或取消连接',
+        ja: 'マイクの許可を待っています\nブラウザで許可するか接続をキャンセルしてください',
     }[uiLangCode];
 
     // Persist sequentially so an older response cannot overwrite a newer
@@ -495,7 +498,7 @@ export default function Home() {
             || Boolean(service?.session || service?.webSocket);
         if (hadActiveAttempt) {
             cancelLiveConnection();
-            setError('学习语言已更改，请重新连接以使用新的语言组合。');
+            setError('学习语言已更改 请重新连接以使用新的语言组合');
         }
     }, [cancelLiveConnection, isConnecting, languagePairKey]);
 
@@ -812,12 +815,12 @@ export default function Home() {
     async function connect() {
         if (isConnecting || activeConnectionAttemptRef.current !== 0) {
             cancelLiveConnection();
-            setError('已取消连接。');
+            setError('已取消连接');
             return;
         }
         setError(null);
         if (isLanguageLoading || isRestoringConversation || topicHistoryLoadingRef.current) {
-            setError('正在恢复对话，请稍候再连接。');
+            setError('正在恢复对话 请稍候再连接');
             return;
         }
         if (isConnected) {
@@ -927,7 +930,7 @@ export default function Home() {
                 serviceRef.current?.disconnect();
                 setIsConnected(false);
                 finishCurrentAttempt();
-                if (didConnect) setError('话题或学习语言已切换，请重新连接以开始当前对话。');
+                if (didConnect) setError('话题或学习语言已切换 请重新连接以开始当前对话');
                 return;
             }
 
@@ -993,48 +996,22 @@ export default function Home() {
     }, [cancelLiveConnection]);
 
     return (
-        <div className="min-h-screen bg-background">
-            {/* Header */}
-            <header className="border-b border-border bg-card hidden md:block">
-                <div className="container mx-auto px-4 py-4">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h1 className="text-2xl font-bold text-card-foreground">
-                                {activeLanguagePair.learningLanguage.label} Learning Hub
-                            </h1>
-                            <p className="text-muted-foreground mt-1">
-                                Learn {activeLanguagePair.learningLanguage.label} through news and AI conversation
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-4">
-                            <Link
-                                href="/history"
-                                className="px-4 py-2 border border-border text-foreground rounded hover:bg-accent transition-colors text-sm font-medium"
-                            >
-                                {uiText?.history || '对话历史'}
-                            </Link>
-                            <Link
-                                href="/vocabulary"
-                                className="px-4 py-2 border border-border text-foreground rounded hover:bg-accent transition-colors text-sm font-medium"
-                            >
-                                {uiText?.vocab || '生词本'}
-                            </Link>
-                        </div>
-                    </div>
-                </div>
-            </header>
+        <FeatureShell active="talk" className={`feature-practice${selectedNews ? ' feature-has-topic' : ''}`}>
+        <div className="contents">
+            <FeatureHeading page="talk" hidden />
 
             {/* Main Content */}
             <div
-                className="container mx-auto px-4 py-2 flex flex-col h-screen lg:h-auto lg:min-h-0"
+                className="feature-practice-workspace flex flex-col min-h-0"
                 style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}
             >
-                <div className="flex flex-col lg:flex-row lg:gap-6 flex-1 min-h-0 lg:h-[calc(100vh-140px)]">
+                <div className="feature-practice-layout flex-col lg:flex-row">
                     {/* Mobile Cards - 在中等屏幕以下显示 */}
                     {isDesktopLayout === false && <div className="lg:hidden flex-shrink-0">
                         <div className="flex items-center justify-between mb-1">
-                            <h2 className="text-xl font-semibold text-foreground">
-                                {mode === 'news' ? 'Latest News' : (uiLangCode === 'zh' ? '场景练习' : uiLangCode === 'ja' ? 'シナリオ' : 'Scenarios')}
+                            <h2 className="feature-topic-title">
+                                {mode === 'news' ? <Newspaper size={16} aria-hidden="true" /> : <Users size={16} aria-hidden="true" />}
+                                {mode === 'news' ? pageCopy.news : pageCopy.scenarioPractice}
                             </h2>
                             <ModeToggle mode={mode} onToggle={handleModeToggle} lang={uiLangCode} />
                         </div>
@@ -1064,10 +1041,11 @@ export default function Home() {
                     </div>}
 
                     {/* Desktop Cards - 在大屏幕以上显示 */}
-                    {isDesktopLayout === true && <div className="hidden lg:flex lg:w-[40%] flex-col min-h-0 h-[calc(100vh-140px)]">
+                    {isDesktopLayout === true && <div className="hidden lg:flex lg:w-[36%] flex-col min-h-0 h-full">
                         <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-xl font-semibold text-foreground">
-                                {mode === 'news' ? 'Latest News' : (uiLangCode === 'zh' ? '场景练习' : uiLangCode === 'ja' ? 'シナリオ' : 'Scenarios')}
+                            <h2 className="feature-topic-title">
+                                {mode === 'news' ? <Newspaper size={16} aria-hidden="true" /> : <Users size={16} aria-hidden="true" />}
+                                {mode === 'news' ? pageCopy.news : pageCopy.scenarioPractice}
                             </h2>
                             <ModeToggle mode={mode} onToggle={handleModeToggle} lang={uiLangCode} />
                         </div>
@@ -1098,7 +1076,7 @@ export default function Home() {
                     </div>}
 
                     {/* Chat Interface - Full width on mobile, 70% on desktop */}
-                    <div className="flex-1 lg:w-[70%] flex flex-col min-h-0 lg:h-[calc(100vh-140px)]">
+                    <div className="flex-1 lg:w-[64%] flex flex-col min-h-0 min-h-[420px] lg:min-h-0 h-[65dvh] lg:h-full">
                         {error && (
                             <div className="bg-red-50 border border-red-200 text-red-600 p-2 rounded mb-2 text-sm">
                                 {error}
@@ -1143,5 +1121,6 @@ export default function Home() {
             </div>
             <OnboardingGuide lang={uiLangCode} onSkipToNews={() => handleModeToggle('news')} />
         </div>
+        </FeatureShell>
     )
 }

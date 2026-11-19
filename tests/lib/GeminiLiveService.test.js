@@ -274,7 +274,7 @@ function emitMicFrame(service) {
 }
 
 describe('Gemini Live first turn', () => {
-  it('loads the full context before a short realtime opening cue without releasing the mic hold', async () => {
+  it('loads the full context before a short completed client turn without releasing the mic hold', async () => {
     const { service, config } = createService()
     const socket = await connectService(service)
     const text = '[System Initialize] ' + 'News and scenario context. '.repeat(120)
@@ -287,7 +287,12 @@ describe('Gemini Live first turn', () => {
         turns: [{ role: 'user', parts: [{ text }] }],
         turnComplete: false,
       },
-    }, { realtimeInput: { text: 'Please respond aloud to the context above.' } }])
+    }, {
+      clientContent: {
+        turns: [{ role: 'user', parts: [{ text: 'Please respond aloud to the context above.' }] }],
+        turnComplete: true,
+      },
+    }])
     expect(config.onMessage).not.toHaveBeenCalled()
     expect(service.micStreamHold).toBe(true)
     emitMicFrame(service)
@@ -306,7 +311,7 @@ describe('Gemini Live first turn', () => {
     service.disconnect()
   })
 
-  it('sends the context and realtime cue only after setup and microphone initialization resolve', async () => {
+  it('sends the context and opening cue only after setup and microphone initialization resolve', async () => {
     const { service } = createService()
     let approve
     navigator.mediaDevices.getUserMedia.mockImplementation(() => new Promise(resolve => { approve = resolve }))
@@ -325,7 +330,7 @@ describe('Gemini Live first turn', () => {
     approve({ getTracks: () => [{ stop: vi.fn() }] })
     await setup
     await connection
-    expect(sentMessages(socket).map(msg => Object.keys(msg)[0])).toEqual(['setup', 'clientContent', 'realtimeInput'])
+    expect(sentMessages(socket).map(msg => Object.keys(msg)[0])).toEqual(['setup', 'clientContent', 'clientContent'])
     expect(service.micStreamHold).toBe(true)
 
     service.disconnect()

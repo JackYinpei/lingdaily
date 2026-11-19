@@ -763,7 +763,7 @@ export class GeminiLiveServiceImpl {
         if (!this.connected || !socket || socket.readyState !== WebSocket.OPEN
             || typeof text !== 'string' || !text.trim()) return;
 
-        // Load context without generating, then request a spoken realtime turn.
+        // Keep the context and opening cue in the same conversation channel.
         const message = {
             clientContent: {
                 turns: [{ role: 'user', parts: [{ text }] }],
@@ -772,7 +772,10 @@ export class GeminiLiveServiceImpl {
         };
         socket.send(JSON.stringify(message));
         socket.send(JSON.stringify({
-            realtimeInput: { text: 'Please respond aloud to the context above.' },
+            clientContent: {
+                turns: [{ role: 'user', parts: [{ text: 'Please respond aloud to the context above.' }] }],
+                turnComplete: true,
+            },
         }));
     }
 

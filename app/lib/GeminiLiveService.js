@@ -255,9 +255,11 @@ export class GeminiLiveServiceImpl {
         return epoch === this.connectionEpoch && (!socket || socket === this.webSocket);
     }
 
-    beginMicStreamHold(connectionEpoch, socket) {
+    beginMicStreamHold(connectionEpoch, socket, deferFallback = false) {
         this.micStreamHold = true;
         if (this.micStreamHoldTimer) clearTimeout(this.micStreamHoldTimer);
+        this.micStreamHoldTimer = null;
+        if (deferFallback) return;
         this.micStreamHoldTimer = setTimeout(() => {
             this.micStreamHoldTimer = null;
             if (this.isCurrentConnection(connectionEpoch, socket)) {
@@ -328,6 +330,8 @@ export class GeminiLiveServiceImpl {
         // A reconnect must not orphan the previous microphone graph while the
         // output context remains primed by the current user gesture.
         this.stopInputAudio();
+
+        this.releaseMicStreamHold();
 
         // Supersede any socket that is still opening. Its event handlers retain
         // the previous epoch and therefore cannot mutate this new connection.
@@ -499,12 +503,13 @@ export class GeminiLiveServiceImpl {
                         microphoneRequested = true;
                         console.log("Setup complete — starting mic (frames held until first model turn)");
                         this.config.onConnectionPhase?.('microphone');
+                        this.beginMicStreamHold(connectionEpoch, socket, true);
                         const micStarted = await this.startMic(connectionEpoch, socket);
                         if (!micStarted || !this.isCurrentConnection(connectionEpoch, socket)) {
                             settleResolve(false);
                             return;
                         }
-                        this.beginMicStreamHold(connectionEpoch, socket);
+                        if (this.micStreamHold) this.beginMicStreamHold(connectionEpoch, socket);
                         this.config.onConnectionUpdate(true);
                         settleResolve(true);
                     }

@@ -186,9 +186,6 @@ struct PracticeSession: Codable, Equatable, Identifiable {
     var completedSteps: Int {
         phase == .completed ? scenario.steps.count : stepIndex + ((phase == .review || phase == .retry) ? 1 : 0)
     }
-    var originalAnswer: String? {
-        messages.last { $0.stepIndex == stepIndex && $0.kind == .answer }?.text
-    }
     var isAI: Bool { ai != nil }
     var pendingAIRequest: AIPracticeRequest? {
         guard let pending = ai?.pending else { return nil }
@@ -211,15 +208,6 @@ struct PracticeSession: Codable, Equatable, Identifiable {
             hint: turn.hint, keywords: turn.keywords,
             expression: currentFeedback?.revised ?? turn.suggestedReply,
             meaning: currentFeedback?.meaning ?? turn.suggestedMeaning)
-    }
-    var takeaways: [PracticeStep] {
-        guard let ai else { return scenario.steps }
-        return scenario.steps.indices.compactMap { index in
-            guard let item = ai.feedbacks.last(where: { $0.stepIndex == index }) else { return nil }
-            let step = scenario.steps[index]
-            return PracticeStep(id: step.id, goal: step.goal, prompt: "", translation: "", hint: "", keywords: "",
-                expression: item.feedback.revised, meaning: item.feedback.meaning)
-        }
     }
 
     @discardableResult

@@ -154,7 +154,7 @@
   .feature-wordmark { font-size: 24px; }
   .feature-theme-toggle { grid-column: 2; grid-row: 1; }
   .feature-header nav { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); width: calc(100% + 40px); margin-inline: -20px; padding-inline: 12px; gap: 0; overflow: visible; }
-  .feature-header nav a { height: 60px; flex-direction: column; justify-content: center; gap: 4px; padding: 6px 2px; font-size: 12px; white-space: normal; text-align: center; line-height: 14px; }
+  .feature-header nav a { height: 60px; flex-direction: column; justify-content: flex-start; gap: 4px; padding: 6px 2px; font-size: 12px; white-space: normal; text-align: center; line-height: 14px; }
   .feature-header nav a span { max-width: 100%; overflow-wrap: anywhere; }
   .feature-header nav svg { width: 16px; height: 16px; }
   .feature-header nav a[aria-current]::after { inset-inline: 8px; }

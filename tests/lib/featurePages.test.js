@@ -65,6 +65,13 @@ describe('editorial feature pages', () => {
     expect(fetchMock.mock.calls.at(-1)[0]).toContain('sourceType=news')
   })
 
+  it.each([[0, '0 turns'], [1, '1 turn'], [2, '2 turns']])('formats %s English history turns', async (count, expected) => {
+    vi.stubGlobal('fetch', vi.fn(async () => respond({ data: [{ id: 'one', title: 'A conversation', userTurnCount: count }] })))
+    await render(HistoryClient)
+    expect(container.querySelector('.feature-history-meta').textContent).toContain(expected)
+    expect(container.querySelector('.feature-history-meta').textContent).not.toContain('1 turns')
+  })
+
   it.each([['en', 'Start practicing'], ['ja', '練習を始める']])('localizes history empty states in %s', async (lang, action) => {
     state.nativeCode = lang
     vi.stubGlobal('fetch', vi.fn(async () => respond({ data: [] })))

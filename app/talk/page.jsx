@@ -971,6 +971,7 @@ export default function Home() {
 
     return (
         <FeatureShell active="talk" className={`feature-practice${selectedNews ? ' feature-has-topic' : ''}`}>
+        <div className="contents">
             <FeatureHeading number="01" eyebrow={uiLangCode === 'zh' ? '你的口语练习室' : uiLangCode === 'ja' ? 'あなたの会話練習室' : 'Your conversation studio'} title={uiLangCode === 'zh' ? '从一个话题，聊开去。' : uiLangCode === 'ja' ? 'ひとつの話題から、話そう。' : 'One topic. A world to say.'} description={uiLangCode === 'zh' ? '选一条新闻，或走进一个场景。用自己的话，练习真实的表达。' : uiLangCode === 'ja' ? 'ニュースやシナリオを選び、自分の言葉で話してみましょう。' : 'Choose a story or step into a scenario. Practice expressing what you really mean.'} icon={MessagesSquare} />
 
             {/* Main Content */}
@@ -1088,6 +1089,7 @@ export default function Home() {
                 </div>
             </div>
             <OnboardingGuide lang={uiLangCode} />
+        </div>
         </FeatureShell>
     )
 }

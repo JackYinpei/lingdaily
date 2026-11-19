@@ -189,7 +189,7 @@ export default function HistoryClient() {
                             <Clock3 className="size-3.5" aria-hidden />
                             {formatDate(item.updatedAt || item.createdAt, featureDateLocale[lang], t.unknownTime)}
                           </span>
-                          <span>{Number(item.userTurnCount) || 0} {t.turns}</span>
+                          <span>{t.turns(Number(item.userTurnCount) || 0)}</span>
                         </div>
                         <h2 className="feature-history-title break-words">{item.title || t.untitled}</h2>
                         <p className="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">

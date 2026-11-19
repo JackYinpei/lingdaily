@@ -42,7 +42,7 @@ flowchart LR
 | 数据库 | `supabase/migrations/` | RLS、索引、RPC、兼容升级与系统场景 seed |
 | 部署 | `Dockerfile`、`docker-compose.yml` | 8000 端口应用与持久化播客目录 |
 
-Gemini Live 的浏览器连接先向 `POST /api/realtime-token` 申请一次性令牌，再建立 WebSocket。旧的 `/api/gemini-token` 暂时保留为带弃用响应头的兼容别名。旧的 `/api/learning/unfamiliar-english` 同样继续代理到统一的学习项接口。
+Gemini Live 的浏览器连接先向 `POST /api/realtime-token` 申请一次性令牌，再建立 WebSocket。旧的 `/api/gemini-token` 暂时保留为带弃用响应头的兼容别名。
 
 播客生成链路为：服务器 cron → 生成接口 → 新闻源 → Gemini 结构化脚本 → 多说话人 TTS → MP3 → COS → Supabase → 本地 manifest/RSS 镜像。Supabase 暂时不可用时，生成接口会退回已有的本地 manifest/feed 兼容路径。
 

@@ -10,12 +10,6 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseSchema = process.env.SUPABASE_SCHEMA || "public";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const LANGUAGE_COLUMNS = [
-  "title_target",
-  "description_target",
-  "target_language_code",
-  "native_language_code",
-];
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -49,19 +43,6 @@ function parseJson(text, fallback) {
   try { return text ? JSON.parse(text) : fallback; } catch { return fallback; }
 }
 
-function isMissingLanguageColumns(payload) {
-  const code = String(payload?.code || "");
-  const description = [payload?.message, payload?.details, payload?.hint]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  const missingColumn = description.includes("schema cache")
-    || description.includes("does not exist")
-    || description.includes("could not find");
-  return (code === "PGRST204" || code === "42703" || missingColumn)
-    && LANGUAGE_COLUMNS.some((column) => description.includes(column));
-}
-
 async function insertScenario(row, session) {
   const res = await fetch(`${supabaseUrl}/rest/v1/scenarios`, {
     method: "POST",
@@ -71,13 +52,6 @@ async function insertScenario(row, session) {
   });
   const text = await res.text();
   return { res, data: parseJson(text, null) };
-}
-
-function legacyTargetValue(body, prefix, languageCode) {
-  if (languageCode === "en") return body[`${prefix}_en`];
-  if (languageCode === "ja") return body[`${prefix}_ja`];
-  if (languageCode === "zh-CN") return body[`${prefix}_zh`];
-  return null;
 }
 
 // GET /api/scenarios?categories=true        → distinct categories derived from system scenarios
@@ -271,14 +245,8 @@ export async function POST(req) {
     const titleZh = optionalText(body.title_zh, 200);
     const titleEn = optionalText(body.title_en, 200);
     const systemPrompt = optionalText(body.system_prompt, 12000);
-    const titleTarget = optionalText(
-      body.title_target ?? legacyTargetValue(body, "title", learningLanguage.code),
-      200
-    );
-    const descriptionTarget = optionalText(
-      body.description_target ?? legacyTargetValue(body, "description", learningLanguage.code),
-      12000
-    );
+    const titleTarget = optionalText(body.title_target, 200);
+    const descriptionTarget = optionalText(body.description_target, 12000);
 
     if (!titleZh || !titleEn || !titleTarget || !systemPrompt) {
       return jsonResponse(
@@ -325,26 +293,13 @@ export async function POST(req) {
       is_active: true,
     };
 
-    let result = await insertScenario(row, session);
-    let usedLegacySchema = false;
-    if (!result.res.ok && isMissingLanguageColumns(result.data)) {
-      if (
-        learningLanguage.code !== DEFAULT_LEARNING_LANGUAGE.code
-        || nativeLanguage.code !== DEFAULT_NATIVE_LANGUAGE.code
-      ) {
-        return jsonResponse({ error: "Scenario storage is being upgraded; please retry shortly" }, 503);
-      }
-      const legacyRow = { ...row };
-      for (const column of LANGUAGE_COLUMNS) delete legacyRow[column];
-      result = await insertScenario(legacyRow, session);
-      usedLegacySchema = true;
-    }
+    const result = await insertScenario(row, session);
     if (!result.res.ok) {
       console.error("Failed to save scenario:", result.res.status, result.data);
       return jsonResponse({ error: "Failed to save scenario" }, 502);
     }
     const data = Array.isArray(result.data) ? result.data[0] : result.data;
-    return jsonResponse({ ok: true, data, ...(usedLegacySchema ? { legacySchema: true } : {}) });
+    return jsonResponse({ ok: true, data });
   } catch (error) {
     console.error("Scenario POST error:", error);
     return jsonResponse({ error: "Unable to save scenario" }, 500);

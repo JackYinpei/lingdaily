@@ -147,7 +147,6 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理”避免阻塞实时会话：
 
 - `record_unfamiliar_learning_items`：抽取用户不会的学习项，异步写 `/api/learning/items`。
-  旧 tool 名 `extract_unfamiliar_english` 仍兼容。
 - `record_language_correction`：用户表达有可改进处时给一条地道改写
   （`original/corrected/explanation/category`）。通过 `config.onCorrection` 回调推给
   UI，在对话流里渲染为 `CorrectionCard`；**不落库**——correction 项在持久化前按
@@ -234,7 +233,6 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 | `GET/POST /api/user/preferences` | 登录 | 读取/upsert 语言偏好 |
 | `GET/POST/DELETE /api/chat-history` | 登录 | 历史详情/列表/保存/删除、revision 冲突 |
 | `GET/POST /api/learning/items` | 登录 | 学习项事件写入与复合游标分页 |
-| `GET/POST /api/learning/unfamiliar-english` | 登录，旧别名 | 转发到 `learning/items` |
 | `GET /api/learning/progress` | 登录 | 由历史实时聚合学习进度 |
 | `GET/POST/DELETE /api/scenarios` | 混合 | 公开读、用户场景创建/删除 |
 | `POST /api/scenarios/generate` | 登录 | Gemini 生成场景草稿 |
@@ -414,10 +412,6 @@ completed 只有 force 可重领，进行中租约超过 30 分钟可重领。
 这些分支是为了先部署代码、后迁移数据库，删除前必须确认生产已完成迁移：
 
 - `/api/gemini-token` → `/api/realtime-token` 的弃用别名。
-- `/api/learning/unfamiliar-english` → `/api/learning/items` 的旧别名。
-- 学习项 API 在语言列缺失时，只允许默认 `en/zh-CN` 旧写入；非默认语言返回 503，
-  避免丢失语言 identity。
-- 场景 API 在新语言列缺失时，也只容许默认 `en/zh-CN` 回退。
 - 对话 API 在 `revision/source_type` 列或 `save_chat_history` RPC 缺失时有兼容路径。
 - 播客生成接口的租约/归档和 RSS 可以使用本地 manifest/feed 兼容路径；公开
   `/api/podcasts`、列表页和详情页仍只读数据库，DB 不可用时返回 503，不会从本地

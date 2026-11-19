@@ -105,13 +105,6 @@ Only include an item when the user used ${native} instead of the needed ${target
     };
 }
 
-export const learningItemsToolDecl = createLearningItemsToolDecl(DEFAULT_LANGUAGE_PAIR);
-// Keep the old export available for code/tests that imported it directly.
-export const extractUnfamiliarEnglishToolDecl = {
-    ...learningItemsToolDecl,
-    name: 'extract_unfamiliar_english',
-};
-
 // Correction tool: after a user turn, the model may surface a single gentle,
 // idiomatic rewrite of the user's target-language attempt. Purely advisory —
 // the result is streamed to the UI and is not persisted.
@@ -147,8 +140,6 @@ export function createCorrectionToolDecl(pair) {
         },
     };
 }
-
-export const correctionToolDecl = createCorrectionToolDecl(DEFAULT_LANGUAGE_PAIR);
 
 export class GeminiLiveServiceImpl {
     constructor(config) {
@@ -658,10 +649,7 @@ export class GeminiLiveServiceImpl {
             const toolCalls = message.toolCall?.functionCalls;
             if (toolCalls && toolCalls.length > 0) {
                 for (const call of toolCalls) {
-                    if (
-                        call.name === 'record_unfamiliar_learning_items'
-                        || call.name === 'extract_unfamiliar_english'
-                    ) {
+                    if (call.name === 'record_unfamiliar_learning_items') {
                         await this.handleLearningItems(call.args, call.id, call.name);
                     } else if (call.name === 'record_language_correction') {
                         await this.handleCorrection(call.args, call.id, call.name);
@@ -715,12 +703,6 @@ export class GeminiLiveServiceImpl {
                 }
             })
             .catch(e => console.error('Error saving learning items:', e));
-    }
-
-    // Backward-compatible method for callers/tests that still use the old
-    // English-specific name. New Live tool calls use handleLearningItems.
-    async handleExtractUnfamiliarEnglish(args, callId) {
-        return this.handleLearningItems(args, callId, 'extract_unfamiliar_english');
     }
 
     async handleCorrection(args = {}, callId, callName = 'record_language_correction') {

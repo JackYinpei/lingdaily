@@ -24,13 +24,13 @@ export default async function PodcastsPage() {
 
   return (
     <FeatureShell active="podcasts">
-      <FeatureHeading number="04" eyebrow="每日播客" title="成杨英语日刊" description="LL 和 DD 的中英双语新闻播客。" />
+      <FeatureHeading number="04" eyebrow="成杨英语日刊" title={'耳朵先迎接\n新一天'} description={'LL 和 DD 陪你听新闻\n中英双语交替播报'} />
       <section className="feature-podcast-intro" aria-label="节目介绍">
         <div className="feature-podcast-art" aria-hidden="true"><AudioLines strokeWidth={1.2} size={28} /><strong>LL / DD</strong><span>LINGDAILY RADIO</span></div>
         <div className="self-center">
           <p className="feature-eyebrow mb-3"><Headphones size={14} aria-hidden="true" /> 中英双语</p>
-          <h2 className="text-xl mb-3 font-medium">国际、科技与商业新闻</h2>
-          <p className="text-sm leading-7 text-muted-foreground max-w-xl">可以直接收听，也可以点开节目查看双语摘要和词汇表。</p>
+          <h2 className="flex flex-wrap gap-x-4 text-xl mb-3 font-medium"><span>国际</span><span>科技</span><span>商业</span></h2>
+          <p className="text-sm leading-7 text-muted-foreground max-w-xl">直接收听节目<br />也可以查看双语摘要和词汇表</p>
         </div>
       </section>
       <div>

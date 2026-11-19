@@ -13,7 +13,7 @@ vi.mock('next/link', () => ({ default: ({ href, children, ...props }) => React.c
 vi.mock('next-auth/react', () => ({ useSession: () => ({ status: 'authenticated', data: { user: { id: 'test-user' } } }) }))
 vi.mock('@/app/components/LanguageSelector', () => ({ default: () => React.createElement('span', null, 'English') }))
 
-import FeatureShell from '@/app/components/FeatureShell'
+import FeatureShell, { FeatureHeading } from '@/app/components/FeatureShell'
 import HistoryClient from '@/app/history/history-client'
 import ProgressClient from '@/app/progress/progress-client'
 import VocabularyPage from '@/app/vocabulary/page'
@@ -41,6 +41,19 @@ async function render(Component, props) {
 function respond(data) { return { ok: true, json: async () => data } }
 
 describe('editorial feature pages', () => {
+  it.each(['en', 'zh', 'ja'])('uses styled line breaks instead of punctuation in %s feature headings', async (lang) => {
+    const copy = featureCopy[lang]
+    for (const key of ['practiceTitle', 'historyTitle', 'vocabularyTitle', 'progressTitle']) {
+      expect(copy[key].split('\n')).toHaveLength(2)
+      expect(copy[key]).not.toMatch(/[，。！？、,.!?;:：；]/)
+    }
+    await render(FeatureHeading, { title: copy.practiceTitle, description: copy.practiceDescription })
+    const heading = container.querySelector('h1')
+    expect(heading.textContent).toBe(copy.practiceTitle)
+    expect(heading.querySelectorAll(':scope > span')).toHaveLength(2)
+    expect(heading.querySelector('.feature-heading-emphasis').textContent).toBe(copy.practiceTitle.split('\n')[1])
+  })
+
   it.each([['en', 'History'], ['zh-CN', '对话历史'], ['ja', '会話履歴']])('shows icon navigation and current-page semantics for %s', async (code, label) => {
     state.nativeCode = code
     await render(FeatureShell, { active: 'history' })
@@ -94,7 +107,7 @@ describe('editorial feature pages', () => {
     await render(VocabularyPage)
     const action = container.querySelector('.feature-empty a')
     const copy = featureCopy[lang === 'zh-CN' ? 'zh' : lang]
-    expect(container.querySelector('h1').textContent).toBe(copy.vocabulary)
+    expect(container.querySelector('h1').textContent).toBe(copy.vocabularyTitle)
     expect(container.querySelector('.feature-description').textContent).toBe(copy.vocabularyDescription)
     expect(action.textContent).toContain(label)
     expect(action.getAttribute('href')).toBe('/talk')

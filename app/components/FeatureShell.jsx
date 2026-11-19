@@ -1,5 +1,6 @@
 'use client'
 
+import { Fragment } from 'react'
 import Link from 'next/link'
 import { AudioLines, BookOpen, ChartNoAxesCombined, Headphones, History, MessagesSquare, Monitor, Moon, Sun } from 'lucide-react'
 import { useLanguage } from '@/app/contexts/LanguageContext'
@@ -21,11 +22,17 @@ export function useFeatureLocale() {
 }
 
 export function FeatureHeading({ number, eyebrow, title, description, icon: Icon, children }) {
+  const titleLines = typeof title === 'string' ? title.split('\n') : null
   return (
     <section className="feature-heading">
       <div>
         <p className="feature-eyebrow"><span>{number}</span> {eyebrow}</p>
-        <h1>{title}</h1>
+        <h1>{titleLines?.length > 1 ? titleLines.map((line, index) => (
+          <Fragment key={index}>
+            {index > 0 && '\n'}
+            <span className={index > 0 ? 'feature-heading-emphasis' : undefined}>{line}</span>
+          </Fragment>
+        )) : title}</h1>
         <p className="feature-description">{description}</p>
       </div>
       {children || (Icon && <div className="feature-heading-art" aria-hidden="true"><Icon strokeWidth={1} /></div>)}

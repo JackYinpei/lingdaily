@@ -51,8 +51,7 @@ export default function HomePageClient({
               {t.eyebrow}
             </p>
             <h1 id="hero-heading">
-              {t.headline}
-              <br />
+              <span>{t.headline}</span>
               <em>{t.headlineAccent}</em>
             </h1>
             <p className="home-intro">{t.intro}</p>
@@ -131,6 +130,8 @@ export default function HomePageClient({
                 <span>02 / LISTEN</span>
                 <Headphones size={21} strokeWidth={1.5} aria-hidden="true" />
               </div>
+              <h3>{t.podcast.title}</h3>
+              <p>{t.podcast.desc}</p>
               <div className="home-podcast-art" aria-hidden="true">
                 <span className="home-podcast-edition">THE DAILY LISTEN</span>
                 <span className="home-podcast-letters">
@@ -150,8 +151,6 @@ export default function HomePageClient({
                   NEWS, IN TWO LANGUAGES.
                 </span>
               </div>
-              <h3>{t.podcast.title}</h3>
-              <p>{t.podcast.desc}</p>
               <Link href="/podcasts" className="home-feature-link">
                 {t.podcast.link}
                 <ArrowRight size={18} aria-hidden="true" />

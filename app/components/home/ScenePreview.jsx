@@ -154,14 +154,16 @@ export default function ScenePreview({ t }) {
           {t.note}
         </div>
       </div>
-      <div className="home-collected" aria-hidden="true">
-        <span>
-          <Check size={13} />
-          {t.scenes[active].word}
-        </span>
-        <small>{scene.translation}</small>
+      <div className="home-preview-footer">
+        <p className="home-preview-handnote">{t.caption}</p>
+        <div className="home-collected" aria-hidden="true">
+          <span>
+            <Check size={13} />
+            {t.scenes[active].word}
+          </span>
+          <small>{scene.translation}</small>
+        </div>
       </div>
-      <p className="home-preview-handnote">{t.caption}</p>
     </div>
   )
 }

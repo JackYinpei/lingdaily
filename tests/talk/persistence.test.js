@@ -75,6 +75,25 @@ async function mountAndConnect(strict = false) {
 }
 
 describe('talk persistence lifecycle', () => {
+  it.each([false, true])('silently skips account-mismatch responses without retrying (keepalive: %s)', async keepalive => {
+    await mountAndConnect(true)
+    const originalFetch = fetchMock.getMockImplementation()
+    fetchMock.mockImplementation(async (url, options) => {
+      const response = await originalFetch(url, options)
+      return options?.method === 'POST'
+        ? Response.json({ ok: false, skipped: true, code: 'ACCOUNT_MISMATCH' }, { status: 403 })
+        : response
+    })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await act(async () => state.config.onMessage('Private account A reply', true, 'model'))
+    if (keepalive) await act(async () => window.dispatchEvent(new Event('pagehide')))
+    else await act(async () => vi.advanceTimersByTimeAsync(800))
+    expect(posts).toHaveLength(1)
+    expect(posts[0]).toMatchObject({ expectedUserId: 'account', keepalive })
+    expect(error).not.toHaveBeenCalled()
+    expect(container.textContent).not.toContain('This conversation could not be saved.')
+  })
+
   it('sends former-topic snapshots queued behind an in-flight save even after switching topics and unmounting', async () => {
     await mountAndConnect(true)
     const originalFetch = fetchMock.getMockImplementation()
@@ -101,6 +120,7 @@ describe('talk persistence lifecycle', () => {
     expect(posts.at(-1)).toMatchObject({ newsKey: 'Othertopic', keepalive: true })
     await act(async () => finishFirst(firstResponse))
     const formerTopicSaves = posts.filter(post => post.newsKey === 'Topic')
+    expect(posts.every(post => post.expectedUserId === 'account')).toBe(true)
     expect(formerTopicSaves.some(post => post.history.some(item => item.content?.some(part => part.text === 'Latest former-topic reply')))).toBe(true)
     expect(formerTopicSaves.every(post => !JSON.stringify(post.history).includes('Other topic user'))).toBe(true)
     expect(posts.filter(post => post.newsKey === 'Othertopic').every(post => !JSON.stringify(post.history).includes('Latest former-topic reply'))).toBe(true)

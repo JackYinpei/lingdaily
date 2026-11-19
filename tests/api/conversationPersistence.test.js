@@ -24,7 +24,7 @@ const correction = {
   correction: { original: 'I goes', corrected: 'I go', explanation: 'Use the base form.', category: 'grammar' },
   metadata: { isFinal: true, createdAt: timestamp },
 }
-const payload = { newsKey: 'Topic', newsTitle: 'Topic', newsContent: { title: 'Topic' }, sourceType: 'news', revision: 0 }
+const payload = { expectedUserId: 'account', newsKey: 'Topic', newsTitle: 'Topic', newsContent: { title: 'Topic' }, sourceType: 'news', revision: 0 }
 const post = history => POST(new Request('https://test/api/chat-history', { method: 'POST', body: JSON.stringify({ ...payload, history }) }))
 const row = history => ({ id: 'a3b1c2d4-1111-4222-8333-444455556666', news_key: 'Topic', news_title: 'Topic', source_type: 'news', revision: 1, history, updated_at: timestamp })
 
@@ -33,6 +33,29 @@ beforeEach(() => {
   database.mockReset()
 })
 afterEach(() => vi.useRealTimers())
+
+describe('snapshot account binding', () => {
+  it.each([false, true])('rejects an A snapshot dequeued under B before database access (server merge: %s)', async mergeOnServer => {
+    let release
+    const queued = new Promise(resolve => { release = resolve }).then(() => POST(new Request('https://test/api/chat-history', {
+      method: 'POST', body: JSON.stringify({ ...payload, history: [user, reply], mergeOnServer }),
+    })))
+    auth.mockResolvedValue({ user: { id: 'other-account' } })
+    release()
+    const response = await queued
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ ok: false, skipped: true, code: 'ACCOUNT_MISMATCH' })
+    expect(database).not.toHaveBeenCalled()
+  })
+
+  it.each([undefined, null, '', ' ', 42, {}, ['account']])('rejects missing or invalid expected account IDs: %o', async expectedUserId => {
+    const response = await POST(new Request('https://test/api/chat-history', {
+      method: 'POST', body: JSON.stringify({ ...payload, expectedUserId, history: [user] }),
+    }))
+    expect(response.status).toBe(400)
+    expect(database).not.toHaveBeenCalled()
+  })
+})
 
 describe('correction validation and dialogue exclusions', () => {
   it('normalizes valid client fields and bounds oversized model output', () => {

@@ -250,6 +250,7 @@ export default function Home() {
         for (let attempt = 0; attempt < 2; attempt += 1) {
             if (!isCurrentSave()) return 'skipped';
             const payload = {
+                expectedUserId: userId,
                 newsKey,
                 newsTitle: news.originalTitle || news.title || news.id || 'Untitled',
                 history: historyToSave,
@@ -270,6 +271,7 @@ export default function Home() {
                 });
                 const json = await res.json().catch(() => ({}));
                 if (!isCurrentSave()) return 'skipped';
+                if (res.status === 403 && json?.code === 'ACCOUNT_MISMATCH') return 'skipped';
                 let saved = json?.data;
                 let alreadySaved = false;
 

@@ -57,6 +57,9 @@ function validatePostPayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return { error: "Request body must be a JSON object" }
   }
+  if (typeof payload.expectedUserId !== "string" || !payload.expectedUserId.trim()) {
+    return { error: "'expectedUserId' is required" }
+  }
 
   if (typeof payload.newsKey !== "string" || !payload.newsKey.trim()) {
     return { error: "'newsKey' is required" }
@@ -112,6 +115,7 @@ function validatePostPayload(payload) {
 
   return {
     value: {
+      expectedUserId: payload.expectedUserId,
       newsKey,
       newsTitle: title.value,
       newsContent: hasNewsContent ? newsContent : undefined,
@@ -324,6 +328,9 @@ export async function POST(req) {
     const validation = validatePostPayload(parsedBody.value)
     if (validation.error) return jsonResponse({ error: validation.error }, 400)
     let payload = validation.value
+    if (payload.expectedUserId !== session.user.id) {
+      return jsonResponse({ ok: false, skipped: true, code: "ACCOUNT_MISMATCH" }, 403)
+    }
 
     if (getRealUserMessages(payload.history).length === 0) {
       return jsonResponse({ ok: true, skipped: true })

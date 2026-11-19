@@ -1,4 +1,5 @@
 import React from 'react'
+import '@/app/components/home/home.css'
 import Link from 'next/link'
 import {
   ArrowDown,

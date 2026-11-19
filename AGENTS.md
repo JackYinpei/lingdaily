@@ -42,7 +42,7 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | --- | --- |
 | `app/page.js` | SEO 首页与产品入口 |
 | `app/components/HomePageClient.jsx` | 首页服务端 UI：场景介绍、能力展示和学习路径；子组件在 `app/components/home/` |
-| `app/components/home/` | 首页专用组件：`copy.js` 三语文案、`ScenePreview` 可切换示例、`HomeStart` 语言与开始入口、`HomeNav` 响应式导航 |
+| `app/components/home/` | 首页专用组件：`copy.js` 三语文案、`ScenePreview` 可切换示例、`HomeStart` 语言与开始入口、`HomeNav` 响应式导航；`home.css` 布局与动效 |
 | `app/globals.css` | 主题单一来源：shadcn CSS 变量 + 品牌配色 + `.bg-aurora`/`.grain-overlay` 工具类 |
 | `app/talk/page.jsx` | 主对话页：新闻/场景、Live 连接、文本流、历史同步 |
 | `app/lib/GeminiLiveService.js` | WebSocket、麦克风 PCM、模型音频播放、打断、Live tool call |

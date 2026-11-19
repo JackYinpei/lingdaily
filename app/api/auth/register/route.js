@@ -1,5 +1,4 @@
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
+import { getSupabasePublicAuthConfig } from "@/app/lib/server/supabaseRest"
 
 export async function POST(req) {
   try {
@@ -11,7 +10,8 @@ export async function POST(req) {
       )
     }
 
-    if (!supabaseUrl || !supabaseAnonKey) {
+    const supabaseAuth = getSupabasePublicAuthConfig()
+    if (!supabaseAuth) {
       return new Response(
         JSON.stringify({ error: "Missing Supabase env configuration" }),
         { status: 500 }
@@ -22,14 +22,10 @@ export async function POST(req) {
     let data
 
     // Fallback: public signup via anon key (will require email confirmation unless disabled)
-    const url = `${supabaseUrl}/auth/v1/signup`
+    const url = `${supabaseAuth.baseUrl}/auth/v1/signup`
     res = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${supabaseAnonKey}`,
-      },
+      headers: supabaseAuth.headers({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         email,
         password,

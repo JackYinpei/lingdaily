@@ -10,7 +10,9 @@ import ScenarioFeed from "@/app/components/ScenarioFeed";
 import { ModeToggle } from "@/app/components/ModeToggle";
 import { History } from "@/app/components/History";
 
-import Link from 'next/link';
+import { Newspaper, Users } from 'lucide-react';
+import FeatureShell, { FeatureHeading } from '@/app/components/FeatureShell';
+import { featureCopy } from '@/app/lib/featureCopy';
 import { useLanguage } from '@/app/contexts/LanguageContext';
 import { GeminiLiveServiceImpl } from '@/app/lib/GeminiLiveService';
 import OnboardingGuide from '@/app/components/OnboardingGuide';
@@ -23,15 +25,26 @@ import {
     extractMessageText,
     getNewsKey,
     hasUserMessage,
+    historyContainsSnapshot,
     mergeConversationHistory,
+    reconcilePersistSnapshot,
 } from './_lib/conversation';
 import {
-    buildInstructions,
+    buildLiveInstructions,
     buildResumeContext,
     buildTopicContext,
     createNewsContextMessage,
 } from './_lib/prompts';
-import { fetchRealtimeTokenAfterPriming } from './_lib/liveConnection';
+import { cancelLiveConnectionAttempt, fetchRealtimeTokenAfterPriming } from './_lib/liveConnection';
+import { sendTalkText } from './_lib/textSubmission';
+import { normalizeCorrection, sanitizeHistoryCorrections } from '@/app/lib/history/corrections';
+import {
+    clearSelectedNewsFromStorage,
+    loadSelectedNewsFromStorage,
+    loadTalkModeFromStorage,
+    saveSelectedNewsToStorage,
+    saveTalkModeToStorage,
+} from './_lib/storage';
 
 export default function Home() {
     const { data: userSession, status: sessionStatus } = useSession()
@@ -57,6 +70,7 @@ export default function Home() {
         if (code.startsWith('ja')) return 'ja';
         return 'en';
     }, [nativeLanguage?.code]);
+    const pageCopy = featureCopy[uiLangCode];
 
     // Gemini Service Ref
     const serviceRef = useRef(null);
@@ -64,9 +78,11 @@ export default function Home() {
 
     const [isConnected, setIsConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
+    const [connectionPhase, setConnectionPhase] = useState(null);
     const [isMuted, setIsMuted] = useState(false);
     const [history, setHistory] = useState([]);
     const [error, setError] = useState(null);
+    const [saveError, setSaveError] = useState(false);
     const [isRestoringConversation, setIsRestoringConversation] = useState(true);
     const [isTopicHistoryLoading, setIsTopicHistoryLoading] = useState(false);
 
@@ -80,6 +96,7 @@ export default function Home() {
     const persistTimeoutRef = useRef(null)
     const pendingPersistRef = useRef(null)
     const persistQueueRef = useRef(Promise.resolve())
+    const persistEpochsRef = useRef(new Map())
     const flushPendingRef = useRef(() => Promise.resolve())
     const skipNextNewsLoadRef = useRef(false)
     const topicHistoryLoadingRef = useRef(false)
@@ -93,35 +110,48 @@ export default function Home() {
     const previousLanguagePairKeyRef = useRef(languagePairKey)
     const identityStateRef = useRef({ initialized: false, userId: null })
     const identityGenerationRef = useRef(0)
+    const pageMountedRef = useRef(true)
+
+    useEffect(() => {
+        pageMountedRef.current = true;
+        return () => { pageMountedRef.current = false; };
+    }, []);
+
+    // Cancels any in-flight or open Live connection. `resetConnected: false`
+    // keeps isConnected for callers that only cancel a pending attempt;
+    // `updateState: false` is for unmount cleanup.
+    const cancelLiveConnection = useCallback(({ resetConnected = true, updateState = true } = {}) => {
+        cancelLiveConnectionAttempt({
+            attemptRef: activeConnectionAttemptRef,
+            abortControllerRef: connectionAbortControllerRef,
+            service: serviceRef.current,
+        });
+        if (!updateState) return;
+        if (resetConnected) setIsConnected(false);
+        setConnectionPhase(null);
+        setIsConnecting(false);
+    }, []);
 
     // When category changes, clear the selected news (which cascades to clearing chat history)
     const handleCategoryChange = useCallback(() => {
         flushPendingRef.current();
         topicGenerationRef.current += 1;
         if (activeConnectionAttemptRef.current !== 0) {
-            activeConnectionAttemptRef.current = 0;
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            serviceRef.current?.disconnect();
-            setIsConnecting(false);
+            cancelLiveConnection({ resetConnected: false });
         }
         setSelectedNews(null);
-    }, []);
+    }, [cancelLiveConnection]);
 
     const handleModeToggle = useCallback((newMode) => {
         flushPendingRef.current();
         topicGenerationRef.current += 1;
         if (activeConnectionAttemptRef.current !== 0) {
-            activeConnectionAttemptRef.current = 0;
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            serviceRef.current?.disconnect();
-            setIsConnecting(false);
+            cancelLiveConnection({ resetConnected: false });
         }
         setMode(newMode);
         setSelectedNews(null);
-        try { localStorage.setItem('talk-mode', newMode); } catch (_) { /* ignore */ }
-    }, []);
+        saveTalkModeToStorage(newMode);
+    }, [cancelLiveConnection]);
 
     const handleArticleSelect = useCallback((news) => {
         if (selectedNewsRef.current
@@ -129,16 +159,12 @@ export default function Home() {
         flushPendingRef.current();
         topicGenerationRef.current += 1;
         if (activeConnectionAttemptRef.current !== 0) {
-            activeConnectionAttemptRef.current = 0;
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            serviceRef.current?.disconnect();
-            setIsConnecting(false);
+            cancelLiveConnection({ resetConnected: false });
         }
         topicHistoryLoadingRef.current = true;
         setIsTopicHistoryLoading(true);
         setSelectedNews(news);
-    }, []);
+    }, [cancelLiveConnection]);
 
     const handleArticleUpdate = useCallback((patch) => {
         const current = selectedNewsRef.current;
@@ -153,7 +179,7 @@ export default function Home() {
             title: patch.title || current.title,
         };
         selectedNewsRef.current = updated;
-        try { localStorage.setItem('selectedNews', JSON.stringify(updated)); } catch (_) { /* ignore */ }
+        saveSelectedNewsToStorage(updated);
 
         // Do not abort an in-flight history request merely because an optional
         // headline translation arrived. The updated ref will still be used for
@@ -184,13 +210,19 @@ export default function Home() {
 
     // UI strings ...
     const uiText = useMemo(() => ({
-        en: { history: 'History', vocab: 'Vocabulary' },
-        zh: { history: '对话历史', vocab: '生词本' },
-        ja: { history: '履歴', vocab: '単語帳' },
+        en: { history: 'History', vocab: 'Vocabulary', saveFailed: 'This conversation could not be saved\nIt will be retried as the conversation continues' },
+        zh: { history: '对话历史', vocab: '生词本', saveFailed: '对话未能保存 继续聊天时会自动重试' },
+        ja: { history: '履歴', vocab: '単語帳', saveFailed: '会話を保存できませんでした\n会話が続くと自動で再試行します' },
     }[uiLangCode]), [uiLangCode]);
+    const microphoneStatus = {
+        en: 'Waiting for microphone permission\nAllow access in your browser or cancel the connection',
+        zh: '正在等待麦克风权限\n请在浏览器中允许访问 或取消连接',
+        ja: 'マイクの許可を待っています\nブラウザで許可するか接続をキャンセルしてください',
+    }[uiLangCode];
 
     // Persist sequentially so an older response cannot overwrite a newer
     // snapshot. Revision conflicts merge messages by itemId and retry once.
+    // Resolves to 'saved' | 'skipped' | 'failed'.
     const persistConversation = useCallback(async (
         news,
         conversationHistory,
@@ -199,36 +231,38 @@ export default function Home() {
             mergeOnServer = false,
             userId = userSession?.user?.id || null,
             identityGeneration = identityGenerationRef.current,
+            persistEpoch = persistEpochsRef.current.get(getNewsKey(news)) || 0,
         } = {},
     ) => {
-        const isCurrentIdentity = () => (
+        const isCurrentSave = () => (
             identityGeneration === identityGenerationRef.current
             && userId === (userSession?.user?.id || null)
+            && persistEpoch === (persistEpochsRef.current.get(getNewsKey(news)) || 0)
         );
-        if (!news || !hasUserMessage(conversationHistory) || !userId || !isCurrentIdentity()) return;
+        if (!news || !hasUserMessage(conversationHistory) || !userId || !isCurrentSave()) return 'skipped';
 
-        // Correction cards are UI-only advisory items; never persist them.
-        const persistableHistory = Array.isArray(conversationHistory)
-            ? conversationHistory.filter((item) => item?.type !== 'correction')
-            : conversationHistory;
+        const persistableHistory = sanitizeHistoryCorrections(conversationHistory);
 
         const newsKey = getNewsKey(news);
         const baseline = conversationBaselineRef.current.get(newsKey) || [];
         let historyToSave = mergeConversationHistory(baseline, persistableHistory);
         if (keepalive) historyToSave = compactHistoryForKeepalive(historyToSave);
         let expectedRevision = conversationMetaRef.current.get(newsKey)?.revision ?? 0;
+        let shouldMergeOnServer = mergeOnServer;
 
         for (let attempt = 0; attempt < 2; attempt += 1) {
-            if (!isCurrentIdentity()) return;
+            if (!isCurrentSave()) return 'skipped';
             const payload = {
+                expectedUserId: userId,
                 newsKey,
                 newsTitle: news.originalTitle || news.title || news.id || 'Untitled',
                 history: historyToSave,
                 summary: null,
                 sourceType: news._isScenario ? 'scenario' : 'news',
                 revision: expectedRevision,
-                mergeOnServer,
-                newsContent: mergeOnServer ? compactNewsForKeepalive(news) : news,
+                mergeOnServer: shouldMergeOnServer,
+                newsContent: keepalive ? compactNewsForKeepalive(news) : news,
+                newsContentIsCompact: keepalive,
             };
 
             try {
@@ -239,14 +273,21 @@ export default function Home() {
                     keepalive,
                 });
                 const json = await res.json().catch(() => ({}));
-                if (!isCurrentIdentity()) return;
+                if (!isCurrentSave()) return 'skipped';
+                if (res.status === 403 && json?.code === 'ACCOUNT_MISMATCH') return 'skipped';
+                let saved = json?.data;
+                let alreadySaved = false;
 
                 if (res.status === 409) {
                     const current = [json.current, json.conflict, json.data]
                         .find((value) => value && typeof value === 'object');
-                    if (attempt === 0 && current && Array.isArray(current.history)) {
+                    alreadySaved = current && Array.isArray(current.history)
+                        && historyContainsSnapshot(current.history, historyToSave);
+                    if (alreadySaved) saved = current;
+                    else if (attempt === 0 && current && Array.isArray(current.history)) {
                         historyToSave = mergeConversationHistory(current.history, historyToSave);
                         expectedRevision = current.revision ?? null;
+                        shouldMergeOnServer = true;
                         conversationBaselineRef.current.set(newsKey, historyToSave);
                         if (pendingPersistRef.current?.news
                             && getNewsKey(pendingPersistRef.current.news) === newsKey) {
@@ -266,13 +307,16 @@ export default function Home() {
                     }
                 }
 
-                if (!res.ok) {
-                    console.error('Failed to persist chat history:', json?.error || res.status);
-                    return;
+                if (!res.ok && !alreadySaved) {
+                    if (pageMountedRef.current) {
+                        console.error('Failed to persist chat history:', json?.error || res.status);
+                        setSaveError(true);
+                    }
+                    return 'failed';
                 }
-                if (json?.skipped) return;
+                if (pageMountedRef.current) setSaveError(false);
+                if (json?.skipped) return 'skipped';
 
-                const saved = json?.data;
                 if (saved?.id) {
                     const existingMeta = conversationMetaRef.current.get(newsKey);
                     const savedRevision = saved.revision ?? expectedRevision;
@@ -291,22 +335,29 @@ export default function Home() {
                 if (getNewsKey(selectedNewsRef.current) === newsKey) {
                     const visibleHistory = mergeConversationHistory(savedHistory, historyRef.current);
                     historyRef.current = visibleHistory;
-                    if (attempt > 0) setHistory(visibleHistory);
+                    if (attempt > 0 && pageMountedRef.current) setHistory(visibleHistory);
                 }
-                return;
-            } catch (saveError) {
-                console.error('Error saving chat history:', saveError);
-                return;
+                return 'saved';
+            } catch (persistError) {
+                if (!isCurrentSave()) return 'skipped';
+                if (pageMountedRef.current) {
+                    console.error('Error saving chat history:', persistError);
+                    setSaveError(true);
+                }
+                return 'failed';
             }
         }
+        return 'failed';
     }, [userSession?.user?.id]);
 
     const enqueueConversationPersist = useCallback((snapshot) => {
+        const persistEpoch = persistEpochsRef.current.get(getNewsKey(snapshot.news)) || 0;
         persistQueueRef.current = persistQueueRef.current
             .catch(() => undefined)
             .then(() => persistConversation(snapshot.news, snapshot.history, {
                 userId: snapshot.userId,
                 identityGeneration: snapshot.identityGeneration,
+                persistEpoch,
             }));
         return persistQueueRef.current;
     }, [persistConversation]);
@@ -319,26 +370,33 @@ export default function Home() {
             clearTimeout(persistTimeoutRef.current);
             persistTimeoutRef.current = null;
         }
-        const snapshot = pendingPersistRef.current || (
+        const liveSnapshot = (
             selectedNewsRef.current && hasUserMessage(historyRef.current)
                 ? {
                     news: selectedNewsRef.current,
                     history: historyRef.current,
                     userId: userSession?.user?.id || null,
                     identityGeneration: identityGenerationRef.current,
+                    topicGeneration: topicGenerationRef.current,
                 }
                 : null
         );
+        const snapshot = reconcilePersistSnapshot(pendingPersistRef.current, liveSnapshot);
         pendingPersistRef.current = null;
         if (!snapshot) return Promise.resolve();
         if (keepalive) {
+            const newsKey = getNewsKey(snapshot.news);
+            const persistEpoch = (persistEpochsRef.current.get(newsKey) || 0) + 1;
+            persistEpochsRef.current.set(newsKey, persistEpoch);
             // Starting the fetch directly is important during pagehide; a
-            // queued Promise may never run once the page is discarded.
+            // queued Promise may never run once the page is discarded. This
+            // snapshot supersedes queued saves and retries for this topic.
             return persistConversation(snapshot.news, snapshot.history, {
                 keepalive: true,
                 mergeOnServer,
                 userId: snapshot.userId,
                 identityGeneration: snapshot.identityGeneration,
+                persistEpoch,
             });
         }
         return enqueueConversationPersist(snapshot);
@@ -355,16 +413,13 @@ export default function Home() {
             history: dedupeManualMessages(conversationHistory),
             userId: userSession.user.id,
             identityGeneration: identityGenerationRef.current,
+            topicGeneration: topicGenerationRef.current,
         };
         if (persistTimeoutRef.current) clearTimeout(persistTimeoutRef.current);
         persistTimeoutRef.current = setTimeout(() => {
             flushPendingConversation();
         }, 800);
     }, [flushPendingConversation, userSession?.user?.id]);
-
-    useEffect(() => {
-        historyRef.current = history;
-    }, [history]);
 
     useEffect(() => {
         const flushForUnload = () => {
@@ -395,25 +450,6 @@ export default function Home() {
         };
     }, []);
 
-    // localStorage helpers for selected news
-    const saveSelectedNewsToStorage = (news) => {
-        try {
-            localStorage.setItem('selectedNews', JSON.stringify(news));
-        } catch (error) {
-            console.error('Failed to save selectedNews to localStorage:', error);
-        }
-    };
-
-    const loadSelectedNewsFromStorage = () => {
-        try {
-            const saved = localStorage.getItem('selectedNews');
-            return saved ? JSON.parse(saved) : null;
-        } catch (error) {
-            console.error('Failed to load selectedNews from localStorage:', error);
-            return null;
-        }
-    };
-
     // Never carry a private topic, transcript, or pending connection across an
     // in-place sign-in/sign-out or account switch.
     useEffect(() => {
@@ -430,24 +466,21 @@ export default function Home() {
         if (persistTimeoutRef.current) clearTimeout(persistTimeoutRef.current);
         persistTimeoutRef.current = null;
         pendingPersistRef.current = null;
-        activeConnectionAttemptRef.current = 0;
-        connectionAbortControllerRef.current?.abort();
-        connectionAbortControllerRef.current = null;
-        serviceRef.current?.disconnect();
+        cancelLiveConnection();
         topicGenerationRef.current += 1;
         conversationMetaRef.current.clear();
         conversationBaselineRef.current.clear();
+        persistEpochsRef.current.clear();
+        setSaveError(false);
         selectedNewsRef.current = null;
         historyRef.current = [];
         skipNextNewsLoadRef.current = false;
         topicHistoryLoadingRef.current = false;
         setSelectedNews(null);
         setHistory([]);
-        setIsConnected(false);
-        setIsConnecting(false);
         setIsTopicHistoryLoading(false);
-        try { localStorage.removeItem('selectedNews'); } catch (_) { /* ignore */ }
-    }, [sessionStatus, userSession?.user?.id]);
+        clearSelectedNewsFromStorage();
+    }, [cancelLiveConnection, sessionStatus, userSession?.user?.id]);
 
     // Flush the current transcript before a language switch causes topic
     // context to be rebuilt. A connecting socket is also cancelled so it can
@@ -464,15 +497,10 @@ export default function Home() {
             || isConnecting
             || Boolean(service?.session || service?.webSocket);
         if (hadActiveAttempt) {
-            activeConnectionAttemptRef.current = 0;
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            service?.disconnect();
-            setIsConnected(false);
-            setIsConnecting(false);
-            setError('学习语言已更改，请重新连接以使用新的语言组合。');
+            cancelLiveConnection();
+            setError('学习语言已更改 请重新连接以使用新的语言组合');
         }
-    }, [isConnecting, languagePairKey]);
+    }, [cancelLiveConnection, isConnecting, languagePairKey]);
 
     // Restore a conversation selected from /history before falling back to the
     // browser's last selected topic. The skip ref prevents the topic effect
@@ -526,14 +554,12 @@ export default function Home() {
                     setMode(isScenario ? 'scenario' : 'news');
                     setSelectedNews(restoredNews);
                     setHistory(restoredHistory);
-                    try { localStorage.setItem('talk-mode', isScenario ? 'scenario' : 'news'); } catch (_) { /* ignore */ }
+                    saveTalkModeToStorage(isScenario ? 'scenario' : 'news');
                     return;
                 }
 
-                try {
-                    const savedMode = localStorage.getItem('talk-mode');
-                    if (savedMode === 'news' || savedMode === 'scenario') setMode(savedMode);
-                } catch (_) { /* ignore */ }
+                const savedMode = loadTalkModeFromStorage();
+                if (savedMode) setMode(savedMode);
                 const savedNews = loadSelectedNewsFromStorage();
                 if (savedNews) setSelectedNews(savedNews);
             } catch (restoreError) {
@@ -674,72 +700,63 @@ export default function Home() {
     const handleGeminiMessage = useCallback((text, isFinal, role) => {
         if (topicHistoryLoadingRef.current) return;
         lastUnloadFingerprintRef.current = null;
-        setHistory(prev => {
-            const prevHistory = [...prev];
-            const lastMsg = prevHistory[prevHistory.length - 1];
-
-            // Update existing message (streaming)
-            if (lastMsg && lastMsg.role === (role === 'model' ? 'assistant' : 'user') && !lastMsg.metadata?.isFinal) {
-                const updatedMsg = {
-                    ...lastMsg,
-                    content: [{
-                        type: role === 'model' ? 'output_text' : 'input_text',
-                        text: lastMsg.content[0].text + (text || "") // Append or keep same if empty
-                    }],
-                    metadata: {
-                        ...lastMsg.metadata,
-                        isFinal: isFinal
-                    }
-                };
-
-                const newHistory = [...prevHistory.slice(0, -1), updatedMsg];
-
-                // Persist if final
-                if (isFinal && selectedNewsRef.current) {
-                    scheduleConversationPersist(selectedNewsRef.current, newHistory);
-                }
-
-                historyRef.current = newHistory;
-                return newHistory;
+        const prevHistory = historyRef.current;
+        const commitHistory = (next) => {
+            historyRef.current = next;
+            setHistory(next);
+            if ((isFinal || role === 'model') && selectedNewsRef.current) {
+                scheduleConversationPersist(selectedNewsRef.current, next);
             }
+        };
+        const lastMsgIndex = prevHistory.findLastIndex(item => item?.type !== 'correction');
+        const lastMsg = prevHistory[lastMsgIndex];
 
-            // Create new message
-            if (text) {
-                const newMsg = {
-                    itemId: uuidv4(),
-                    type: 'message',
-                    role: role === 'model' ? 'assistant' : 'user',
-                    content: [{
-                        type: role === 'model' ? 'output_text' : 'input_text',
-                        text: text
-                    }],
-                    metadata: {
-                        isFinal: isFinal,
-                        createdAt: new Date().toISOString()
-                    }
-                };
-
-                const newHistory = [...prevHistory, newMsg];
-                if (isFinal && selectedNewsRef.current) {
-                    scheduleConversationPersist(selectedNewsRef.current, newHistory);
+        // Update existing message (streaming)
+        if (lastMsg && lastMsg.role === (role === 'model' ? 'assistant' : 'user') && !lastMsg.metadata?.isFinal) {
+            const updatedMsg = {
+                ...lastMsg,
+                content: [{
+                    type: role === 'model' ? 'output_text' : 'input_text',
+                    text: lastMsg.content[0].text + (text || "") // Append or keep same if empty
+                }],
+                metadata: {
+                    ...lastMsg.metadata,
+                    isFinal: isFinal
                 }
-                historyRef.current = newHistory;
-                return newHistory;
-            }
+            };
 
-            // Finalize command for empty text
-            if (!text && isFinal && lastMsg && !lastMsg.metadata?.isFinal) {
-                const finalizedMsg = { ...lastMsg, metadata: { ...lastMsg.metadata, isFinal: true } };
-                const newHistory = [...prevHistory.slice(0, -1), finalizedMsg];
-                if (selectedNewsRef.current) {
-                    scheduleConversationPersist(selectedNewsRef.current, newHistory);
+            const newHistory = prevHistory.map((item, index) => index === lastMsgIndex ? updatedMsg : item);
+            commitHistory(newHistory);
+            return;
+        }
+
+        // Create new message
+        if (text) {
+            const newMsg = {
+                itemId: uuidv4(),
+                type: 'message',
+                role: role === 'model' ? 'assistant' : 'user',
+                content: [{
+                    type: role === 'model' ? 'output_text' : 'input_text',
+                    text: text
+                }],
+                metadata: {
+                    isFinal: isFinal,
+                    createdAt: new Date().toISOString()
                 }
-                historyRef.current = newHistory;
-                return newHistory;
-            }
+            };
 
-            return prevHistory;
-        });
+            const newHistory = [...prevHistory, newMsg];
+            commitHistory(newHistory);
+            return;
+        }
+
+        // Finalize command for empty text
+        if (!text && isFinal && lastMsg && !lastMsg.metadata?.isFinal) {
+            const finalizedMsg = { ...lastMsg, metadata: { ...lastMsg.metadata, isFinal: true } };
+            const newHistory = prevHistory.map((item, index) => index === lastMsgIndex ? finalizedMsg : item);
+            commitHistory(newHistory);
+        }
     }, [scheduleConversationPersist]);
 
     // The Live service survives normal React renders. Update the forwarding
@@ -749,24 +766,22 @@ export default function Home() {
         onMessageRef.current = handleGeminiMessage;
     }, [handleGeminiMessage]);
 
-    // AI correction tool result. Rendered inline in the conversation flow but
-    // intentionally NOT persisted (stripped before serialization) so saved
-    // transcripts stay limited to real dialogue turns.
     const handleCorrection = useCallback((correction) => {
         if (topicHistoryLoadingRef.current) return;
+        const normalized = normalizeCorrection(correction, { truncate: true });
+        if (!normalized) return;
         const item = {
             itemId: uuidv4(),
             type: 'correction',
             role: 'assistant',
-            correction,
+            correction: normalized,
             metadata: { isFinal: true, createdAt: new Date().toISOString() },
         };
-        setHistory((prev) => {
-            const next = [...prev, item];
-            historyRef.current = next;
-            return next;
-        });
-    }, []);
+        const next = [...historyRef.current, item];
+        historyRef.current = next;
+        setHistory(next);
+        if (selectedNewsRef.current) scheduleConversationPersist(selectedNewsRef.current, next);
+    }, [scheduleConversationPersist]);
 
     const onCorrectionRef = useRef(null);
     useEffect(() => {
@@ -779,15 +794,18 @@ export default function Home() {
                 onMessage: (...args) => onMessageRef.current?.(...args),
                 onCorrection: (...args) => onCorrectionRef.current?.(...args),
                 onConnectionUpdate: (connected) => {
+                    setConnectionPhase(null);
                     setIsConnected(connected);
                     setIsConnecting(false);
                 },
                 onError: (err) => {
+                    setConnectionPhase(null);
                     setError(err);
                     setIsConnected(false);
                     setIsConnecting(false);
                 },
                 onPlaybackError: (err) => setError(err),
+                onConnectionPhase: setConnectionPhase,
             };
 
             serviceRef.current = new GeminiLiveServiceImpl(config);
@@ -796,35 +814,23 @@ export default function Home() {
 
     async function connect() {
         if (isConnecting || activeConnectionAttemptRef.current !== 0) {
-            activeConnectionAttemptRef.current = 0;
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            serviceRef.current?.disconnect();
-            setIsConnected(false);
-            setIsConnecting(false);
-            setError('已取消连接。');
+            cancelLiveConnection();
+            setError('已取消连接');
             return;
         }
         setError(null);
         if (isLanguageLoading || isRestoringConversation || topicHistoryLoadingRef.current) {
-            setError('正在恢复对话，请稍候再连接。');
+            setError('正在恢复对话 请稍候再连接');
             return;
         }
         if (isConnected) {
-            activeConnectionAttemptRef.current = 0;
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            serviceRef.current?.disconnect();
-            setIsConnected(false);
+            cancelLiveConnection();
         } else {
             // Clear any half-open service state before priming audio for this
             // new, user-initiated attempt.
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            serviceRef.current?.disconnect();
+            cancelLiveConnection();
             const connectionAttemptId = ++connectionAttemptSequenceRef.current;
             activeConnectionAttemptRef.current = connectionAttemptId;
-            connectionAbortControllerRef.current?.abort();
             const connectionController = new AbortController();
             connectionAbortControllerRef.current = connectionController;
             const isCurrentAttempt = () => (
@@ -886,8 +892,7 @@ export default function Home() {
             const connectedNewsKey = getNewsKey(selectedNewsRef.current);
 
             // Build Context Prompt
-            const baseInstructions = buildInstructions(
-                uiLangCode,
+            const baseInstructions = buildLiveInstructions(
                 nativeLanguage?.label || '中文',
                 learningLanguage?.label || 'English',
                 selectedNewsRef.current?._isScenario || false,
@@ -925,7 +930,7 @@ export default function Home() {
                 serviceRef.current?.disconnect();
                 setIsConnected(false);
                 finishCurrentAttempt();
-                if (didConnect) setError('话题或学习语言已切换，请重新连接以开始当前对话。');
+                if (didConnect) setError('话题或学习语言已切换 请重新连接以开始当前对话');
                 return;
             }
 
@@ -975,74 +980,38 @@ export default function Home() {
 
     // 文本输入消息发送，并将本地 history 与后端同步
     const sendTextMessage = async function (input) {
-        if (isLanguageLoading || isRestoringConversation || topicHistoryLoadingRef.current) {
-            setError('正在恢复对话，请稍候再发送。');
-            return;
-        }
-        if (isConnecting) {
-            setError('连接仍在建立，请连接完成后再发送。');
-            return;
-        }
-        if (!serviceRef.current || !isConnected) {
-            setError('请先连接 Gemini Live，再发送消息。');
-            return;
-        }
-        await serviceRef.current.sendText(input);
+        return sendTalkText({
+            input,
+            restoring: isLanguageLoading || isRestoringConversation || topicHistoryLoadingRef.current,
+            connecting: isConnecting,
+            connected: isConnected,
+            service: serviceRef.current,
+            onError: setError,
+        });
     }
 
     // Clean up on unmount
     useEffect(() => {
-        return () => {
-            activeConnectionAttemptRef.current = 0;
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            serviceRef.current?.disconnect();
-        };
-    }, []);
+        return () => cancelLiveConnection({ updateState: false });
+    }, [cancelLiveConnection]);
 
     return (
-        <div className="min-h-screen bg-background">
-            {/* Header */}
-            <header className="border-b border-border bg-card hidden md:block">
-                <div className="container mx-auto px-4 py-4">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h1 className="text-2xl font-bold text-card-foreground">
-                                {activeLanguagePair.learningLanguage.label} Learning Hub
-                            </h1>
-                            <p className="text-muted-foreground mt-1">
-                                Learn {activeLanguagePair.learningLanguage.label} through news and AI conversation
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-4">
-                            <Link
-                                href="/history"
-                                className="px-4 py-2 border border-border text-foreground rounded hover:bg-accent transition-colors text-sm font-medium"
-                            >
-                                {uiText?.history || '对话历史'}
-                            </Link>
-                            <Link
-                                href="/vocabulary"
-                                className="px-4 py-2 border border-border text-foreground rounded hover:bg-accent transition-colors text-sm font-medium"
-                            >
-                                {uiText?.vocab || '生词本'}
-                            </Link>
-                        </div>
-                    </div>
-                </div>
-            </header>
+        <FeatureShell active="talk" className={`feature-practice${selectedNews ? ' feature-has-topic' : ''}`}>
+        <div className="contents">
+            <FeatureHeading page="talk" hidden />
 
             {/* Main Content */}
             <div
-                className="container mx-auto px-4 py-2 flex flex-col h-screen lg:h-auto lg:min-h-0"
+                className="feature-practice-workspace flex flex-col min-h-0"
                 style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}
             >
-                <div className="flex flex-col lg:flex-row lg:gap-6 flex-1 min-h-0 lg:h-[calc(100vh-140px)]">
+                <div className="feature-practice-layout flex-col lg:flex-row">
                     {/* Mobile Cards - 在中等屏幕以下显示 */}
                     {isDesktopLayout === false && <div className="lg:hidden flex-shrink-0">
                         <div className="flex items-center justify-between mb-1">
-                            <h2 className="text-xl font-semibold text-foreground">
-                                {mode === 'news' ? 'Latest News' : (uiLangCode === 'zh' ? '场景练习' : uiLangCode === 'ja' ? 'シナリオ' : 'Scenarios')}
+                            <h2 className="feature-topic-title">
+                                {mode === 'news' ? <Newspaper size={16} aria-hidden="true" /> : <Users size={16} aria-hidden="true" />}
+                                {mode === 'news' ? pageCopy.news : pageCopy.scenarioPractice}
                             </h2>
                             <ModeToggle mode={mode} onToggle={handleModeToggle} lang={uiLangCode} />
                         </div>
@@ -1072,10 +1041,11 @@ export default function Home() {
                     </div>}
 
                     {/* Desktop Cards - 在大屏幕以上显示 */}
-                    {isDesktopLayout === true && <div className="hidden lg:flex lg:w-[40%] flex-col min-h-0 h-[calc(100vh-140px)]">
+                    {isDesktopLayout === true && <div className="hidden lg:flex lg:w-[36%] flex-col min-h-0 h-full">
                         <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-xl font-semibold text-foreground">
-                                {mode === 'news' ? 'Latest News' : (uiLangCode === 'zh' ? '场景练习' : uiLangCode === 'ja' ? 'シナリオ' : 'Scenarios')}
+                            <h2 className="feature-topic-title">
+                                {mode === 'news' ? <Newspaper size={16} aria-hidden="true" /> : <Users size={16} aria-hidden="true" />}
+                                {mode === 'news' ? pageCopy.news : pageCopy.scenarioPractice}
                             </h2>
                             <ModeToggle mode={mode} onToggle={handleModeToggle} lang={uiLangCode} />
                         </div>
@@ -1106,10 +1076,20 @@ export default function Home() {
                     </div>}
 
                     {/* Chat Interface - Full width on mobile, 70% on desktop */}
-                    <div className="flex-1 lg:w-[70%] flex flex-col min-h-0 lg:h-[calc(100vh-140px)]">
+                    <div className="flex-1 lg:w-[64%] flex flex-col min-h-0 min-h-[420px] lg:min-h-0 h-[65dvh] lg:h-full">
                         {error && (
                             <div className="bg-red-50 border border-red-200 text-red-600 p-2 rounded mb-2 text-sm">
                                 {error}
+                            </div>
+                        )}
+                        {saveError && (
+                            <div role="status" className="bg-destructive/10 border border-destructive/30 text-destructive p-2 rounded mb-2 text-sm">
+                                {uiText.saveFailed}
+                            </div>
+                        )}
+                        {isConnecting && connectionPhase === 'microphone' && (
+                            <div role="status" className="bg-muted border border-border text-foreground p-2 rounded mb-2 text-sm">
+                                {microphoneStatus}
                             </div>
                         )}
                         <History
@@ -1139,7 +1119,8 @@ export default function Home() {
                     </div>
                 </div>
             </div>
-            <OnboardingGuide lang={uiLangCode} />
+            <OnboardingGuide lang={uiLangCode} onSkipToNews={() => handleModeToggle('news')} />
         </div>
+        </FeatureShell>
     )
 }

@@ -1,9 +1,7 @@
 import 'server-only'
 import { randomUUID } from 'node:crypto'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-const schema = process.env.SUPABASE_SCHEMA || 'public'
+import { getSupabaseRestConfig, SUPABASE_CREDENTIALS, supabaseRestRequest } from '@/app/lib/server/supabaseRest'
 
 export class PodcastLeaseLostError extends Error {
   constructor(date) {
@@ -14,31 +12,19 @@ export class PodcastLeaseLostError extends Error {
 }
 
 function requireConfig() {
-  if (!supabaseUrl || !serviceRoleKey) {
+  const config = getSupabaseRestConfig({ credentials: SUPABASE_CREDENTIALS.SERVICE_ROLE })
+  if (!config) {
     throw new Error('Podcast storage requires Supabase URL and service role key')
   }
+  return config
 }
 
-function headers(prefer) {
-  return {
-    'Content-Type': 'application/json',
-    apikey: serviceRoleKey,
-    Authorization: `Bearer ${serviceRoleKey}`,
-    'Content-Profile': schema,
-    'Accept-Profile': schema,
-    Accept: 'application/json',
-    ...(prefer ? { Prefer: prefer } : {}),
+async function podcastRequest(config, resource, options) {
+  const result = await supabaseRestRequest(config, resource, options)
+  if (!result.ok) {
+    throw new Error(result.data?.message || result.data?.hint || `Supabase request failed (${result.status})`)
   }
-}
-
-async function parseResponse(response, fallback) {
-  const text = await response.text()
-  let data
-  try { data = text ? JSON.parse(text) : fallback } catch { data = fallback }
-  if (!response.ok) {
-    throw new Error(data?.message || data?.hint || `Supabase request failed (${response.status})`)
-  }
-  return data
+  return result.data ?? []
 }
 
 export function toPodcastEpisode(row) {
@@ -62,26 +48,23 @@ export function toPodcastEpisode(row) {
 }
 
 export async function claimPodcastGeneration(date, force = false) {
-  requireConfig()
+  const config = requireConfig()
   const generationId = randomUUID()
-  const response = await fetch(`${supabaseUrl}/rest/v1/rpc/claim_podcast_generation`, {
+  const data = await podcastRequest(config, 'rpc/claim_podcast_generation', {
     method: 'POST',
-    headers: headers(),
-    body: JSON.stringify({
+    body: {
       p_date_folder: date,
       p_force: force,
       p_generation_id: generationId,
-    }),
-    cache: 'no-store',
+    },
   })
-  const data = await parseResponse(response, [])
   const row = Array.isArray(data) ? data[0] : data
   if (row) return { claimed: true, generationId, episode: toPodcastEpisode(row) }
   return { claimed: false, episode: await getPodcastEpisode(date, { includeIncomplete: true }) }
 }
 
 async function patchPodcastEpisode(date, generationId, fields, activeOnly = false) {
-  requireConfig()
+  const config = requireConfig()
   if (!generationId) throw new Error('Podcast generation lease is required for updates')
   const configuredTimeout = Number(process.env.PODCAST_LEASE_TIMEOUT_MS)
   const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0
@@ -96,16 +79,19 @@ async function patchPodcastEpisode(date, generationId, fields, activeOnly = fals
     }, timeoutMs)
   })
   try {
-    const request = fetch(
-      `${supabaseUrl}/rest/v1/podcasts?date_folder=eq.${encodeURIComponent(date)}&category=eq.daily&generation_id=eq.${encodeURIComponent(generationId)}${activeOnly ? '&status=in.(in_progress,script_generated)' : ''}`,
-      {
-        method: 'PATCH',
-        headers: headers('return=representation'),
-        body: JSON.stringify(fields),
-        cache: 'no-store',
-        signal: controller.signal,
-      },
-    ).then((response) => parseResponse(response, []))
+    const params = new URLSearchParams({
+      date_folder: `eq.${date}`,
+      category: 'eq.daily',
+      generation_id: `eq.${generationId}`,
+    })
+    if (activeOnly) params.set('status', 'in.(in_progress,script_generated)')
+    const request = podcastRequest(config, 'podcasts', {
+      method: 'PATCH',
+      params,
+      body: fields,
+      prefer: 'return=representation',
+      signal: controller.signal,
+    })
     const data = await Promise.race([request, timeout])
     const row = Array.isArray(data) ? data[0] : data
     if (!row) throw new PodcastLeaseLostError(date)
@@ -128,7 +114,7 @@ export async function renewPodcastGeneration(date, generationId) {
 }
 
 export async function getPodcastEpisode(date, { includeIncomplete = false } = {}) {
-  requireConfig()
+  const config = requireConfig()
   const params = new URLSearchParams({
     date_folder: `eq.${date}`,
     category: 'eq.daily',
@@ -136,11 +122,7 @@ export async function getPodcastEpisode(date, { includeIncomplete = false } = {}
     limit: '1',
   })
   if (!includeIncomplete) params.set('status', 'eq.completed')
-  const response = await fetch(`${supabaseUrl}/rest/v1/podcasts?${params}`, {
-    headers: headers(),
-    cache: 'no-store',
-  })
-  const data = await parseResponse(response, [])
+  const data = await podcastRequest(config, 'podcasts', { params })
   return toPodcastEpisode(Array.isArray(data) ? data[0] : null)
 }
 
@@ -170,7 +152,7 @@ function listViewRow(row) {
 }
 
 export async function listPodcastEpisodes({ limit = 50, listView = false } = {}) {
-  requireConfig()
+  const config = requireConfig()
   const safeLimit = Math.min(Math.max(Number.parseInt(String(limit), 10) || 50, 1), 1000)
   const params = new URLSearchParams({
     status: 'eq.completed',
@@ -179,10 +161,6 @@ export async function listPodcastEpisodes({ limit = 50, listView = false } = {})
     order: 'date_folder.desc',
     limit: String(safeLimit),
   })
-  const response = await fetch(`${supabaseUrl}/rest/v1/podcasts?${params}`, {
-    headers: headers(),
-    cache: 'no-store',
-  })
-  const data = await parseResponse(response, [])
+  const data = await podcastRequest(config, 'podcasts', { params })
   return Array.isArray(data) ? data.map(row => toPodcastEpisode(listView ? listViewRow(row) : row)) : []
 }

@@ -1,64 +1,19 @@
 import "server-only"
 
+import { getSupabaseRestConfig, SUPABASE_CREDENTIALS, supabaseRestRequest } from "../server/supabaseRest"
+import { sanitizeHistoryCorrections } from "./corrections"
+
 // Sources the web app itself writes. Native iOS rehearsals ("practice") are
 // written only through /api/ios/sync and are read-only on the web.
 export const CHAT_SOURCE_TYPES = new Set(["news", "scenario"])
 export const CHAT_LIST_SOURCE_TYPES = new Set(["news", "scenario", "practice"])
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-const supabaseSchema = process.env.SUPABASE_SCHEMA || "public"
-
 export function getHistoryDatabaseConfig() {
-  if (!supabaseUrl || !serviceRoleKey) return null
-  return {
-    baseUrl: supabaseUrl.replace(/\/$/, ""),
-    serviceRoleKey,
-    schema: supabaseSchema,
-  }
+  return getSupabaseRestConfig({ credentials: SUPABASE_CREDENTIALS.SERVICE_ROLE })
 }
 
-export async function historyDatabaseRequest(
-  config,
-  resource,
-  { method = "GET", params, body, prefer, headers: extraHeaders } = {},
-) {
-  const url = new URL(`${config.baseUrl}/rest/v1/${resource}`)
-  if (params) {
-    for (const [key, value] of params.entries()) url.searchParams.append(key, value)
-  }
-
-  const headers = {
-    apikey: config.serviceRoleKey,
-    Authorization: `Bearer ${config.serviceRoleKey}`,
-    Accept: "application/json",
-    "Cache-Control": "no-cache",
-    "Accept-Profile": config.schema,
-    ...extraHeaders,
-  }
-  if (body !== undefined) {
-    headers["Content-Type"] = "application/json"
-    headers["Content-Profile"] = config.schema
-  }
-  if (prefer) headers.Prefer = prefer
-
-  const response = await fetch(url.toString(), {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    cache: "no-store",
-  })
-  const text = await response.text()
-  let data = null
-  try {
-    data = text ? JSON.parse(text) : null
-  } catch {
-    data = null
-  }
-
-  return { ok: response.ok, status: response.status, data }
-}
+export { supabaseRestRequest as historyDatabaseRequest }
 
 export function logHistoryDatabaseError(operation, result) {
   console.error(`[history] ${operation} failed`, {
@@ -89,6 +44,7 @@ export function isRevisionConflict(result) {
 }
 
 export function extractMessageText(message) {
+  if (message?.type === "correction") return ""
   if (!message || typeof message !== "object") return ""
   if (typeof message.content === "string") return message.content.trim()
   if (!Array.isArray(message.content)) return ""
@@ -132,7 +88,7 @@ function preferCompleteHistoryItem(existing, incoming) {
 export function mergeChatHistories(currentHistory, incomingHistory) {
   const merged = []
   const indexByKey = new Map()
-  for (const item of [...(currentHistory || []), ...(incomingHistory || [])]) {
+  for (const item of sanitizeHistoryCorrections([...(currentHistory || []), ...(incomingHistory || [])])) {
     const key = historyItemKey(item)
     const existingIndex = indexByKey.get(key)
     if (existingIndex === undefined) {
@@ -174,7 +130,7 @@ function normalizedTitle(row) {
 
 export function toChatHistoryDetail(row) {
   if (!row) return null
-  const history = Array.isArray(row.history) ? row.history : []
+  const history = sanitizeHistoryCorrections(row.history)
   const title = normalizedTitle(row)
   return {
     id: row.id,

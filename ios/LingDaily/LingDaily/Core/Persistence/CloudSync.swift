@@ -129,6 +129,16 @@ struct SyncLedger: Codable, Equatable {
         dirty.scenarios = Set(archive.scenarios.map(\.id))
     }
 
+    /// After a lost ledger write: everything on this device is sent again, and the
+    /// deletes the saved ledger still knew about are kept (resending a delete is harmless).
+    mutating func readopt(owner: String, archive: PracticeArchive) {
+        let pendingDeletes = deleted
+        adopt(owner: owner, archive: archive)
+        deleted = Keys(sessions: pendingDeletes.sessions.subtracting(dirty.sessions),
+                       expressions: pendingDeletes.expressions.subtracting(dirty.expressions),
+                       scenarios: pendingDeletes.scenarios.subtracting(dirty.scenarios))
+    }
+
     /// The next request's worth of pending changes. Whatever does not fit stays
     /// pending and goes out in the following round.
     func changes(from archive: PracticeArchive, limits: SyncBatchLimits = .server) -> SyncChanges {

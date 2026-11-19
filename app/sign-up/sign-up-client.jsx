@@ -28,7 +28,7 @@ export default function SignUpClient({ linuxDoEnabled }) {
   const handleLinuxDoSignIn = () => {
     if (!linuxDoEnabled) return
     startTransition(() => {
-      void signIn("linux-do", { callbackUrl: "/" })
+      void signIn("linux-do", { redirectTo: "/talk" })
     })
   }
 
@@ -49,7 +49,7 @@ export default function SignUpClient({ linuxDoEnabled }) {
           return
         }
         setMessage("Registration successful. Please sign in.")
-        setTimeout(() => router.push("/sign-in"), 800)
+        setTimeout(() => router.push("/sign-in?callbackUrl=%2Ftalk"), 800)
       } catch (err) {
         setError(err?.message || "Unexpected error")
       }

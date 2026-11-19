@@ -4,6 +4,7 @@ import SwiftUI
 struct ConversationView: View {
     @EnvironmentObject private var store: PracticeStore
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.practiceService) private var api
     @StateObject private var speech = SpeechController()
     @StateObject private var model: PracticeViewModel
     @StateObject private var live = LivePracticeController()
@@ -225,7 +226,7 @@ struct ConversationView: View {
                                       showTranslation: translations.shown.contains(message.id),
                                       translationState: translations.state(of: message.id),
                                       onTranslate: {
-                                          translations.toggle(message, in: session.scenario) { text in
+                                          translations.toggle(message, in: session.scenario, using: api) { text in
                                               model.applyTranslation(text, to: message.id, store: store)
                                           }
                                       },
@@ -233,7 +234,7 @@ struct ConversationView: View {
                         if let feedback = session.feedback(for: message.id) {
                             FeedbackNote(feedback: feedback, source: session.scenario.title, onListen: onListen,
                                          meaningLoading: meanings.loading.contains(message.id)) {
-                                meanings.fill(message.id, revised: feedback.revised) { meaning in
+                                meanings.fill(message.id, revised: feedback.revised, using: api) { meaning in
                                     model.applyFeedbackMeaning(meaning, to: message.id, store: store)
                                     store.fillMeaning(of: feedback.revised, with: meaning)
                                 }
@@ -532,7 +533,8 @@ final class BubbleTranslations: ObservableObject {
         loading.contains(id) ? .loading : failed.contains(id) ? .failed : .idle
     }
 
-    func toggle(_ message: PracticeMessage, in scenario: PracticeScenario, save: @escaping (String) -> Void) {
+    func toggle(_ message: PracticeMessage, in scenario: PracticeScenario, using api: any PracticeServing,
+                save: @escaping (String) -> Void) {
         let id = message.id
         if shown.contains(id) { shown.remove(id); return }
         if MessageBubble.translation(of: message, in: scenario) != nil { shown.insert(id); return }
@@ -541,7 +543,7 @@ final class BubbleTranslations: ObservableObject {
         failed.remove(id)
         Task {
             do {
-                save(try await PracticeAPIClient().translate(message.text))
+                save(try await api.translate(message.text))
                 shown.insert(id)
             } catch {
                 failed.insert(id)
@@ -682,11 +684,11 @@ final class FeedbackMeanings: ObservableObject {
     @Published private(set) var loading: Set<UUID> = []
     private var attempted: Set<UUID> = []
 
-    func fill(_ id: UUID, revised: String, save: @escaping (String) -> Void) {
+    func fill(_ id: UUID, revised: String, using api: any PracticeServing, save: @escaping (String) -> Void) {
         guard AIDataConsent.isGranted(), attempted.insert(id).inserted else { return }
         loading.insert(id)
         Task {
-            if let meaning = try? await PracticeAPIClient().translate(revised) { save(meaning) }
+            if let meaning = try? await api.translate(revised) { save(meaning) }
             loading.remove(id)
         }
     }

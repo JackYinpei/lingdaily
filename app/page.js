@@ -3,10 +3,11 @@ import { auth, signOut } from "@/app/auth";
 import { AuthError } from "next-auth";
 import HomePageClient from "@/app/components/HomePageClient";
 import { headers } from "next/headers";
+import { getSiteUrl } from "@/app/lib/siteUrl.cjs";
 
 export const revalidate = 3600;
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://lingdaily.yasobi.xyz';
+const siteUrl = getSiteUrl();
 
 function detectPreferredLocale(acceptLanguageHeader = "") {
   const parts = acceptLanguageHeader
@@ -23,12 +24,12 @@ function detectPreferredLocale(acceptLanguageHeader = "") {
 }
 
 export const metadata = {
-  title: 'LingDaily - AI English Learning with Daily News Podcasts',
-  description: 'Master English with LingDaily. Chat with AI about current news, listen to daily AI-generated podcasts, and build your vocabulary. Real-time conversations and immersive audio learning.',
-  keywords: 'English learning, AI tutor, daily news podcasts, English conversation, vocabulary building, speaking practice, LingDaily',
+  title: 'LingDaily — AI Speaking Practice & News Podcasts',
+  description: 'Practice speaking with AI using news and role-play topics. Listen to Chinese–English news podcasts, read transcripts, and review saved vocabulary.',
+  keywords: 'language practice, AI conversation, role-play, bilingual news podcasts, vocabulary, speaking practice, LingDaily',
   openGraph: {
-    title: 'LingDaily - Learn English with AI & News Podcasts',
-    description: 'Join LingDaily to practice English through real-time AI conversations and daily news podcasts customized for learners.',
+    title: 'LingDaily — AI Speaking Practice & News Podcasts',
+    description: 'Practice speaking with AI using news and role-play topics. Listen to Chinese–English news podcasts, read transcripts, and review saved vocabulary.',
   }
 };
 
@@ -58,7 +59,7 @@ export default async function Home() {
     "@context": "https://schema.org",
     "@type": "WebApplication",
     "name": "LingDaily",
-    "description": "Chat with AI to learn English through current news conversations and daily AI-generated podcasts. AI-powered English learning platform for vocabulary building, listening, and speaking practice.",
+    "description": metadata.description,
     "url": siteUrl,
     "applicationCategory": "EducationalApplication",
     "operatingSystem": "Web",
@@ -79,7 +80,7 @@ export default async function Home() {
     "potentialAction": {
       "@type": "CommunicateAction",
       "target": `${siteUrl}/talk`,
-      "name": "Start an English practice conversation"
+      "name": "Start a language practice conversation"
     }
   };
 
@@ -87,8 +88,8 @@ export default async function Home() {
     <>
       <noscript>
         <section className="mx-auto my-6 max-w-3xl rounded-2xl border border-border bg-card/60 p-4 text-sm leading-relaxed text-foreground">
-          <strong>LingDaily works without JavaScript.</strong> Read curated news summaries and start a guided English conversation at{" "}
-          <Link href="/talk">lingdaily.yasobi.xyz/talk</Link>.
+          <strong>Enable JavaScript for interactive language practice.</strong> You can also browse our{" "}
+          <Link href="/podcasts">bilingual news podcasts</Link>.
         </section>
       </noscript>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />

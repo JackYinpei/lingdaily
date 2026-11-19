@@ -5,6 +5,7 @@
  */
 import confetti from 'canvas-confetti';
 import { DEFAULT_LEARNING_LANGUAGE, DEFAULT_NATIVE_LANGUAGE } from '@/app/lib/languages';
+import { normalizeCorrection } from '@/app/lib/history/corrections';
 
 const OUTPUT_SAMPLE_RATE = 24000;
 const PLAYBACK_LEAD_TIME_SECONDS = 0.03;
@@ -105,13 +106,6 @@ Only include an item when the user used ${native} instead of the needed ${target
     };
 }
 
-export const learningItemsToolDecl = createLearningItemsToolDecl(DEFAULT_LANGUAGE_PAIR);
-// Keep the old export available for code/tests that imported it directly.
-export const extractUnfamiliarEnglishToolDecl = {
-    ...learningItemsToolDecl,
-    name: 'extract_unfamiliar_english',
-};
-
 // Correction tool: after a user turn, the model may surface a single gentle,
 // idiomatic rewrite of the user's target-language attempt. Purely advisory —
 // the result is streamed to the UI and is not persisted.
@@ -148,8 +142,6 @@ export function createCorrectionToolDecl(pair) {
     };
 }
 
-export const correctionToolDecl = createCorrectionToolDecl(DEFAULT_LANGUAGE_PAIR);
-
 export class GeminiLiveServiceImpl {
     constructor(config) {
         this.session = null; // kept for API compat: truthy when connected
@@ -173,6 +165,7 @@ export class GeminiLiveServiceImpl {
         this.pendingAudioParts = [];
         this.playbackEpoch = 0;
         this.connectionEpoch = 0;
+        this.cancelPendingConnection = null;
         this.languagePair = normalizeLanguagePair();
         // While true, mic frames are captured but not sent. Active from setup
         // until the model's first turnComplete so the opening prompt cannot be
@@ -206,10 +199,15 @@ export class GeminiLiveServiceImpl {
     resumeOutputAudio() {
         const context = this.outputAudioContext;
         if (!context || context.state === 'closed') return Promise.resolve();
-        if (context.state === 'running') return Promise.resolve();
+        if (context.state === 'running') {
+            this._pendingAudioFlush?.();
+            return Promise.resolve();
+        }
 
         try {
-            return Promise.resolve(context.resume()).catch((error) => {
+            return Promise.resolve(context.resume()).then(() => {
+                if (context === this.outputAudioContext && context.state === 'running') this._pendingAudioFlush?.();
+            }).catch((error) => {
                 console.warn("Could not resume output AudioContext:", error);
             });
         } catch (error) {
@@ -220,6 +218,7 @@ export class GeminiLiveServiceImpl {
 
     invalidatePlayback() {
         this.playbackEpoch += 1;
+        this._pendingFlushCleanup?.();
         this.pendingAudioParts = [];
         this.sources.forEach((source) => { try { source.stop(); } catch (_) { } });
         this.sources.clear();
@@ -263,9 +262,11 @@ export class GeminiLiveServiceImpl {
         return epoch === this.connectionEpoch && (!socket || socket === this.webSocket);
     }
 
-    beginMicStreamHold(connectionEpoch, socket) {
+    beginMicStreamHold(connectionEpoch, socket, deferFallback = false) {
         this.micStreamHold = true;
         if (this.micStreamHoldTimer) clearTimeout(this.micStreamHoldTimer);
+        this.micStreamHoldTimer = null;
+        if (deferFallback) return;
         this.micStreamHoldTimer = setTimeout(() => {
             this.micStreamHoldTimer = null;
             if (this.isCurrentConnection(connectionEpoch, socket)) {
@@ -337,9 +338,12 @@ export class GeminiLiveServiceImpl {
         // output context remains primed by the current user gesture.
         this.stopInputAudio();
 
+        this.releaseMicStreamHold();
+
         // Supersede any socket that is still opening. Its event handlers retain
         // the previous epoch and therefore cannot mutate this new connection.
         const connectionEpoch = ++this.connectionEpoch;
+        this.cancelPendingConnection?.();
         const connectionDeadline = Date.now() + 20000;
         const previousSocket = this.webSocket;
         this.webSocket = null;
@@ -404,18 +408,23 @@ export class GeminiLiveServiceImpl {
             this.webSocket = socket;
             let settled = false;
             let setupTimeout = null;
+            let microphoneRequested = false;
             const settleResolve = (value) => {
                 if (settled) return;
                 settled = true;
                 if (setupTimeout) clearTimeout(setupTimeout);
+                if (this.cancelPendingConnection === cancelConnection) this.cancelPendingConnection = null;
                 resolve(value);
             };
             const settleReject = (error) => {
                 if (settled) return;
                 settled = true;
                 if (setupTimeout) clearTimeout(setupTimeout);
+                if (this.cancelPendingConnection === cancelConnection) this.cancelPendingConnection = null;
                 reject(error);
             };
+            const cancelConnection = () => settleResolve(false);
+            this.cancelPendingConnection = cancelConnection;
             setupTimeout = setTimeout(() => {
                 if (!this.isCurrentConnection(connectionEpoch, socket)) {
                     settleResolve(false);
@@ -486,6 +495,10 @@ export class GeminiLiveServiceImpl {
 
                 try {
                     const msg = JSON.parse(jsonData);
+                    if (msg.setupComplete) {
+                        if (setupTimeout) clearTimeout(setupTimeout);
+                        setupTimeout = null;
+                    }
                     await this.handleServerMessage(msg, connectionEpoch, socket);
                     if (!this.isCurrentConnection(connectionEpoch, socket)) {
                         settleResolve(false);
@@ -493,14 +506,17 @@ export class GeminiLiveServiceImpl {
                     }
 
                     // After setup complete, start mic & signal connected
-                    if (msg.setupComplete) {
+                    if (msg.setupComplete && !microphoneRequested) {
+                        microphoneRequested = true;
                         console.log("Setup complete — starting mic (frames held until first model turn)");
-                        this.beginMicStreamHold(connectionEpoch, socket);
+                        this.config.onConnectionPhase?.('microphone');
+                        this.beginMicStreamHold(connectionEpoch, socket, true);
                         const micStarted = await this.startMic(connectionEpoch, socket);
                         if (!micStarted || !this.isCurrentConnection(connectionEpoch, socket)) {
                             settleResolve(false);
                             return;
                         }
+                        if (this.micStreamHold) this.beginMicStreamHold(connectionEpoch, socket);
                         this.config.onConnectionUpdate(true);
                         settleResolve(true);
                     }
@@ -517,8 +533,8 @@ export class GeminiLiveServiceImpl {
                 console.log("WebSocket closed", "code:", event.code, "reason:", event.reason, "wasClean:", event.wasClean);
                 this.connected = false;
                 this.session = null;
-                this.disconnect();
                 settleReject(new Error(event.reason || "WebSocket closed before setup completed"));
+                this.disconnect();
             };
 
             socket.onerror = (event) => {
@@ -530,8 +546,8 @@ export class GeminiLiveServiceImpl {
                 this.config.onError("WebSocket connection error");
                 this.connected = false;
                 this.session = null;
-                this.disconnect();
                 settleReject(new Error("WebSocket error"));
+                this.disconnect();
             };
         });
     }
@@ -585,9 +601,9 @@ export class GeminiLiveServiceImpl {
 
             this.mediaSource.connect(this.scriptProcessor);
             this.scriptProcessor.connect(inputAudioContext.destination);
-            // Acquiring the mic on the connect gesture can leave the OUTPUT
+            // Acquiring the mic can leave the OUTPUT
             // context suspended on some browsers, which is what silenced the
-            // first model turn. Resume it now (still within the gesture) and
+            // first model turn. Resume it again after permission and
             // flush anything that was buffered while it was locked.
             this.resumeOutputAudio();
             return true;
@@ -658,10 +674,7 @@ export class GeminiLiveServiceImpl {
             const toolCalls = message.toolCall?.functionCalls;
             if (toolCalls && toolCalls.length > 0) {
                 for (const call of toolCalls) {
-                    if (
-                        call.name === 'record_unfamiliar_learning_items'
-                        || call.name === 'extract_unfamiliar_english'
-                    ) {
+                    if (call.name === 'record_unfamiliar_learning_items') {
                         await this.handleLearningItems(call.args, call.id, call.name);
                     } else if (call.name === 'record_language_correction') {
                         await this.handleCorrection(call.args, call.id, call.name);
@@ -717,12 +730,6 @@ export class GeminiLiveServiceImpl {
             .catch(e => console.error('Error saving learning items:', e));
     }
 
-    // Backward-compatible method for callers/tests that still use the old
-    // English-specific name. New Live tool calls use handleLearningItems.
-    async handleExtractUnfamiliarEnglish(args, callId) {
-        return this.handleLearningItems(args, callId, 'extract_unfamiliar_english');
-    }
-
     async handleCorrection(args = {}, callId, callName = 'record_language_correction') {
         const payload = args && typeof args === 'object' ? args : {};
         console.log(`Tool: ${callName}`, payload);
@@ -741,31 +748,15 @@ export class GeminiLiveServiceImpl {
             this.webSocket.send(JSON.stringify(toolResponse));
         }
 
-        const original = typeof payload.original === 'string' ? payload.original.trim() : '';
-        const corrected = typeof payload.corrected === 'string' ? payload.corrected.trim() : '';
-        // Nothing to show if the two are missing or identical.
-        if (!original || !corrected || original === corrected) return;
-
-        this.config.onCorrection?.({
-            original,
-            corrected,
-            explanation: typeof payload.explanation === 'string' ? payload.explanation.trim() : '',
-            category: typeof payload.category === 'string' ? payload.category : 'other',
-        });
+        const correction = normalizeCorrection(payload, { truncate: true });
+        if (correction) this.config.onCorrection?.(correction);
     }
 
     // ─── Send text ─────────────────────────────────────────────────────
 
     async sendText(text) {
         const socket = this.webSocket;
-        if (!this.connected || !socket || socket.readyState !== WebSocket.OPEN) return;
-
-        // A typed message supersedes the first-turn hold: restore the normal
-        // realtime-input conditions the model expects around text input.
-        this.releaseMicStreamHold();
-
-        // Optimistically update UI
-        this.config.onMessage(text, true, 'user');
+        if (!text?.trim() || !this.connected || !socket || socket.readyState !== WebSocket.OPEN) return false;
 
         // Use realtimeInput.text — same as official reference
         const message = {
@@ -773,25 +764,35 @@ export class GeminiLiveServiceImpl {
                 text: text,
             },
         };
-        socket.send(JSON.stringify(message));
+        try {
+            socket.send(JSON.stringify(message));
+        } catch {
+            return false;
+        }
+        this.releaseMicStreamHold();
+        this.config.onMessage(text, true, 'user');
+        return true;
     }
 
     async sendContextMessage(text) {
         const socket = this.webSocket;
-        if (!this.connected || !socket || socket.readyState !== WebSocket.OPEN) return;
+        if (!this.connected || !socket || socket.readyState !== WebSocket.OPEN
+            || typeof text !== 'string' || !text.trim()) return;
 
-        // realtimeInput.text carries no explicit end-of-turn — the server
-        // derives one from voice activity, which never arrives while the mic
-        // streams silence, so opening prompts could sit unanswered forever.
-        // clientContent with turnComplete forces generation to start from the
-        // accumulated prompt immediately.
+        // Keep the context and opening cue in the same conversation channel.
         const message = {
             clientContent: {
                 turns: [{ role: 'user', parts: [{ text }] }],
-                turnComplete: true,
+                turnComplete: false,
             },
         };
         socket.send(JSON.stringify(message));
+        socket.send(JSON.stringify({
+            clientContent: {
+                turns: [{ role: 'user', parts: [{ text: 'Please respond aloud to the context above.' }] }],
+                turnComplete: true,
+            },
+        }));
     }
 
     // ─── Disconnect ────────────────────────────────────────────────────
@@ -800,6 +801,7 @@ export class GeminiLiveServiceImpl {
         // Invalidate handlers before closing so a late event from this socket
         // cannot tear down a subsequent connection.
         this.connectionEpoch += 1;
+        this.cancelPendingConnection?.();
         const socket = this.webSocket;
         this.webSocket = null;
         if (socket && (socket.readyState === 0 || socket.readyState === 1)) {
@@ -833,18 +835,15 @@ export class GeminiLiveServiceImpl {
         }
 
         const context = this.outputAudioContext;
-        await this.outputAudioReadyPromise;
+        await Promise.resolve();
         if (playbackEpoch !== this.playbackEpoch || context !== this.outputAudioContext) return;
-        await this.resumeOutputAudio();
-        if (playbackEpoch !== this.playbackEpoch || context !== this.outputAudioContext) return;
-
         // The context can still be 'suspended' here — most often for the very
         // first model turn, when autoplay unlock from the connect click has not
         // yet taken effect. Instead of dropping this audio (which made the first
         // reply silent until a later gesture), stash it and flush automatically
         // once the context reaches 'running'.
         if (!context || context.state !== 'running') {
-            if (context && context.state === 'suspended') {
+            if (context && (context.state === 'suspended' || context.state === 'interrupted')) {
                 this.queuePendingAudio(audioParts, playbackEpoch, context);
                 return;
             }
@@ -864,25 +863,35 @@ export class GeminiLiveServiceImpl {
         this._pendingFlushContext = context;
 
         const flush = () => {
+            if (playbackEpoch !== this.playbackEpoch || context !== this.outputAudioContext) {
+                cleanup();
+                return;
+            }
             if (context.state !== 'running') {
                 // Nudge again — a resume() may have been swallowed while locked.
                 this.resumeOutputAudio();
                 return;
             }
-            context.removeEventListener('statechange', flush);
-            if (this._pendingFlushContext === context) this._pendingFlushContext = null;
-            if (playbackEpoch !== this.playbackEpoch || context !== this.outputAudioContext) {
-                this.pendingAudioParts = [];
-                return;
-            }
+            cleanup();
             const queued = this.pendingAudioParts;
             this.pendingAudioParts = [];
             this.scheduleAudioParts(queued, playbackEpoch, context);
         };
 
+        const cleanup = () => {
+            context.removeEventListener('statechange', flush);
+            if (this._pendingAudioFlush === flush) {
+                this._pendingAudioFlush = null;
+                this._pendingFlushCleanup = null;
+                this._pendingFlushContext = null;
+            }
+        };
+
+        this._pendingAudioFlush = flush;
+        this._pendingFlushCleanup = cleanup;
         context.addEventListener('statechange', flush);
         // Also try immediately in case it flips to running between checks.
-        this.resumeOutputAudio().then(flush);
+        this.resumeOutputAudio();
     }
 
     scheduleAudioParts(audioParts, playbackEpoch, context) {

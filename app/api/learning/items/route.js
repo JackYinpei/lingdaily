@@ -4,11 +4,7 @@ import {
   DEFAULT_NATIVE_LANGUAGE,
   getLanguageFromPreference,
 } from '@/app/lib/languages'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-const supabaseSchema = process.env.SUPABASE_SCHEMA || 'public'
+import { getSupabaseRestConfig, SUPABASE_CREDENTIALS, supabaseRestRequest } from '@/app/lib/server/supabaseRest'
 
 const ALLOWED_ITEM_TYPES = new Set(['word', 'phrase', 'grammar', 'other'])
 const MAX_ITEMS_PER_EVENT = 20
@@ -30,14 +26,7 @@ function jsonResponse(body, status = 200) {
 }
 
 function getSupabaseCredentials(session) {
-  const bearer = supabaseServiceRoleKey || session?.supabaseAccessToken
-  const apiKey = supabaseServiceRoleKey || supabaseAnonKey
-  if (!supabaseUrl || !bearer || !apiKey) return null
-  return { bearer, apiKey }
-}
-
-function parseJson(text, fallback) {
-  try { return text ? JSON.parse(text) : fallback } catch { return fallback }
+  return getSupabaseRestConfig({ credentials: SUPABASE_CREDENTIALS.SERVICE_ROLE_OR_SESSION, session })
 }
 
 function optionalText(value, maxLength) {
@@ -68,9 +57,10 @@ function normalizeItems(items, { limit = true } = {}) {
 function parseCursor(value) {
   if (!value) return null
   const separatorIndex = value.lastIndexOf('|')
-  const timestamp = separatorIndex >= 0 ? value.slice(0, separatorIndex) : value
-  const id = separatorIndex >= 0 ? value.slice(separatorIndex + 1) : null
-  if (Number.isNaN(Date.parse(timestamp)) || (id && !UUID_PATTERN.test(id))) return null
+  if (separatorIndex < 0) return null
+  const timestamp = value.slice(0, separatorIndex)
+  const id = value.slice(separatorIndex + 1)
+  if (Number.isNaN(Date.parse(timestamp)) || !UUID_PATTERN.test(id)) return null
   return { timestamp: new Date(timestamp).toISOString(), id }
 }
 
@@ -96,21 +86,6 @@ function languageFromBody(body, prefix, fallback) {
     ?? fallback
 }
 
-function isMissingLanguageColumns(payload) {
-  const code = String(payload?.code || '')
-  const description = [payload?.message, payload?.details, payload?.hint]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-
-  const describesMissingColumn = description.includes('schema cache')
-    || description.includes('does not exist')
-    || description.includes('could not find')
-
-  return (code === 'PGRST204' || code === '42703' || describesMissingColumn)
-    && LANGUAGE_COLUMNS.some((column) => description.includes(column))
-}
-
 function decorateRecord(record) {
   const learning = resolveLearningLanguage(record?.learning_language_code)
   const native = resolveNativeLanguage(record?.native_language_code)
@@ -127,38 +102,17 @@ function decorateRecord(record) {
   }
 }
 
-function requestHeaders(credentials, { write = false } = {}) {
-  return {
-    apikey: credentials.apiKey,
-    Authorization: `Bearer ${credentials.bearer}`,
-    [write ? 'Content-Profile' : 'Accept-Profile']: supabaseSchema,
-    ...(write
-      ? { 'Content-Type': 'application/json', Prefer: 'return=representation' }
-      : { Accept: 'application/json', 'Cache-Control': 'no-cache' }),
-  }
+async function learningItemsRequest(credentials, options) {
+  const result = await supabaseRestRequest(credentials, 'unfamiliar_english', options)
+  return { ...result, data: result.data ?? { raw: result.text } }
 }
 
-async function insertRecord(credentials, row) {
-  const res = await fetch(`${supabaseUrl}/rest/v1/unfamiliar_english`, {
-    method: 'POST',
-    headers: requestHeaders(credentials, { write: true }),
-    body: JSON.stringify(row),
-    cache: 'no-store',
-  })
-  const text = await res.text()
-  return { res, data: parseJson(text, { raw: text }) }
+function insertRecord(credentials, row) {
+  return learningItemsRequest(credentials, { method: 'POST', body: row, prefer: 'return=representation' })
 }
 
-async function fetchRecords(credentials, params) {
-  const res = await fetch(
-    `${supabaseUrl}/rest/v1/unfamiliar_english?${params.toString()}`,
-    {
-      headers: requestHeaders(credentials),
-      cache: 'no-store',
-    },
-  )
-  const text = await res.text()
-  return { res, data: parseJson(text, { raw: text }) }
+function fetchRecords(credentials, params) {
+  return learningItemsRequest(credentials, { params })
 }
 
 export async function POST(req) {
@@ -192,48 +146,28 @@ export async function POST(req) {
     if (!learning || !native || learning.code === native.code) {
       return jsonResponse({ error: 'Unsupported native or target language' }, 400)
     }
-    const legacyRow = {
+    const row = {
       user_id: session.user.id,
       items,
       context: optionalText(body.context, MAX_CONTEXT_LENGTH),
       user_message: optionalText(body.userMessage ?? body.user_message, MAX_USER_MESSAGE_LENGTH),
       timestamp: new Date().toISOString(),
-    }
-    const row = {
-      ...legacyRow,
       learning_language_code: learning.code,
       learning_language_label: learning.label,
       native_language_code: native.code,
       native_language_label: native.label,
     }
 
-    let result = await insertRecord(credentials, row)
-    let usedLegacySchema = false
-    if (!result.res.ok && isMissingLanguageColumns(result.data)) {
-      if (
-        learning.code !== DEFAULT_LEARNING_LANGUAGE.code
-        || native.code !== DEFAULT_NATIVE_LANGUAGE.code
-      ) {
-        // A legacy row has no place to retain its language identity. Returning
-        // success here would silently relabel (for example) Japanese as English
-        // when the migration later backfills old rows.
-        return jsonResponse({ error: 'Learning storage is being upgraded; please retry shortly' }, 503)
-      }
-      // Keep the existing voice flow operational while the additive migration
-      // rolls out. Old rows are unambiguously treated as English learned from Chinese.
-      result = await insertRecord(credentials, legacyRow)
-      usedLegacySchema = true
-    }
-
-    if (!result.res.ok) {
-      console.error('Failed to save learning items:', result.res.status, result.data)
+    const result = await insertRecord(credentials, row)
+    if (!result.ok) {
+      console.error('Failed to save learning items:', result.status, result.data)
       return jsonResponse({ error: 'Failed to save learning items' }, 502)
     }
 
     const data = Array.isArray(result.data)
       ? result.data.map(decorateRecord)
       : decorateRecord(result.data)
-    return jsonResponse({ ok: true, data, ...(usedLegacySchema ? { legacySchema: true } : {}) })
+    return jsonResponse({ ok: true, data })
   } catch (error) {
     console.error('Learning items POST error:', error)
     return jsonResponse({ error: 'Unable to save learning items' }, 500)
@@ -268,46 +202,21 @@ export async function GET(req) {
       return jsonResponse({ error: "'before' must be a valid cursor" }, 400)
     }
 
-    const commonParams = {
+    const params = new URLSearchParams({
       user_id: `eq.${session.user.id}`,
       order: 'timestamp.desc,id.desc',
       // Fetch one sentinel row so nextCursor represents actual remaining data.
       limit: String(limit + 1),
-    }
-    const params = new URLSearchParams({
-      ...commonParams,
       learning_language_code: `eq.${learning.code}`,
       select: `id,user_id,items,context,user_message,timestamp,${LANGUAGE_COLUMNS.join(',')}`,
     })
-    if (cursor?.id) {
+    if (cursor) {
       params.set('or', `(timestamp.lt.${cursor.timestamp},and(timestamp.eq.${cursor.timestamp},id.lt.${cursor.id}))`)
-    } else if (cursor) {
-      // Accept timestamp-only cursors from older clients during the transition.
-      params.set('timestamp', `lt.${cursor.timestamp}`)
     }
 
-    let result = await fetchRecords(credentials, params)
-    let usedLegacySchema = false
-    if (!result.res.ok && isMissingLanguageColumns(result.data)) {
-      usedLegacySchema = true
-      if (learning.code !== DEFAULT_LEARNING_LANGUAGE.code) {
-        return jsonResponse({ ok: true, data: [], nextCursor: null, legacySchema: true })
-      }
-
-      const legacyParams = new URLSearchParams({
-        ...commonParams,
-        select: 'id,user_id,items,context,user_message,timestamp',
-      })
-      if (cursor?.id) {
-        legacyParams.set('or', `(timestamp.lt.${cursor.timestamp},and(timestamp.eq.${cursor.timestamp},id.lt.${cursor.id}))`)
-      } else if (cursor) {
-        legacyParams.set('timestamp', `lt.${cursor.timestamp}`)
-      }
-      result = await fetchRecords(credentials, legacyParams)
-    }
-
-    if (!result.res.ok) {
-      console.error('Failed to fetch learning items:', result.res.status, result.data)
+    const result = await fetchRecords(credentials, params)
+    if (!result.ok) {
+      console.error('Failed to fetch learning items:', result.status, result.data)
       return jsonResponse({ error: 'Failed to fetch learning items' }, 502)
     }
 
@@ -319,7 +228,6 @@ export async function GET(req) {
       ok: true,
       data: records,
       nextCursor: hasMore ? createCursor(records[records.length - 1]) : null,
-      ...(usedLegacySchema ? { legacySchema: true } : {}),
     })
   } catch (error) {
     console.error('Learning items GET error:', error)

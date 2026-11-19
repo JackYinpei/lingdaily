@@ -1,15 +1,14 @@
 import { checkAdmin } from '@/app/lib/adminAuth'
+import { getLanguage } from '@/app/lib/languages'
+import {
+  CATEGORY_SELECT,
+  SCENARIO_DIFFICULTIES,
+  UUID_PATTERN,
+  toScenarioCategories,
+} from '@/app/lib/scenarios'
+import { getSupabaseRestConfig, SUPABASE_CREDENTIALS, supabaseRestRequest } from '@/app/lib/server/supabaseRest'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-const supabaseSchema = process.env.SUPABASE_SCHEMA || 'public'
-const tableUrl = supabaseUrl ? `${supabaseUrl}/rest/v1/scenarios` : null
-
-const DIFFICULTIES = new Set(['beginner', 'intermediate', 'advanced'])
-const LEARNING_LANGUAGE_CODES = new Set(['en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it'])
-const NATIVE_LANGUAGE_CODES = new Set(['zh-CN', ...LEARNING_LANGUAGE_CODES])
 const SLUG_PATTERN = /^[a-z0-9]+(?:[_-][a-z0-9]+)*$/
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const WRITABLE_FIELDS = new Set([
   'category_slug', 'category_name_zh', 'category_name_en', 'category_name_ja',
   'category_icon', 'category_sort', 'title_zh', 'title_en', 'title_ja',
@@ -22,28 +21,16 @@ function jsonResponse(body, status = 200) {
   return Response.json(body, { status })
 }
 
-function requireConfig() {
-  if (!tableUrl || !supabaseServiceRoleKey) {
-    return jsonResponse({ error: 'Admin scenarios require Supabase URL and service role key' }, 500)
-  }
-  return null
+function adminDatabase() {
+  return getSupabaseRestConfig({ credentials: SUPABASE_CREDENTIALS.SERVICE_ROLE })
 }
 
-function supabaseHeaders(prefer = 'return=representation') {
-  return {
-    'Content-Type': 'application/json',
-    apikey: supabaseServiceRoleKey,
-    Authorization: `Bearer ${supabaseServiceRoleKey}`,
-    'Content-Profile': supabaseSchema,
-    'Accept-Profile': supabaseSchema,
-    Accept: 'application/json',
-    Prefer: prefer,
-  }
+function missingConfigResponse() {
+  return jsonResponse({ error: 'Admin scenarios require Supabase URL and service role key' }, 500)
 }
 
-async function readResponse(response, fallback = null) {
-  const text = await response.text()
-  try { return text ? JSON.parse(text) : fallback } catch { return fallback }
+function scenariosRequest(config, options) {
+  return supabaseRestRequest(config, 'scenarios', { prefer: 'return=representation', ...options })
 }
 
 function validateSlug(slug) {
@@ -76,16 +63,18 @@ function buildScenarioRow(body, { partial = false } = {}) {
     if (typeof row.system_prompt !== 'string' || !row.system_prompt.trim()) throw new Error('system_prompt is required')
     row.system_prompt = row.system_prompt.trim()
   }
-  if (Object.prototype.hasOwnProperty.call(row, 'difficulty') && !DIFFICULTIES.has(row.difficulty)) {
+  if (Object.prototype.hasOwnProperty.call(row, 'difficulty') && !SCENARIO_DIFFICULTIES.includes(row.difficulty)) {
     throw new Error('Invalid difficulty')
   }
-  if (Object.prototype.hasOwnProperty.call(row, 'target_language_code')
-      && !LEARNING_LANGUAGE_CODES.has(row.target_language_code)) {
-    throw new Error('Invalid target_language_code')
+  if (Object.prototype.hasOwnProperty.call(row, 'target_language_code')) {
+    const language = getLanguage(row.target_language_code, { allowChinese: false })
+    if (!language) throw new Error('Invalid target_language_code')
+    row.target_language_code = language.code
   }
-  if (Object.prototype.hasOwnProperty.call(row, 'native_language_code')
-      && !NATIVE_LANGUAGE_CODES.has(row.native_language_code)) {
-    throw new Error('Invalid native_language_code')
+  if (Object.prototype.hasOwnProperty.call(row, 'native_language_code')) {
+    const language = getLanguage(row.native_language_code)
+    if (!language) throw new Error('Invalid native_language_code')
+    row.native_language_code = language.code
   }
   if (row.target_language_code && row.target_language_code === row.native_language_code) {
     throw new Error('Target and native languages must be different')
@@ -111,8 +100,8 @@ async function ensureAdmin() {
 export async function GET(req) {
   try {
     if (!(await ensureAdmin())) return jsonResponse({ error: 'Forbidden' }, 403)
-    const configError = requireConfig()
-    if (configError) return configError
+    const config = adminDatabase()
+    if (!config) return missingConfigResponse()
 
     const { searchParams } = new URL(req.url)
     const query = new URLSearchParams({
@@ -121,25 +110,12 @@ export async function GET(req) {
     })
 
     if (searchParams.get('categories') === 'true') {
-      query.set('select', 'category_slug,category_name_zh,category_name_en,category_name_ja,category_icon,category_sort')
-      const response = await fetch(`${tableUrl}?${query}`, { headers: supabaseHeaders(), cache: 'no-store' })
-      const rows = await readResponse(response, [])
+      query.set('select', CATEGORY_SELECT)
+      const response = await scenariosRequest(config, { params: query })
+      const rows = response.data ?? []
       if (!response.ok) return jsonResponse({ error: rows?.message || 'Failed to fetch categories' }, response.status)
 
-      const seen = new Set()
-      const categories = rows.filter((row) => {
-        if (!row.category_slug || seen.has(row.category_slug)) return false
-        seen.add(row.category_slug)
-        return true
-      }).map((row) => ({
-        id: row.category_slug,
-        slug: row.category_slug,
-        name_zh: row.category_name_zh,
-        name_en: row.category_name_en,
-        name_ja: row.category_name_ja,
-        icon: row.category_icon,
-        sort_order: row.category_sort,
-      }))
+      const categories = toScenarioCategories(rows)
       return jsonResponse({ ok: true, data: categories })
     }
 
@@ -148,8 +124,8 @@ export async function GET(req) {
     query.set('category_slug', `eq.${categorySlug}`)
     query.set('select', '*')
 
-    const response = await fetch(`${tableUrl}?${query}`, { headers: supabaseHeaders(), cache: 'no-store' })
-    const data = await readResponse(response, [])
+    const response = await scenariosRequest(config, { params: query })
+    const data = response.data ?? []
     if (!response.ok) return jsonResponse({ error: data?.message || 'Failed to fetch scenarios' }, response.status)
     return jsonResponse({ ok: true, data: Array.isArray(data) ? data : [] })
   } catch (error) {
@@ -160,8 +136,8 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     if (!(await ensureAdmin())) return jsonResponse({ error: 'Forbidden' }, 403)
-    const configError = requireConfig()
-    if (configError) return configError
+    const config = adminDatabase()
+    if (!config) return missingConfigResponse()
 
     const body = await req.json().catch(() => ({}))
     let row
@@ -177,13 +153,8 @@ export async function POST(req) {
     row.title_target = row.title_target || row.title_en
     row.description_target = row.description_target || row.description_en || row.description_zh || null
 
-    const response = await fetch(tableUrl, {
-      method: 'POST',
-      headers: supabaseHeaders(),
-      body: JSON.stringify(row),
-      cache: 'no-store',
-    })
-    const data = await readResponse(response)
+    const response = await scenariosRequest(config, { method: 'POST', body: row })
+    const data = response.data
     if (!response.ok) return jsonResponse({ error: data?.message || 'Create failed' }, response.status)
     return jsonResponse({ ok: true, data: Array.isArray(data) ? data[0] : data }, 201)
   } catch (error) {
@@ -194,8 +165,8 @@ export async function POST(req) {
 export async function PUT(req) {
   try {
     if (!(await ensureAdmin())) return jsonResponse({ error: 'Forbidden' }, 403)
-    const configError = requireConfig()
-    if (configError) return configError
+    const config = adminDatabase()
+    if (!config) return missingConfigResponse()
 
     const body = await req.json().catch(() => ({}))
     if (!UUID_PATTERN.test(body?.id || '')) return jsonResponse({ error: 'A valid id is required' }, 400)
@@ -204,13 +175,12 @@ export async function PUT(req) {
     try { fields = buildScenarioRow(body, { partial: true }) } catch (error) { return jsonResponse({ error: error.message }, 400) }
     if (Object.keys(fields).length === 0) return jsonResponse({ error: 'No writable fields supplied' }, 400)
 
-    const response = await fetch(`${tableUrl}?id=eq.${body.id}&user_id=is.null`, {
+    const response = await scenariosRequest(config, {
       method: 'PATCH',
-      headers: supabaseHeaders(),
-      body: JSON.stringify(fields),
-      cache: 'no-store',
+      params: new URLSearchParams({ id: `eq.${body.id}`, user_id: 'is.null' }),
+      body: fields,
     })
-    const data = await readResponse(response, [])
+    const data = response.data ?? []
     if (!response.ok) return jsonResponse({ error: data?.message || 'Update failed' }, response.status)
     if (!Array.isArray(data) || data.length === 0) return jsonResponse({ error: 'System scenario not found' }, 404)
     return jsonResponse({ ok: true, data: data[0] })
@@ -222,18 +192,17 @@ export async function PUT(req) {
 export async function DELETE(req) {
   try {
     if (!(await ensureAdmin())) return jsonResponse({ error: 'Forbidden' }, 403)
-    const configError = requireConfig()
-    if (configError) return configError
+    const config = adminDatabase()
+    if (!config) return missingConfigResponse()
 
     const id = new URL(req.url).searchParams.get('id')
     if (!UUID_PATTERN.test(id || '')) return jsonResponse({ error: 'A valid id is required' }, 400)
 
-    const response = await fetch(`${tableUrl}?id=eq.${id}&user_id=is.null`, {
+    const response = await scenariosRequest(config, {
       method: 'DELETE',
-      headers: supabaseHeaders(),
-      cache: 'no-store',
+      params: new URLSearchParams({ id: `eq.${id}`, user_id: 'is.null' }),
     })
-    const data = await readResponse(response, [])
+    const data = response.data ?? []
     if (!response.ok) return jsonResponse({ error: data?.message || 'Delete failed' }, response.status)
     if (!Array.isArray(data) || data.length === 0) return jsonResponse({ error: 'System scenario not found' }, 404)
     return jsonResponse({ ok: true, data: data[0] })

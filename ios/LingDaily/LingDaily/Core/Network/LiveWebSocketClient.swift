@@ -32,7 +32,6 @@ actor LiveWebSocketClient {
             return "语音连接已断开，请重新连接。已有内容已保留。"
         }
     }
-    private var lastFailure: FailureDiagnostics?
     private var receiver: Task<Void, Never>?
     private var uploader: Task<Void, Never>?
     private var timeout: Task<Void, Never>?
@@ -45,7 +44,7 @@ actor LiveWebSocketClient {
                  handler: @escaping Handler, failure: @escaping Failure) async throws {
         guard !Task.isCancelled, current >= generation else { throw CancellationError() }
         reset()
-        closedUploadStatistics = nil; lastFailure = nil
+        closedUploadStatistics = nil
         generation = current; self.handler = handler; self.failure = failure
         let url = try token.connectionURL()
         let config = URLSessionConfiguration.ephemeral
@@ -151,12 +150,13 @@ actor LiveWebSocketClient {
         do { try enqueue(LiveCodec.audio(pcm), generation: current, audio: true, frames: frames) }
         catch { await fail(current, stage: "uploadEncoding", error: error) }
     }
-    func endInput(generation current: UInt64) {
+    func endInput(generation current: UInt64) async {
         guard ready, current == generation else { return }
         inputGate.close()
         // Drop already queued microphone frames; output and control are retained.
         outgoing.clearAudio()
-        if let end = try? LiveCodec.audioEnd() { try? enqueue(end, generation: current, priority: true) }
+        do { try enqueue(LiveCodec.audioEnd(), generation: current, priority: true) }
+        catch { await fail(current, stage: "send", error: error) }
     }
     func resumeInput(generation current: UInt64) {
         guard ready, current == generation, !inputGate.isOpen else { return }
@@ -188,13 +188,11 @@ actor LiveWebSocketClient {
     func uploadStatistics() -> UploadStatistics {
         closedUploadStatistics ?? .init(sentFrames: sentAudioFrames, droppedFrames: outgoing.droppedAudioFrames, queuedFrames: outgoing.count)
     }
-    func failureDiagnostics() -> FailureDiagnostics? { lastFailure }
     private func fail(_ current: UInt64, stage: String, error: Error? = nil) async {
         guard generation == current else { return }
         let native = error as NSError?
         let diagnostics = FailureDiagnostics(stage: stage, closeCode: socket?.closeCode.rawValue ?? 0,
             transportCode: native?.domain == NSURLErrorDomain ? native?.code : nil)
-        lastFailure = diagnostics
         #if DEBUG
         LiveDebugDiagnostics.record("failure stage=\(stage) close=\(diagnostics.closeCode) transport=\(diagnostics.transportCode ?? 0) sentFrames=\(sentAudioFrames)")
         #endif

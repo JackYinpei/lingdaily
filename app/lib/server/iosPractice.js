@@ -1,8 +1,7 @@
 import 'server-only'
 
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { GoogleGenAI } from '@google/genai'
-import { getServerGeminiApiKey, getServerGeminiBaseUrl } from './geminiConfig'
+import { createServerGeminiClient, GEMINI_REQUEST_TIMEOUT_MS } from './geminiConfig'
 import { resolveModel } from '../ios/models'
 import { recordUsage, tokensFromUsageMetadata } from './aiUsage'
 import { parseSentenceReview, SENTENCE_REVIEW_INSTRUCTION, SENTENCE_REVIEW_SCHEMA } from '../ios/review'
@@ -50,10 +49,11 @@ export function suggestionModel() { return process.env.GEMINI_SUGGEST_MODEL?.tri
 export function translationModel() { return process.env.GEMINI_TRANSLATE_MODEL?.trim() || practiceModel() }
 
 function geminiClient() {
-  const apiKey = getServerGeminiApiKey()
-  if (!apiKey) throw new PracticeAPIError(503, 'NOT_CONFIGURED', '服务端尚未配置 AI。')
-  const baseUrl = process.env.GEMINI_PRACTICE_BASE_URL?.trim() || getServerGeminiBaseUrl()
-  return new GoogleGenAI({ apiKey, httpOptions: { ...(baseUrl ? { baseUrl } : {}), timeout: 25000 } })
+  const client = createServerGeminiClient({
+    baseUrl: process.env.GEMINI_PRACTICE_BASE_URL?.trim() || 'default', timeout: GEMINI_REQUEST_TIMEOUT_MS,
+  })
+  if (!client) throw new PracticeAPIError(503, 'NOT_CONFIGURED', '服务端尚未配置 AI。')
+  return client
 }
 
 // Structured generation with one corrective retry when the JSON fails validation.
@@ -63,7 +63,7 @@ async function generateStructured({ systemInstruction, responseSchema, payload, 
   const client = geminiClient()
   const billed = []
   try {
-    const abortSignal = AbortSignal.timeout(25000)
+    const abortSignal = AbortSignal.timeout(GEMINI_REQUEST_TIMEOUT_MS)
     for (let attempt = 0; attempt < 2; attempt++) {
       const response = await client.models.generateContent({
         model,

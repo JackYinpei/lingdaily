@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('server-only', () => ({}))
 const { create } = vi.hoisted(() => ({ create: vi.fn() }))
-vi.mock('@google/genai', () => ({ GoogleGenAI: class { authTokens = { create } } }))
-vi.mock('@/app/lib/server/geminiConfig', () => ({ getServerGeminiApiKey: () => 'synthetic-server-secret' }))
+vi.mock('@/app/lib/server/geminiConfig', () => ({
+  createServerGeminiClient: () => ({ authTokens: { create } }), GEMINI_REQUEST_TIMEOUT_MS: 25000,
+}))
 import { POST } from '@/app/api/ios/live-token/route'
 import { createLiveTokenCoordinator, issueLiveToken, IOS_LIVE_WS_URL } from '@/app/lib/server/iosLive'
 import { liveTokenRequestSchema, voiceForPartner, LIVE_VOICES } from '@/app/lib/ios/live'

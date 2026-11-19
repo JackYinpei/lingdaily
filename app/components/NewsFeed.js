@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { NewsCard } from "./NewsCard";
+import { parseKagiRss } from "@/app/lib/news/parseRss";
 
 // 新闻分类数据，保留一些主要的英文分类
 const categories = [
@@ -244,61 +245,8 @@ export default function NewsFeed({
         throw new Error(`Failed to fetch news for category: ${category}`);
       }
       const rssText = await response.text();
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(rssText, 'application/xml');
-      const items = xmlDoc.querySelectorAll('item');
       const categoryData = categories.find(cat => cat.categoryId === category);
-
-      const newArticles = Array.from(items).map((item, index) => {
-        let description = item.querySelector('description')?.textContent || '';
-        const sourcesIndex = description.indexOf('<h3>Sources:</h3>');
-        if (sourcesIndex !== -1) {
-          description = description.substring(0, sourcesIndex);
-        }
-
-        const imgMatch = description.match(/<img src='([^']*)'/);
-        const urlToImage = imgMatch ? imgMatch[1] : null;
-
-        // Remove images and <br> tags
-        description = description.replace(/<img[^>]*>/gi, '');
-        description = description.replace(/<br\s*\/?>/gi, '\n');
-        // Convert structural HTML to formatted text
-        description = description.replace(/<h3[^>]*>(.*?)<\/h3>/gi, '\n\n$1\n');
-        description = description.replace(/<li[^>]*>(.*?)<\/li>/gi, '\n• $1');
-        description = description.replace(/<\/p>/gi, '\n');
-        description = description.replace(/<p[^>]*>/gi, '');
-        // Strip remaining HTML tags
-        description = description.replace(/<[^>]*>/g, '');
-        // Decode HTML entities
-        description = description
-          .replace(/&#x27;/g, "'")
-          .replace(/&#x2F;/g, "/")
-          .replace(/&quot;/g, '"')
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(code))
-          .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-        // Remove bracket patterns with URLs/file extensions
-        description = description.replace(/\[[^\]]*?(?:#\d+|\.[a-z]{2,4})[^\]]*?\]/gi, '');
-        // Remove standalone source/link references like "(Reuters)" or "(The Hindu)"
-        description = description.replace(/\s*\([^)]*\)\s*$/gm, '');
-        // Clean up excessive whitespace while preserving intentional line breaks
-        description = description.replace(/[ \t]+/g, ' ');
-        description = description.replace(/\n{3,}/g, '\n\n');
-        description = description.trim();
-
-        return {
-          id: `${category}-${index}`,
-          title: item.querySelector('title')?.textContent || 'Untitled',
-          link: item.querySelector('link')?.textContent || '',
-          description: description || 'No description available',
-          urlToImage: urlToImage,
-          category: categoryData?.categoryName || 'News',
-          sourceLanguage: categoryData?.sourceLanguage || 'en',
-          date: item.querySelector('pubDate')?.textContent || new Date().toISOString(),
-        };
-      });
+      const newArticles = parseKagiRss(rssText, category, categoryData);
 
       if (requestVersionRef.current !== requestVersion) return;
       setArticles(newArticles);
@@ -472,7 +420,7 @@ export default function NewsFeed({
       {categorySelectorJSX}
       <div
         ref={isMobile ? listContainerRef : null}
-        className={isMobile ? "flex gap-3 overflow-x-auto custom-scroll px-2" : "space-y-4 px-2 py-2"}
+        className={`feature-topic-list ${isMobile ? "flex gap-3 overflow-x-auto custom-scroll px-2" : "space-y-4 px-2 py-2"}`}
         style={isMobile ? {
           touchAction: 'pan-x pinch-zoom',
           scrollBehavior: 'smooth',
@@ -501,13 +449,14 @@ export default function NewsFeed({
           return (
             <div
               key={article.id}
+              data-selected={isSelected || undefined}
               {...(index === 0 ? { "data-tour": "news-card" } : {})}
               className={
                 isMobile
                   ? mobileHasSelection
-                    ? `flex-shrink-0 transition-all duration-300 ease-in-out w-full min-w-full max-w-full h-[25vh] ${isSelected ? "scale-100 opacity-100" : "scale-95 opacity-80"}`
-                    : "flex-shrink-0 transition-all duration-300 ease-in-out w-[260px] h-48"
-                  : `transition-all duration-300 ease-in-out ${isSelected ? "h-96" : "h-48"}`
+                    ? `feature-topic-entry flex-shrink-0 transition-all duration-300 ease-in-out w-full min-w-full max-w-full h-[25vh] ${isSelected ? "scale-100 opacity-100" : "scale-95 opacity-80"}`
+                    : "feature-topic-entry flex-shrink-0 transition-all duration-300 ease-in-out w-[260px] h-48"
+                  : `feature-topic-entry transition-all duration-300 ease-in-out ${isSelected ? "h-96" : "h-48"}`
               }
               ref={(el) => {
                 if (el) {

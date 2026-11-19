@@ -2,6 +2,7 @@
 import NextAuth from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import Google from "next-auth/providers/google"
+import { getSupabasePublicAuthConfig } from "./lib/server/supabaseRest"
 import { ensureAuthUser } from "./lib/server/supabaseAuthUser"
 
 const LinuxDo = {
@@ -36,21 +37,15 @@ const LinuxDo = {
   checks: ["state"],
 }
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
-
 async function signInWithSupabase(email, password) {
-  if (!supabaseUrl || !supabaseAnonKey) {
+  const supabaseAuth = getSupabasePublicAuthConfig()
+  if (!supabaseAuth) {
     throw new Error("Missing Supabase env: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY")
   }
-  const url = `${supabaseUrl}/auth/v1/token?grant_type=password`
+  const url = `${supabaseAuth.baseUrl}/auth/v1/token?grant_type=password`
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: supabaseAnonKey,
-      Authorization: `Bearer ${supabaseAnonKey}`,
-    },
+    headers: supabaseAuth.headers({ "Content-Type": "application/json" }),
     body: JSON.stringify({ email, password }),
     cache: "no-store",
   })

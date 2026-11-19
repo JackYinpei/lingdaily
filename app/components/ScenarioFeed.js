@@ -343,7 +343,7 @@ export default function ScenarioFeed({
   return (
     <div>
       {categorySelectorJSX}
-      <div className={isMobile ? "flex gap-3 overflow-x-auto custom-scroll px-2" : "space-y-4 px-2 py-2"}>
+      <div className={`feature-topic-list ${isMobile ? "flex gap-3 overflow-x-auto custom-scroll px-2" : "space-y-4 px-2 py-2"}`}>
         {scenarios.map((scenario, index) => {
           const isSelected = selectedNews?._scenarioId === scenario.id;
           const isOwn = scenario.user_id && scenario.user_id === session?.user?.id;
@@ -351,11 +351,12 @@ export default function ScenarioFeed({
           return (
             <div
               key={scenario.id}
+              data-selected={isSelected || undefined}
               {...(index === 0 ? { "data-tour": "news-card" } : {})}
               className={
                 isMobile
-                  ? "flex-shrink-0 transition-all duration-300 ease-in-out w-[260px] h-48"
-                  : `transition-all duration-300 ease-in-out ${isSelected ? "h-auto min-h-48" : "h-40"}`
+                  ? "feature-topic-entry flex-shrink-0 transition-all duration-300 ease-in-out w-[260px] h-48"
+                  : `feature-topic-entry transition-all duration-300 ease-in-out ${isSelected ? "h-auto min-h-48" : "h-40"}`
               }
             >
               <div className="relative h-full">

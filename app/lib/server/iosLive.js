@@ -1,6 +1,5 @@
 import 'server-only'
-import { GoogleGenAI } from '@google/genai'
-import { getServerGeminiApiKey } from './geminiConfig'
+import { createServerGeminiClient, GEMINI_REQUEST_TIMEOUT_MS } from './geminiConfig'
 import { PracticeAPIError, createUserLimiter } from './iosPractice'
 import { buildLiveInstruction, DEFAULT_LIVE_VOICE, LIVE_TOOLS, livePauseMs, voiceForPartner } from '../ios/live'
 import { resolveModel } from '../ios/models'
@@ -31,19 +30,18 @@ export async function issueLiveToken(body) {
   } catch {
     throw new PracticeAPIError(503, 'NOT_CONFIGURED', '语音中转地址配置无效。')
   }
-  const apiKey = getServerGeminiApiKey()
-  if (!apiKey) throw new PracticeAPIError(503, 'NOT_CONFIGURED', '服务端尚未配置语音通话。')
+  // Installed SDK is v1alpha-only for constrained tokens. Use the official
+  // signing endpoint. The approved relay forwards the constrained WebSocket;
+  // it never receives the API key or replaces the locked token configuration.
+  const client = createServerGeminiClient({ baseUrl: 'official', apiVersion: 'v1alpha', timeout: GEMINI_REQUEST_TIMEOUT_MS })
+  if (!client) throw new PracticeAPIError(503, 'NOT_CONFIGURED', '服务端尚未配置语音通话。')
   // The learner may pick a listed Live model; the scenario JSON in the prompt never carries it.
   const { model: requestedModel, pauseMs, ...scenarioBody } = body
   const model = resolveModel('live', requestedModel, liveModel())
   if (!/^[a-zA-Z0-9._-]{1,100}$/.test(model)) throw new PracticeAPIError(503, 'NOT_CONFIGURED', '语音模型配置无效。')
   const now = Date.now()
   const expiresAt = new Date(now + 30 * 60_000).toISOString()
-  // Installed SDK is v1alpha-only for constrained tokens. Use the official
-  // signing endpoint. The approved relay forwards the constrained WebSocket;
-  // it never receives the API key or replaces the locked token configuration.
-  const client = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: 'v1alpha', timeout: 25000 } })
-  const abortSignal = AbortSignal.timeout(25000)
+  const abortSignal = AbortSignal.timeout(GEMINI_REQUEST_TIMEOUT_MS)
   const create = voiceName => client.authTokens.create({ config: {
     uses: 1, expireTime: expiresAt, newSessionExpireTime: new Date(now + 2 * 60_000).toISOString(),
     httpOptions: { apiVersion: 'v1alpha' }, abortSignal,

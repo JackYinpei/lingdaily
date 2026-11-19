@@ -4,17 +4,18 @@ LingDaily 是一个以新闻和真实场景为素材的多语言口语学习应�
 
 ## 功能
 
-- 邮箱密码登录，以及可选的 Google、Linux.do OAuth。
-- 9 种界面/母语选项与 8 种目标学习语言，目标语言和母语必须不同。
+- 邮箱密码登录，以及可选的 Google、Linux.do OAuth；注册或登录后默认进入练习页 `/talk`。首次进入练习页有新手引导，可直接跳过并切到新闻模式。
+- 9 种母语与 8 种学习语言（学习语言不含中文，且必须与母语不同）；界面文案只适配中文、日文和英文，其他母语回退英文界面。
 - 新闻模式与角色扮演场景模式。
-- Gemini Live 双向语音：麦克风输入、流式音频播放、打断和取消、文字消息与工具调用。
-- AI 实时纠错：对话中检测可改进的表达并给出地道改写（`record_language_correction` 工具调用），在对话流内展示。
+- Gemini Live 双向语音：麦克风输入、流式音频播放、打断和取消、文字消息与工具调用。连接后 AI 先结合新闻或场景出声问候；等待麦克风授权不计入连接超时，首轮问候结束前不上传麦克风声音，避免环境噪音打断开场。
+- AI 实时纠错：对话中检测可改进的表达并给出地道改写（`record_language_correction` 工具调用），在对话流内展示，并随对话历史保存，恢复时仍显示为纠错卡。
 - 新闻标题翻译，并按所选目标语言生成练习提示。
-- 对话历史自动同步、乐观并发保护、学习天数和练习进度统计；进度页含今日进度环、词汇掌握与本周量表看板。
+- 对话历史自动同步（离开页面时保留最后一条 AI 回复）、乐观并发保护、学习天数和练习进度统计；进度页含今日进度环、词汇掌握与本周量表看板。
 - 生词、短语和语法点自动提取，按语言筛选并使用稳定游标分页。
 - 管理后台维护系统场景，用户也可创建公开或私有场景。
-- 每日双语新闻播客：脚本生成、多说话人 TTS、COS 发布、数据库归档、网页播放和 RSS。
-- 集中式主题：shadcn CSS 变量统一浅/深色与品牌配色，支持 system/dark/light 切换，首页带彩虹极光+胶片颗粒背景。
+- 每日双语新闻播客：脚本生成、多说话人 TTS、COS 发布、数据库归档、网页播放（详情页标题取自本期节目标题）和 RSS。
+- 集中式主题：shadcn CSS 变量统一浅/深色与品牌配色，支持 system/dark/light 切换。首页使用独立的纸墨配色（`.home-editorial` 下的 `--home-*` 变量，同样有深浅两套），并提供可切换的静态场景示例；进度页保留极光+胶片颗粒背景。
+- 原生 iOS App（见文末）：Sign in with Apple、文字与 Live 语音练习，记录与网页共用同一 Supabase 账号数据。
 
 ## 架构
 
@@ -42,7 +43,7 @@ flowchart LR
 | 数据库 | `supabase/migrations/` | RLS、索引、RPC、兼容升级与系统场景 seed |
 | 部署 | `Dockerfile`、`docker-compose.yml` | 8000 端口应用与持久化播客目录 |
 
-Gemini Live 的浏览器连接先向 `POST /api/realtime-token` 申请一次性令牌，再建立 WebSocket。旧的 `/api/gemini-token` 暂时保留为带弃用响应头的兼容别名。旧的 `/api/learning/unfamiliar-english` 同样继续代理到统一的学习项接口。
+Gemini Live 的浏览器连接先向 `POST /api/realtime-token` 申请一次性令牌，再建立 WebSocket。旧的 `/api/gemini-token` 暂时保留为带弃用响应头的兼容别名。
 
 播客生成链路为：服务器 cron → 生成接口 → 新闻源 → Gemini 结构化脚本 → 多说话人 TTS → MP3 → COS → Supabase → 本地 manifest/RSS 镜像。Supabase 暂时不可用时，生成接口会退回已有的本地 manifest/feed 兼容路径。
 
@@ -77,6 +78,7 @@ npm start
 - `NEXT_PUBLIC_SUPABASE_URL` 与 `NEXT_PUBLIC_SUPABASE_ANON_KEY` 可以公开；`SUPABASE_SERVICE_ROLE_KEY` 必须只存在于服务端。
 - `PODCAST_SECRET`、COS Secret 和 OAuth Secret 只能放在服务端环境，不得提交到仓库。
 - 不要创建或使用 `NEXT_PUBLIC_GEMINI_API_KEY`。任何 `NEXT_PUBLIC_*` 值都会进入浏览器包。
+- iOS 服务端配置（均为服务端变量）：`APPLE_IOS_BUNDLE_ID`、原生 Live 中转 `GEMINI_LIVE_WS_BASE_URL`（与网页的 `NEXT_PUBLIC_GEMINI_BASE_URL` 互相独立）、可选模型覆盖与用量估价 `AI_PRICING_JSON`。本机配对入口 `IOS_PRACTICE_DEV_ENABLED` 不得在生产开启。
 
 `NEXT_PUBLIC_*` 在镜像构建时写入前端包，修改后必须重新构建镜像。GitHub 部署工作流已经把站点 URL、Supabase 公共配置和 Gemini 公共代理作为 build args；其余密钥由服务器 `.env` 在运行时注入。
 
@@ -108,8 +110,8 @@ npm start
 5. `202607110005_multilingual_learning_items.sql`：学习项和偏好的多语言升级。
 6. `202607110006_multilingual_scenarios.sql`：兼容旧两表/新单表的多语言场景升级。
 7. `202607110007_seed_scenarios.sql`：幂等系统场景 seed；发现相同语言对的重复场景时中止，不自动删除或合并。
+8. `202610050001_native_practice_sync.sql`：iOS 云同步复用现有表——`chat_history` 新增 `practice` 来源（含 key 约束与 RPC 校验），`scenarios` 新增可空 `practice_plan`；发现未知来源时中止。必须在 iOS 云同步代码上线前执行。
 9. `202610050002_ai_usage.sql`：iOS AI token 用量表 `ai_usage`（owner 只读 RLS、Live 上报幂等唯一键）与汇总 RPC `ai_usage_summary`；只新增对象。
-8. `202610050001_native_practice_sync.sql`：iOS 云同步复用现有表——`chat_history` 新增 `practice` 来源（含 key 约束与 RPC 校验），`scenarios` 新增可空 `practice_plan`；发现未知来源时中止。
 
 迁移不会自动删除重复偏好、重复场景或非数组对话正文；发现这些
 异常时显式事务会使整个文件回滚并要求先人工处理。失败后不要单独执行该文件的
@@ -159,7 +161,7 @@ curl -s -X POST 'http://localhost:8000/api/podcast/generate' \
 
 推荐发布顺序：
 
-1. 备份 Supabase，并在 staging 运行 001–007 和迁移测试。
+1. 备份 Supabase，并在 staging 按顺序运行全部九个迁移和迁移测试。
 2. 在生产 Supabase 按顺序应用尚未执行的迁移。
 3. 更新服务器 `.env`，确认 `PODCAST_SECRET` 和 COS 配置仍在。
 4. 拉取新镜像并运行 `docker compose up -d`。
@@ -179,10 +181,14 @@ Sitemap 只包含真实公开页面：首页、播客列表和已完成的播客
 
 ## Gemini 代理
 
-可选 Nginx 示例位于 [`nginx/gemini-proxy.conf`](nginx/gemini-proxy.conf)。上线时应替换示例域名、启用 HTTPS、限制访问并设置合理的速率/连接数上限，避免把代理暴露成不受控的公共转发服务。
+可选 Nginx 示例位于 [`nginx/gemini-proxy.conf`](nginx/gemini-proxy.conf)；主站反向代理参考配置见 [`nginx/lingdaily-site.conf`](nginx/lingdaily-site.conf)（部署前先 `nginx -t`）。上线时应替换示例域名、启用 HTTPS、限制访问并设置合理的速率/连接数上限，避免把代理暴露成不受控的公共转发服务。
 
-## iOS 重构规划
+## iOS App
 
-原生客户端位于 [`ios/`](ios/README.md)，最低支持 iOS 15。已有免登录的 SwiftUI AI 体验版：真实 Gemini 对话、明日预演、一句话重来、本机记录与表达收藏。先运行 `npm run ios:dev`，再在 Xcode 运行 iPhone 模拟器；自己的真机改用 `npm run ios:dev -- --device` 并重新安装 Debug 版。已支持 Gemini Live 实时语音；正式认证与云同步仍待接入。
-后续按“新闻/场景 → 语音练习 → 历史与学习项”完成首版，播客与进度后置。
-设计语言、页面模板、架构、数据契约、实施计划与产品创意见 [iOS 重构方案](docs/ios/README.md)。
+原生 SwiftUI 客户端位于 [`ios/`](ios/README.md)，最低支持 iOS 15，当前工程版本 1.8；各版本上架状态见 [发布记录](ios/AppStore/SUBMISSION.md)。用户用 Sign in with Apple 登录后，App 直接调用线上服务（`/api/ios/*`），不需要本机运行服务：
+
+- 服务端下发的内置场景，以及用一句话描述生成的新场景；「今日」每日播客与新闻练习。
+- 文字逐轮练习与 Gemini Live 实时语音，可调整对方的「脾气」；对话结束后逐句复盘。
+- 练习记录、词库和自建场景经云同步写入与网页共用的 Supabase 表（网页历史中显示为只读的 `practice` 记录），本机另有历史与收藏；支持删除账号。
+
+只在调试服务端改动时才需要 `npm run ios:dev`（真机加 `-- --device`）。运行方式、接口契约与验证记录见 [ios/README.md](ios/README.md) 和 [AI 接入与交付状态](docs/ios/10-ai-integration.md)；[docs/ios/](docs/ios/README.md) 其余文档是早期重构方案，状态以前两者为准。

@@ -65,14 +65,13 @@ final class AIPracticeTests: XCTestCase {
         session.submit("Would Thursday work for you?")
         XCTAssertNil(session.currentFeedback)
         session.applyAIResponse(try response(for: session, answer: true))
-        XCTAssertEqual(session.originalAnswer, "I need Thursday")
+        XCTAssertEqual(session.messages.last { $0.kind == .answer }?.text, "I need Thursday")
         XCTAssertEqual(session.retryCount, 1)
         XCTAssertEqual(session.ai?.feedbacks.count, 2)
         XCTAssertEqual(Set(session.ai?.feedbacks.map(\.id) ?? []).count, 2)
         for message in session.messages {
             XCTAssertEqual(session.feedback(for: message.id) != nil, message.role == .user)
         }
-        XCTAssertEqual(session.takeaways.count, 1)
     }
 
     func testPendingRequestIdentitySurvivesArchiveRoundTrip() throws {
@@ -98,8 +97,8 @@ final class AIPracticeTests: XCTestCase {
         XCTAssertEqual(session.phase, .completed)
         XCTAssertNil(session.pendingAIRequest)
         XCTAssertEqual(session.userTurns, 3)
-        XCTAssertEqual(session.takeaways.count, 3)
-        XCTAssertTrue(session.takeaways.allSatisfy { $0.expression == "I need until Thursday." })
+        XCTAssertEqual(session.ai?.feedbacks.map(\.stepIndex), [0, 1, 2])
+        XCTAssertTrue(session.ai?.feedbacks.allSatisfy { $0.feedback.revised == "I need until Thursday." } ?? false)
         XCTAssertTrue(session.messages.allSatisfy { !$0.text.contains("OLD SCRIPT") })
     }
 
@@ -117,7 +116,7 @@ final class AIPracticeTests: XCTestCase {
         try legacy.write(to: file.url)
         let migrated = try file.load()
         XCTAssertEqual(migrated.schemaVersion, 2)
-        XCTAssertEqual(migrated.sessions.first?.originalAnswer, "Old prototype answer")
+        XCTAssertEqual(migrated.sessions.first?.messages.last { $0.kind == .answer }?.text, "Old prototype answer")
         XCTAssertFalse(migrated.sessions[0].isAI)
         XCTAssertEqual(try Data(contentsOf: file.url), legacy) // Loading never overwrites.
     }

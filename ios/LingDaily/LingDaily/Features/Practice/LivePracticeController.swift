@@ -36,7 +36,7 @@ final class LivePracticeController: ObservableObject {
     private var suggestedLine: UUID?
     private let audio = LiveAudioController()
     private let client = LiveWebSocketClient()
-    private let api = PracticeAPIClient()
+    private let api: any PracticeServing
     private var generations = LiveGenerations()
     private var connectTask: Task<Void, Never>?
     private var transcript = LiveTranscriptReducer()
@@ -50,6 +50,10 @@ final class LivePracticeController: ObservableObject {
     #endif
     private weak var model: PracticeViewModel?
     private weak var store: PracticeStore?
+
+    init(api: any PracticeServing = PracticeAPIClient()) {
+        self.api = api
+    }
 
     var status: String {
         switch state {
@@ -278,9 +282,9 @@ final class LivePracticeController: ObservableObject {
     private func reportUsage() {
         defer { usage = LiveUsage(); usageModel = nil }
         guard let model = usageModel, let report = LiveUsageReport(reportId: usageReportID, model: model, usage: usage) else { return }
-        Task.detached {
+        Task.detached { [api] in
             for attempt in 0..<2 {
-                if (try? await PracticeAPIClient().reportLiveUsage(report)) != nil { return }
+                if (try? await api.reportLiveUsage(report)) != nil { return }
                 if attempt == 0 { try? await Task.sleep(nanoseconds: 3_000_000_000) }
             }
         }
@@ -307,7 +311,7 @@ final class LivePracticeController: ObservableObject {
         let line = LiveStuckPolicy.awaitedLine(in: model.session)
         suggestedLine = line
         if line == nil || prefetched?.line != line {
-            prefetched = (line, Self.fetchSuggestion(for: model.session))
+            prefetched = (line, Self.fetchSuggestion(for: model.session, using: api))
         }
         guard let task = prefetched?.task else { return }
         suggesting = true; suggestionError = nil
@@ -331,14 +335,14 @@ final class LivePracticeController: ObservableObject {
     private func prefetchSuggestion() {
         guard state == .active, let model, let line = LiveStuckPolicy.awaitedLine(in: model.session),
               prefetched?.line != line else { return }
-        prefetched = (line, Self.fetchSuggestion(for: model.session))
+        prefetched = (line, Self.fetchSuggestion(for: model.session, using: api))
     }
 
     /// One automatic retry: a suggestion is only useful if it is ready when the learner pauses.
-    private static func fetchSuggestion(for session: PracticeSession) -> Task<LiveSuggestion?, Never> {
+    private static func fetchSuggestion(for session: PracticeSession, using api: any PracticeServing) -> Task<LiveSuggestion?, Never> {
         Task {
             for attempt in 0..<2 {
-                if let idea = try? await PracticeAPIClient().suggest(for: session) { return idea }
+                if let idea = try? await api.suggest(for: session) { return idea }
                 guard attempt == 0, !Task.isCancelled else { break }
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
             }

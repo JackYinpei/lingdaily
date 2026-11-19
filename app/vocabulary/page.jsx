@@ -5,17 +5,15 @@ import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { useLanguage } from '@/app/contexts/LanguageContext'
 import LanguageSelector from '@/app/components/LanguageSelector'
+import { ArrowRight, BookOpen, Bookmark, Layers, LetterText, MessageSquare, Shapes } from 'lucide-react'
+import FeatureShell, { FeatureHeading, useFeatureLocale } from '@/app/components/FeatureShell'
+import { featureCopy } from '@/app/lib/featureCopy'
 
-const TYPE_COLORS = {
-    word: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
-    phrase: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
-    grammar: 'bg-green-500/10 text-green-400 border-green-500/30',
-    other: 'bg-gray-500/10 text-gray-400 border-gray-500/30',
-}
+const TYPE_ICONS = { all: Layers, word: LetterText, phrase: MessageSquare, grammar: Shapes, other: Bookmark }
 
 export default function VocabularyPage() {
     const { data: session, status } = useSession()
-    const { learningLanguage, nativeLanguage } = useLanguage()
+    const { learningLanguage } = useLanguage()
 
     const [records, setRecords] = useState([])
     const [loading, setLoading] = useState(true)
@@ -103,62 +101,45 @@ export default function VocabularyPage() {
 
     const filtered = filter === 'all' ? uniqueItems : uniqueItems.filter(i => i.type === filter)
 
-    const uiLang = (nativeLanguage?.code || 'zh').toLowerCase().startsWith('zh') ? 'zh' : 'en'
-    const t = uiLang === 'zh'
-        ? { title: '生词本', back: '返回', total: '共', words: '个词', loadMore: '加载更多', noWords: '暂无生词', noWordsDesc: '开始和 AI 对话，系统会自动保存你不熟悉的学习项', all: '全部', context: '语境', from: '来自', meaning: '释义', original: '原文', language: '学习语言', signIn: '登录后查看生词本', signInAction: '去登录', loading: '加载中…', typeLabels: { word: '单词', phrase: '短语', grammar: '语法', other: '其他' } }
-        : { title: 'Vocabulary', back: 'Back', total: 'Total', words: 'items', loadMore: 'Load more', noWords: 'No learning items yet', noWordsDesc: 'Start chatting with AI and unfamiliar learning items will be saved automatically', all: 'All', context: 'Context', from: 'From', meaning: 'Meaning', original: 'Original', language: 'Learning language', signIn: 'Sign in to view your vocabulary', signInAction: 'Sign in', loading: 'Loading…', typeLabels: { word: 'Word', phrase: 'Phrase', grammar: 'Grammar', other: 'Other' } }
+    const uiLang = useFeatureLocale()
+    const pageCopy = featureCopy[uiLang]
+    const t = {
+        zh: { total: '共', words: '条', loadMore: '加载更多', noWords: '还没有保存的词条', noWordsDesc: '练习中保存的单词 短语和语法会显示在这里', noFilteredItems: '这个分类还没有内容', noFilteredItemsDesc: '试试其他分类 或开始一次练习', all: '全部', context: '语境', from: '来自', meaning: '释义', original: '原文', language: '学习语言', signIn: '登录后查看生词本', signInAction: '去登录', loading: '加载中', typeLabels: { word: '单词', phrase: '短语', grammar: '语法', other: '其他' } },
+        en: { total: 'Total', words: 'items', loadMore: 'Load more', noWords: 'No saved items yet', noWordsDesc: 'Words phrases and grammar saved during practice appear here', noFilteredItems: 'No items in this category', noFilteredItemsDesc: 'Try another category or start practicing', all: 'All', context: 'Context', from: 'From', meaning: 'Meaning', original: 'Original', language: 'Learning language', signIn: 'Sign in to view your vocabulary', signInAction: 'Sign in', loading: 'Loading', typeLabels: { word: 'Word', phrase: 'Phrase', grammar: 'Grammar', other: 'Other' } },
+        ja: { total: '合計', words: '件', loadMore: 'もっと見る', noWords: '保存した項目はまだありません', noWordsDesc: '練習中に保存した単語 フレーズ 文法が表示されます', noFilteredItems: 'この種類の項目はまだありません', noFilteredItemsDesc: 'ほかの種類を選ぶか 練習を始めてください', all: 'すべて', context: '文脈', from: '発言', meaning: '意味', original: '原文', language: '学習言語', signIn: 'ログインすると単語帳を確認できます', signInAction: 'ログイン', loading: '読み込み中', typeLabels: { word: '単語', phrase: 'フレーズ', grammar: '文法', other: 'その他' } },
+    }[uiLang]
 
     if (status === 'unauthenticated') {
         return (
-            <div className="min-h-screen bg-background flex items-center justify-center px-4">
-                <div className="text-center rounded-lg border border-border bg-card p-8 max-w-sm">
-                    <div className="text-4xl mb-4">📚</div>
+            <FeatureShell active="vocabulary">
+                <div className="feature-empty mt-10">
+                    <BookOpen aria-hidden="true" />
                     <p className="text-foreground font-medium mb-5">{t.signIn}</p>
-                    <Link href="/sign-in" className="inline-flex px-4 py-2 rounded bg-primary text-primary-foreground">
+                    <Link href="/sign-in?callbackUrl=%2Fvocabulary" className="feature-action">
                         {t.signInAction}
                     </Link>
                 </div>
-            </div>
+            </FeatureShell>
         )
     }
 
     return (
-        <div className="min-h-screen bg-background">
-            <header className="border-b border-border bg-card">
-                <div className="container mx-auto px-4 py-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-4">
-                            <Link
-                                href="/talk"
-                                className="text-muted-foreground hover:text-foreground transition-colors text-sm"
-                            >
-                                ← {t.back}
-                            </Link>
-                            <h1 className="text-xl font-bold text-card-foreground">{t.title}</h1>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-4">
-                            <LanguageSelector kind="learning" label={t.language} />
-                            <span className="text-muted-foreground text-sm">
-                                {t.total} {uniqueItems.length} {t.words}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            <div className="container mx-auto px-4 py-6 max-w-4xl">
+        <FeatureShell active="vocabulary">
+            <FeatureHeading page="vocabulary" />
+            <div className="feature-toolbar">
+                <LanguageSelector kind="learning" label={t.language} />
+                <span className="feature-count">{t.total} {uniqueItems.length} {t.words}</span>
+            </div>
+            <div>
                 {/* Filter tabs */}
-                <div className="flex gap-2 mb-6 flex-wrap">
+                {uniqueItems.length > 0 && <div className="feature-filters mb-6">
                     {['all', 'word', 'phrase', 'grammar', 'other'].map(type => (
                         <button
                             key={type}
                             onClick={() => setFilter(type)}
-                            className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
-                                filter === type
-                                    ? 'bg-foreground text-background border-foreground'
-                                    : 'bg-transparent text-muted-foreground border-border hover:border-foreground/50'
-                            }`}
+                            aria-pressed={filter === type}
                         >
+                            {(() => { const Icon = TYPE_ICONS[type]; return <Icon size={14} aria-hidden="true" /> })()}
                             {type === 'all' ? t.all : t.typeLabels[type] || type}
                             {type === 'all'
                                 ? ` (${uniqueItems.length})`
@@ -166,7 +147,7 @@ export default function VocabularyPage() {
                             }
                         </button>
                     ))}
-                </div>
+                </div>}
 
                 {error && (
                     <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-lg mb-4 text-sm">
@@ -179,12 +160,13 @@ export default function VocabularyPage() {
                         <div className="text-muted-foreground text-sm">{t.loading}</div>
                     </div>
                 ) : filtered.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 text-center">
-                        <div className="text-4xl mb-4">📚</div>
-                        <p className="text-foreground font-medium mb-2">{t.noWords}</p>
-                        <p className="text-muted-foreground text-sm max-w-xs">{t.noWordsDesc}</p>
-                        <Link href="/talk" className="mt-6 px-4 py-2 border border-red-500 text-red-500 rounded hover:bg-red-500 hover:text-white transition-colors text-sm">
-                            {uiLang === 'zh' ? '去对话' : 'Start chatting'}
+                    <div className="feature-empty">
+                        <BookOpen aria-hidden="true" />
+                        <h2>{uniqueItems.length ? t.noFilteredItems : t.noWords}</h2>
+                        <p className="text-muted-foreground text-sm max-w-xs">{uniqueItems.length ? t.noFilteredItemsDesc : t.noWordsDesc}</p>
+                        <Link href="/talk" className="feature-action mt-6">
+                            {pageCopy.start}
+                            <ArrowRight size={16} aria-hidden="true" />
                         </Link>
                         {hasMore && (
                             <button
@@ -198,15 +180,15 @@ export default function VocabularyPage() {
                     </div>
                 ) : (
                     <>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="feature-vocab-grid">
                             {filtered.map((item, idx) => (
                                 <div
                                     key={`${item.recordId}-${item.text}-${idx}`}
-                                    className="bg-card border border-border rounded-lg p-4 hover:border-border/80 transition-colors"
+                                    className="feature-vocab-item"
                                 >
                                     <div className="flex items-start justify-between gap-2 mb-2">
-                                        <span className="text-foreground font-semibold text-base break-all">{item.text}</span>
-                                        <span className={`text-xs px-2 py-0.5 rounded-full border flex-shrink-0 ${TYPE_COLORS[item.type] || TYPE_COLORS.other}`}>
+                                        <span className="feature-term break-words min-w-0">{item.text}</span>
+                                        <span className="feature-type shrink-0">
                                             {t.typeLabels[item.type] || item.type}
                                         </span>
                                     </div>
@@ -216,27 +198,29 @@ export default function VocabularyPage() {
                                             {item.meaning}
                                         </p>
                                     )}
+                                    <div className="feature-item-context">
                                     {item.original && item.original !== item.text && (
-                                        <p className="text-muted-foreground text-xs mt-1 line-clamp-2">
-                                            <span className="text-muted-foreground/60">{t.original}: </span>
+                                        <blockquote className="text-muted-foreground text-xs leading-6 line-clamp-2">
+                                            <span>{t.original}: </span>
                                             {item.original}
-                                        </p>
+                                        </blockquote>
                                     )}
                                     {item.userMessage && (
                                         <p className="text-muted-foreground text-xs mt-1 line-clamp-2">
-                                            <span className="text-muted-foreground/60">{t.from}: </span>
+                                            <span>{t.from}: </span>
                                             {item.userMessage}
                                         </p>
                                     )}
                                     {item.context && (
                                         <p className="text-muted-foreground text-xs mt-1 line-clamp-1">
-                                            <span className="text-muted-foreground/60">{t.context}: </span>
+                                            <span>{t.context}: </span>
                                             {item.context}
                                         </p>
                                     )}
-                                    <p className="text-muted-foreground/40 text-xs mt-2">
+                                    <p className="feature-item-date">
                                         {item.timestamp ? new Date(item.timestamp).toLocaleDateString() : ''}
                                     </p>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -255,6 +239,6 @@ export default function VocabularyPage() {
                     </>
                 )}
             </div>
-        </div>
+        </FeatureShell>
     )
 }

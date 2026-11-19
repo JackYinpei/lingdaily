@@ -35,7 +35,7 @@ final class PracticeCoreTests: XCTestCase {
         XCTAssertTrue(session.submit("A second version"))
         session.beginRetry()
         XCTAssertTrue(session.submit("A third version"))
-        XCTAssertEqual(session.originalAnswer, "Original answer")
+        XCTAssertEqual(session.messages.last { $0.kind == .answer }?.text, "Original answer")
         XCTAssertEqual(session.messages.filter { $0.role == .user }.map(\.text),
                        ["Original answer", "A second version", "A third version"])
         XCTAssertEqual(session.retryCount, 2)
@@ -71,7 +71,7 @@ final class PracticeCoreTests: XCTestCase {
         XCTAssertEqual(session.phase, .review)
         XCTAssertEqual(session.userTurns, 1)
         XCTAssertEqual(session.retryCount, 0)
-        XCTAssertEqual(session.originalAnswer, "Keep this answer")
+        XCTAssertEqual(session.messages.last { $0.kind == .answer }?.text, "Keep this answer")
         session.advance()
         XCTAssertEqual(session.stepIndex, 1)
     }
@@ -118,7 +118,7 @@ final class PracticeCoreTests: XCTestCase {
             XCTAssertEqual(loaded, archive)
             var resumed = try XCTUnwrap(loaded.sessions.first)
             XCTAssertTrue(resumed.submit("Second try"))
-            XCTAssertEqual(resumed.originalAnswer, "First try")
+            XCTAssertEqual(resumed.messages.last { $0.kind == .answer }?.text, "First try")
             XCTAssertEqual(resumed.retryCount, 1)
         }
     }

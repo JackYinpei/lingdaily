@@ -36,16 +36,6 @@ export function getLanguageFromPreference(value, options) {
   return getLanguage(typeof value === 'string' ? value : value?.code, options)
 }
 
-export function getLanguageOrDefault(value, fallback, options) {
-  return getLanguageFromPreference(value, options) || fallback
-}
-
-export function areLanguagesDistinct(learningValue, nativeValue) {
-  const learning = getLanguageFromPreference(learningValue, { allowChinese: false })
-  const native = getLanguageFromPreference(nativeValue)
-  return Boolean(learning && native && learning.code !== native.code)
-}
-
 export function resolveDistinctLanguagePair(learningValue, nativeValue) {
   const nativeLanguage = getLanguageFromPreference(nativeValue) || DEFAULT_NATIVE_LANGUAGE
   let learningLanguage = getLanguageFromPreference(

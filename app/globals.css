@@ -4,6 +4,73 @@
 
 @custom-variant dark (&:is(.dark *));
 
+body:has(.feature-app),
+.feature-app {
+  --feature-action: hsl(331 49% 39%);
+  --feature-action-hover: hsl(331 52% 34%);
+  --feature-action-foreground: #ffffff;
+  --feature-action-wash: hsl(331 55% 94%);
+  --feature-support: hsl(331 49% 39%);
+  --feature-support-wash: hsl(331 55% 94%);
+  --background: #f6f7f2;
+  --foreground: #26382f;
+  --card: #fdfef9;
+  --card-foreground: #26382f;
+  --popover: #fdfef9;
+  --popover-foreground: #26382f;
+  --primary: #365d4a;
+  --primary-hover: #294b3b;
+  --primary-foreground: #ffffff;
+  --secondary: #e8eee5;
+  --secondary-foreground: #26382f;
+  --muted: #e8eee5;
+  --muted-foreground: #58675d;
+  --accent: #e8eee5;
+  --accent-foreground: #26382f;
+  --border: #cbd5c9;
+  --input: #cbd5c9;
+  --ring: #365d4a;
+  --brand: #365d4a;
+  --brand-foreground: #ffffff;
+  --brand-from: #365d4a;
+  --brand-via: #365d4a;
+  --brand-to: #365d4a;
+  --feature-serif: 'Iowan Old Style', 'Palatino Linotype', 'Noto Serif CJK SC', 'Songti SC', 'Yu Mincho', Georgia, serif;
+}
+
+.dark body:has(.feature-app),
+.dark .feature-app {
+  --feature-action: hsl(331 52% 82%);
+  --feature-action-hover: hsl(331 55% 91%);
+  --feature-action-foreground: #18241e;
+  --feature-action-wash: hsl(331 55% 21%);
+  --feature-support: hsl(331 52% 82%);
+  --feature-support-wash: hsl(331 55% 21%);
+  --background: #18241e;
+  --foreground: #eef3e9;
+  --card: #213128;
+  --card-foreground: #eef3e9;
+  --popover: #213128;
+  --popover-foreground: #eef3e9;
+  --primary: #b1cbaa;
+  --primary-hover: #c8dabd;
+  --primary-foreground: #18241e;
+  --secondary: #2c3f32;
+  --secondary-foreground: #eef3e9;
+  --muted: #2c3f32;
+  --muted-foreground: #b6c5b7;
+  --accent: #2c3f32;
+  --accent-foreground: #eef3e9;
+  --border: #465f4d;
+  --input: #465f4d;
+  --ring: #b1cbaa;
+  --brand: #b1cbaa;
+  --brand-foreground: #18241e;
+  --brand-from: #b1cbaa;
+  --brand-via: #b1cbaa;
+  --brand-to: #b1cbaa;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -192,4 +259,77 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     background-size: 160px 160px;
   }
+}
+
+/* Paper & Pine foundation with option 01 Pine × Rose action/support roles.
+   Match the feature-app palette's semantic roles in both themes.
+   Scoped homepage palette; layout lives in components/home/home.css. */
+.home-editorial {
+  --home-paper: #f6f7f2;
+  --home-surface: #fdfef9;
+  --home-ink: #26382f;
+  --home-muted: #58675d;
+  --home-line: #cbd5c9;
+  --home-accent: #365d4a;
+  --home-accent-hover: #294b3b;
+  --home-accent-ink: #ffffff;
+  --home-wash: #e8eee5;
+  --home-action: hsl(331 49% 39%);
+  --home-action-hover: hsl(331 52% 34%);
+  --home-action-ink: #ffffff;
+  --home-action-wash: hsl(331 55% 94%);
+  --home-support: hsl(331 49% 39%);
+  --home-support-wash: hsl(331 55% 94%);
+  --home-note: var(--home-support-wash);
+  /* Stage illustration paints: the page palette plus one warm tone for wood, sun and skin. */
+  --home-art-ink: #26382f;
+  --home-art-ground: #26382f;
+  --home-art-wire: #26382f;
+  --home-art-pine: #365d4a;
+  --home-art-sage: #91a684;
+  --home-art-mist: #dfe8d8;
+  --home-art-rose: hsl(331 49% 45%);
+  --home-art-blush: hsl(331 60% 86%);
+  --home-art-paper: #fdfef9;
+  --home-art-ochre: hsl(38 68% 62%);
+  --home-art-sun: hsl(40 85% 80%);
+  --home-art-skin-a: #f0c4a4;
+  --home-art-skin-b: #b98360;
+  --home-art-skin-c: #f6dcc6;
+  --home-art-hair: #26382f;
+  --home-art-hair-warm: hsl(22 45% 38%);
+  --home-art-face: #26382f;
+  --home-shadow: #26382f20;
+  --home-serif: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', 'Noto Serif CJK SC', 'Songti SC', 'Yu Mincho', Georgia, serif;
+}
+.dark .home-editorial {
+  --home-paper: #18241e;
+  --home-surface: #213128;
+  --home-ink: #eef3e9;
+  --home-muted: #b6c5b7;
+  --home-line: #465f4d;
+  --home-accent: #b1cbaa;
+  --home-accent-hover: #c8dabd;
+  --home-accent-ink: #18241e;
+  --home-wash: #2c3f32;
+  --home-action: hsl(331 52% 82%);
+  --home-action-hover: hsl(331 55% 91%);
+  --home-action-ink: #18241e;
+  --home-action-wash: hsl(331 55% 21%);
+  --home-support: hsl(331 52% 82%);
+  --home-support-wash: hsl(331 55% 21%);
+  --home-art-ink: #0c130f;
+  --home-art-ground: #789574;
+  --home-art-wire: #789574;
+  --home-art-pine: #4d7d66;
+  --home-art-sage: #7f9a78;
+  --home-art-mist: #cfdcc8;
+  --home-art-rose: hsl(331 50% 58%);
+  --home-art-blush: hsl(331 55% 80%);
+  --home-art-paper: #f1f5ea;
+  --home-art-ochre: hsl(38 60% 60%);
+  --home-art-sun: hsl(40 70% 72%);
+  --home-art-hair: #34493c;
+  --home-art-face: #1b2a22;
+  --home-shadow: #00000035;
 }

@@ -32,8 +32,12 @@ final class SyncEngine: ObservableObject {
     @Published private(set) var lastSyncedAt: Date?
     private let store: PracticeStore
     private let account: AccountStore
-    private let file: URL
+    private let ledgerFile: SyncLedgerFile
     private var ledger: SyncLedger
+    /// An earlier ledger write failed, so the saved ledger may miss edits: the next sync re-sends everything local.
+    private var needsFullResync: Bool
+    private var ledgerSaveFailed = false
+    private static let ledgerSaveFailedMessage = "同步记录没能保存到本机。下次打开 App 时会重新上传本机全部内容。"
     private var running: Task<Bool, Never>?
     private var again = false
     private var debounce: Task<Void, Never>?
@@ -49,8 +53,9 @@ final class SyncEngine: ObservableObject {
         self.store = store
         self.account = account
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        file = directory.appendingPathComponent("LingDailyExperience/sync-ledger.json")
-        ledger = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode(SyncLedger.self, from: $0) } ?? SyncLedger()
+        ledgerFile = SyncLedgerFile(url: directory.appendingPathComponent("LingDailyExperience/sync-ledger.json"))
+        ledger = ledgerFile.load()
+        needsFullResync = ledgerFile.isStale
         lastSyncedAt = ledger.lastSyncedAt
         store.onChange = { [weak self] change in self?.record(change) }
         signedIn = account.$session.removeDuplicates().sink { [weak self] session in
@@ -138,14 +143,18 @@ final class SyncEngine: ObservableObject {
     /// One request. Nil when it failed.
     private func performRound() async -> Bool? {
         guard let session = account.session, store.canWrite else { return nil }
-        if ledger.ownerUserID != session.userID {
-            if ledger.ownerUserID != nil {
-                // Data on this device belongs to another account: never upload it into this one.
-                store.clearAll()
+        if ledger.ownerUserID != session.userID || needsFullResync {
+            if let owner = ledger.ownerUserID, owner != session.userID {
+                // Data on this device belongs to another account (its session was rejected or revoked
+                // without a sign-out): never upload it into this one, nor show its reviews or reminders.
+                forgetAccountData()
                 ledger = SyncLedger(ownerUserID: session.userID)
+            } else if needsFullResync {
+                ledger.readopt(owner: session.userID, archive: store.archive)
             } else {
                 ledger.adopt(owner: session.userID, archive: store.archive)
             }
+            needsFullResync = false
             saveLedger()
         }
         status = .syncing
@@ -158,7 +167,7 @@ final class SyncEngine: ObservableObject {
             store.replaceArchive(merged)
             saveLedger()
             lastSyncedAt = ledger.lastSyncedAt
-            status = .idle
+            status = ledgerSaveFailed ? .failed(Self.ledgerSaveFailedMessage) : .idle
             return ledger.pendingCount == 0
         } catch {
             status = account.session == nil ? .idle : .failed(error.localizedDescription)
@@ -172,23 +181,28 @@ final class SyncEngine: ObservableObject {
         return await syncNow()
     }
 
-    /// Forgets this device's account data after sign-out or account deletion.
-    func resetLocalData() {
+    /// Forgets everything this device holds for the account: archive, sync ledger, review history
+    /// and reminders. Runs on sign-out, account deletion, and when a different account signs in.
+    func forgetAccountData() {
         debounce?.cancel()
         store.clearAll()
         ledger = SyncLedger()
+        needsFullResync = false
         lastSyncedAt = nil
         status = .idle
         saveLedger()
+        ReminderCenter.shared.clearAll()
+        ReviewLog.clear()
     }
 
     private func saveLedger() {
-        guard let data = try? JSONEncoder().encode(ledger) else { return }
-        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        #if os(iOS)
-        try? data.write(to: file, options: [.atomic, .completeFileProtectionUnlessOpen])
-        #else
-        try? data.write(to: file, options: .atomic)
-        #endif
+        do {
+            try ledgerFile.save(ledger, current: !needsFullResync)
+            ledgerSaveFailed = false
+            if status == .failed(Self.ledgerSaveFailedMessage) { status = .idle }
+        } catch {
+            ledgerSaveFailed = true
+            status = .failed(Self.ledgerSaveFailedMessage)
+        }
     }
 }

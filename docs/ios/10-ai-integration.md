@@ -1,5 +1,7 @@
 # AI 体验版 0.3.0：目标、交付与运行
 
+> 本文按时间追加记录。开头几节描述 0.3.0（免登录、本机开发服务）；Apple 登录、连线上服务、云同步等后续变化见「账号与认证（2026-10-05）」及之后各节，发布版本见 [发布记录](../../ios/AppStore/SUBMISSION.md)。
+
 更新：2026-09-30。0.3.0 按用户反馈（界面“AI 感太重、不够吸引人、用起来别扭”）重做了全部界面，AI 能力、接口与本机存储格式不变；视觉原则与组件见 [02 设计语言](02-design-system.md)。2026-09-29：用户明确要求接入真实 AI；当前新练习已使用 **Gemini 2.5 Flash** 生成开场、接话、提示与针对原句的重说反馈。此文取代 09 中关于「当前版本只有预设对话」的描述；09 保留为第一轮原型记录。
 
 ## 用户的目标
@@ -126,7 +128,7 @@ iOS 不另建存储，**复用网页已有的 Supabase 表**，同一账号在�
 增量下发（2026-11）：POST 可带可选 `knownSessions: { "<session id>": <updatedAt 毫秒> }`（本机现有每个会话的版本）；服务端先只读版本索引，云端版本相同（±1ms）的会话只列进 `unchangedSessions: [id]`，不再回传正文，其余照旧放在 `sessions`。不带该字段（旧版 App）时响应与之前完全一致。App 合并时把 `unchangedSessions` 视同云端返回了本机副本，远端删除照常生效。服务端 schema 是 strict 的，**带 `knownSessions` 的 App 只能在该服务端部署后发布**。
 App 侧：`knownSessions` 只列最新 500 个；一次请求最多 100 个会话且会话正文约 ≤600KB（整个请求 <1MB），其余留待下一轮（首次同步大存档分多轮上传，修复超过 4MB/100 个会话时永远 400 的问题）；Live 通话期间不发同步（本机照常保存），挂断后立即补同步；回到前台只在真正从后台返回时拉取，并发加入的拉取不再额外跑一轮。
 
-App 端 `SyncLedger`（Core/Persistence/CloudSync.swift，纯逻辑有单测）显式记录 synced/dirty/deleted，不靠时间戳比较；`SyncEngine` 在登录、回到前台和本地修改后 4 秒同步。首次登录把本机已有记录上传进该账号；本机数据属于另一个账号时先清空再下载，绝不跨账号上传。退出登录先尝试上传，仍有未同步内容时提示，确认后清除本机记录（重新登录从云端恢复）。
+App 端 `SyncLedger`（Core/Persistence/CloudSync.swift，纯逻辑有单测）显式记录 synced/dirty/deleted，不靠时间戳比较；`SyncEngine` 在登录、回到前台和本地修改后 4 秒同步。首次登录把本机已有记录上传进该账号；本机数据属于另一个账号时先清空再下载，绝不跨账号上传。退出登录先尝试上传，仍有未同步内容时提示，确认后清除本机记录（重新登录从云端恢复）。同步记录（`SyncLedgerFile`）写入失败时同步状态显示失败，并在 UserDefaults 留标记；下次同步把本机全部内容重新标为待上传（保留已知的待删除项），避免改动因记录丢失而永不上传。
 
 删除账号（审核指南 5.1.1(v) 要求 App 内可找到，不能只靠邮件/网页）：「我的」→ 账号卡片「账号与数据」→ 页面底部灰色「删除账号」→ 展开说明后用 Apple 再确认一次；服务端核对确认的 Apple 邮箱属于当前账号，再删除 `chat_history / unfamiliar_english / scenarios / user_preferences` 中该用户的行并删除 Supabase auth 用户（网页账号同时删除），最后清空本机。配置 `APPLE_TEAM_ID / APPLE_SIGNIN_KEY_ID / APPLE_SIGNIN_PRIVATE_KEY` 后会用确认时的 authorization code 撤销 Apple 授权；未配置时跳过撤销，不阻塞删除。
 

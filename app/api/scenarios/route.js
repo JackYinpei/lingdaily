@@ -4,18 +4,17 @@ import {
   DEFAULT_NATIVE_LANGUAGE,
   getLanguage,
 } from "@/app/lib/languages";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseSchema = process.env.SUPABASE_SCHEMA || "public";
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const LANGUAGE_COLUMNS = [
-  "title_target",
-  "description_target",
-  "target_language_code",
-  "native_language_code",
-];
+import {
+  getSupabaseRestConfig,
+  SUPABASE_CREDENTIALS,
+  supabaseRestRequest,
+} from "@/app/lib/server/supabaseRest";
+import {
+  CATEGORY_SELECT,
+  SCENARIO_DIFFICULTIES,
+  UUID_PATTERN,
+  toScenarioCategories,
+} from "@/app/lib/scenarios";
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -24,17 +23,16 @@ function jsonResponse(body, status = 200) {
   });
 }
 
-function sbHeaders(session) {
-  const bearer = supabaseServiceRoleKey || session?.supabaseAccessToken || supabaseAnonKey;
-  return {
-    "Content-Type": "application/json",
-    apikey: supabaseServiceRoleKey || supabaseAnonKey,
-    Authorization: `Bearer ${bearer}`,
-    "Content-Profile": supabaseSchema,
-    "Accept-Profile": supabaseSchema,
-    Accept: "application/json",
-    Prefer: "return=representation",
-  };
+// Public reads fall back to the anon key; owner-scoped queries also filter by user_id.
+function scenariosDatabase(session) {
+  return getSupabaseRestConfig({
+    credentials: SUPABASE_CREDENTIALS.SERVICE_ROLE_OR_SESSION_OR_ANON,
+    session,
+  });
+}
+
+function scenariosRequest(session, options) {
+  return supabaseRestRequest(scenariosDatabase(session), "scenarios", options);
 }
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:[_-][a-z0-9]+)*$/;
@@ -45,39 +43,12 @@ function optionalText(value, maxLength) {
   return text ? text.slice(0, maxLength) : null;
 }
 
-function parseJson(text, fallback) {
-  try { return text ? JSON.parse(text) : fallback; } catch { return fallback; }
-}
-
-function isMissingLanguageColumns(payload) {
-  const code = String(payload?.code || "");
-  const description = [payload?.message, payload?.details, payload?.hint]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  const missingColumn = description.includes("schema cache")
-    || description.includes("does not exist")
-    || description.includes("could not find");
-  return (code === "PGRST204" || code === "42703" || missingColumn)
-    && LANGUAGE_COLUMNS.some((column) => description.includes(column));
-}
-
-async function insertScenario(row, session) {
-  const res = await fetch(`${supabaseUrl}/rest/v1/scenarios`, {
+function insertScenario(row, session) {
+  return scenariosRequest(session, {
     method: "POST",
-    headers: sbHeaders(session),
-    body: JSON.stringify(row),
-    cache: "no-store",
+    body: row,
+    prefer: "return=representation",
   });
-  const text = await res.text();
-  return { res, data: parseJson(text, null) };
-}
-
-function legacyTargetValue(body, prefix, languageCode) {
-  if (languageCode === "en") return body[`${prefix}_en`];
-  if (languageCode === "ja") return body[`${prefix}_ja`];
-  if (languageCode === "zh-CN") return body[`${prefix}_zh`];
-  return null;
 }
 
 // GET /api/scenarios?categories=true        → distinct categories derived from system scenarios
@@ -87,7 +58,7 @@ function legacyTargetValue(body, prefix, languageCode) {
 // GET /api/scenarios?public=true            → all user-generated public scenarios
 export async function GET(req) {
   try {
-    if (!supabaseUrl || (!supabaseServiceRoleKey && !supabaseAnonKey)) {
+    if (!scenariosDatabase()) {
       return jsonResponse({ error: "Missing Supabase env configuration" }, 500);
     }
 
@@ -98,36 +69,17 @@ export async function GET(req) {
       const query = new URLSearchParams({
         user_id: "is.null",
         is_active: "eq.true",
-        select: "category_slug,category_name_zh,category_name_en,category_name_ja,category_icon,category_sort",
+        select: CATEGORY_SELECT,
         order: "category_sort.asc,category_slug.asc",
       });
-      const res = await fetch(`${supabaseUrl}/rest/v1/scenarios?${query}`, {
-        headers: sbHeaders(),
-        cache: "no-store",
-      });
-      const rows = await res.json().catch(() => []);
+      const res = await scenariosRequest(undefined, { params: query });
+      const rows = res.data ?? [];
       if (!res.ok) {
         console.error("Failed to fetch scenario categories:", res.status, rows);
         return jsonResponse({ error: "Failed to fetch categories" }, 502);
       }
 
-      // Deduplicate by category_slug and normalize field names for the frontend
-      const seen = new Set();
-      const categories = rows
-        .filter((r) => {
-          if (seen.has(r.category_slug)) return false;
-          seen.add(r.category_slug);
-          return true;
-        })
-        .map((r) => ({
-          id: r.category_slug,          // use slug as stable id
-          slug: r.category_slug,
-          name_zh: r.category_name_zh,
-          name_en: r.category_name_en,
-          name_ja: r.category_name_ja,
-          icon: r.category_icon,
-          sort_order: r.category_sort,
-        }));
+      const categories = toScenarioCategories(rows);
       return jsonResponse({ ok: true, data: categories });
     }
 
@@ -144,11 +96,8 @@ export async function GET(req) {
         order: "created_at.desc",
         select: "*",
       });
-      const res = await fetch(`${supabaseUrl}/rest/v1/scenarios?${query}`, {
-        headers: sbHeaders(session),
-        cache: "no-store",
-      });
-      const data = await res.json().catch(() => []);
+      const res = await scenariosRequest(session, { params: query });
+      const data = res.data ?? [];
       if (!res.ok) {
         console.error("Failed to fetch user scenarios:", res.status, data);
         return jsonResponse({ error: "Failed to fetch user scenarios" }, 502);
@@ -166,11 +115,8 @@ export async function GET(req) {
         select: "*",
         limit: "50",
       });
-      const res = await fetch(`${supabaseUrl}/rest/v1/scenarios?${query}`, {
-        headers: sbHeaders(),
-        cache: "no-store",
-      });
-      const data = await res.json().catch(() => []);
+      const res = await scenariosRequest(undefined, { params: query });
+      const data = res.data ?? [];
       if (!res.ok) {
         console.error("Failed to fetch public scenarios:", res.status, data);
         return jsonResponse({ error: "Failed to fetch public scenarios" }, 502);
@@ -191,11 +137,8 @@ export async function GET(req) {
         order: "sort_order.asc,title_en.asc",
         select: "*",
       });
-      const res = await fetch(`${supabaseUrl}/rest/v1/scenarios?${query}`, {
-        headers: sbHeaders(),
-        cache: "no-store",
-      });
-      const data = await res.json().catch(() => []);
+      const res = await scenariosRequest(undefined, { params: query });
+      const data = res.data ?? [];
       if (!res.ok) {
         console.error("Failed to fetch scenarios:", res.status, data);
         return jsonResponse({ error: "Failed to fetch scenarios" }, 502);
@@ -221,11 +164,8 @@ export async function GET(req) {
         select: "*",
         limit: "1",
       });
-      const res = await fetch(`${supabaseUrl}/rest/v1/scenarios?${query}`, {
-        headers: sbHeaders(session),
-        cache: "no-store",
-      });
-      const data = await res.json().catch(() => []);
+      const res = await scenariosRequest(session, { params: query });
+      const data = res.data ?? [];
       if (!res.ok) {
         console.error("Failed to fetch scenario:", res.status, data);
         return jsonResponse({ error: "Failed to fetch scenario" }, 502);
@@ -251,7 +191,7 @@ export async function POST(req) {
     if (!UUID_PATTERN.test(session.user.id)) {
       return jsonResponse({ error: "Account storage is not provisioned" }, 503);
     }
-    if (!supabaseUrl || (!supabaseServiceRoleKey && !supabaseAnonKey)) {
+    if (!scenariosDatabase()) {
       return jsonResponse({ error: "Scenario storage is not configured" }, 500);
     }
 
@@ -271,14 +211,8 @@ export async function POST(req) {
     const titleZh = optionalText(body.title_zh, 200);
     const titleEn = optionalText(body.title_en, 200);
     const systemPrompt = optionalText(body.system_prompt, 12000);
-    const titleTarget = optionalText(
-      body.title_target ?? legacyTargetValue(body, "title", learningLanguage.code),
-      200
-    );
-    const descriptionTarget = optionalText(
-      body.description_target ?? legacyTargetValue(body, "description", learningLanguage.code),
-      12000
-    );
+    const titleTarget = optionalText(body.title_target, 200);
+    const descriptionTarget = optionalText(body.description_target, 12000);
 
     if (!titleZh || !titleEn || !titleTarget || !systemPrompt) {
       return jsonResponse(
@@ -317,7 +251,7 @@ export async function POST(req) {
       description_target: descriptionTarget,
       target_language_code: learningLanguage.code,
       native_language_code: nativeLanguage.code,
-      difficulty: ["beginner", "intermediate", "advanced"].includes(body.difficulty)
+      difficulty: SCENARIO_DIFFICULTIES.includes(body.difficulty)
         ? body.difficulty
         : "intermediate",
       system_prompt: systemPrompt,
@@ -325,26 +259,13 @@ export async function POST(req) {
       is_active: true,
     };
 
-    let result = await insertScenario(row, session);
-    let usedLegacySchema = false;
-    if (!result.res.ok && isMissingLanguageColumns(result.data)) {
-      if (
-        learningLanguage.code !== DEFAULT_LEARNING_LANGUAGE.code
-        || nativeLanguage.code !== DEFAULT_NATIVE_LANGUAGE.code
-      ) {
-        return jsonResponse({ error: "Scenario storage is being upgraded; please retry shortly" }, 503);
-      }
-      const legacyRow = { ...row };
-      for (const column of LANGUAGE_COLUMNS) delete legacyRow[column];
-      result = await insertScenario(legacyRow, session);
-      usedLegacySchema = true;
-    }
-    if (!result.res.ok) {
-      console.error("Failed to save scenario:", result.res.status, result.data);
+    const result = await insertScenario(row, session);
+    if (!result.ok) {
+      console.error("Failed to save scenario:", result.status, result.data);
       return jsonResponse({ error: "Failed to save scenario" }, 502);
     }
     const data = Array.isArray(result.data) ? result.data[0] : result.data;
-    return jsonResponse({ ok: true, data, ...(usedLegacySchema ? { legacySchema: true } : {}) });
+    return jsonResponse({ ok: true, data });
   } catch (error) {
     console.error("Scenario POST error:", error);
     return jsonResponse({ error: "Unable to save scenario" }, 500);
@@ -359,7 +280,7 @@ export async function DELETE(req) {
     if (!UUID_PATTERN.test(session.user.id)) {
       return jsonResponse({ error: "Account storage is not provisioned" }, 503);
     }
-    if (!supabaseUrl || (!supabaseServiceRoleKey && !supabaseAnonKey)) {
+    if (!scenariosDatabase()) {
       return jsonResponse({ error: "Scenario storage is not configured" }, 500);
     }
 
@@ -372,14 +293,13 @@ export async function DELETE(req) {
       id: `eq.${id}`,
       user_id: `eq.${session.user.id}`,
     });
-    const res = await fetch(`${supabaseUrl}/rest/v1/scenarios?${query}`, {
+    const res = await scenariosRequest(session, {
       method: "DELETE",
-      headers: sbHeaders(session),
-      cache: "no-store",
+      params: query,
+      prefer: "return=representation",
     });
     if (!res.ok) {
-      const data = await res.json().catch(() => null);
-      console.error("Failed to delete scenario:", res.status, data);
+      console.error("Failed to delete scenario:", res.status, res.data);
       return jsonResponse({ error: "Delete failed" }, 502);
     }
     return jsonResponse({ ok: true });

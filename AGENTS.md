@@ -41,8 +41,8 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | 位置 | 职责 |
 | --- | --- |
 | `app/page.js` | SEO 首页与产品入口 |
-| `app/components/HomePageClient.jsx` | 首页 UI：三语文案、Hero、功能卡；子组件在 `app/components/home/` |
-| `app/components/home/` | 首页专用组件：`AuroraBackground`（极光+颗粒背景）、`HeroPreview`（静态对话演示）、`StatsPanel`（数据卡预览） |
+| `app/components/HomePageClient.jsx` | 首页服务端 UI：标语、功能舞台、使用步骤和语言入口；子组件在 `app/components/home/` |
+| `app/components/home/` | 首页专用组件：`copy.js` 三语文案、`FeatureStage` 功能舞台（标签页 + 示例纸页）、`SceneArt` 两侧的手绘插画、`HomeStart` 语言与开始入口、`HomeNav` 响应式导航；`home.css` 布局与动效 |
 | `app/globals.css` | 主题单一来源：shadcn CSS 变量 + 品牌配色 + `.bg-aurora`/`.grain-overlay` 工具类 |
 | `app/talk/page.jsx` | 主对话页：新闻/场景、Live 连接、文本流、历史同步 |
 | `app/lib/GeminiLiveService.js` | WebSocket、麦克风 PCM、模型音频播放、打断、Live tool call |
@@ -50,6 +50,8 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | `app/progress/progress-client.jsx` | 学习看板：今日进度环、词汇掌握、本周量表（复用 progress + items API） |
 | `app/api/` | 认证、新闻、翻译、历史、学习项、场景和播客 API |
 | `app/lib/history/` | PostgREST 请求、历史合并、复合游标和 DTO |
+| `app/lib/supabaseEnv.js`、`app/lib/server/supabaseRest.js` | Supabase 配置唯一来源：CommonJS env 读取（`NEXT_PUBLIC_*` 优先，sitemap 也 require 它）；PostgREST 请求按显式 credentials 模式（service role / +session / +anon）选 key，及 Auth admin/匿名 headers。新代码不要再直接读 Supabase env |
+| `app/lib/news/` | 纯函数：Kagi RSS → 新闻卡片 article（`parseKagiRss`、`cleanKagiDescription`），由 `NewsFeed` 调用 |
 | `app/lib/podcast/` | 新闻抓取、脚本验证、TTS、COS、DB repository、shownotes/RSS |
 | `app/lib/languages.js` | 唯一语言目录、归一化与语言对规则 |
 | `app/auth.js` | NextAuth providers、Supabase 密码登录、OAuth 用户映射 |
@@ -78,9 +80,10 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
   全项目自动生效——不要在组件里写死颜色。
 - `ThemeContext` + `layout.js` 内联无闪烁脚本负责 system/dark/light 三态切换；
   `ThemeToggle` 循环这三态。
-- 首页背景的彩虹极光和胶片颗粒是 `.bg-aurora` / `.grain-overlay` 两个工具类，引用品牌变量，
-  故随主题切换。Hero 里的对话演示（`HeroPreview`）和数据卡（`StatsPanel`）是**静态展示**，
-  不接后端；真实能力在 `/talk` 和 `/progress`。
+- 首页使用 `.home-editorial` 范围内的纸墨配色（`--home-*`），仍统一定义在 `globals.css` 并支持深浅主题，不影响练习页品牌色。
+- `FeatureStage` 把口语练习、每日播客、生词本做成三个可切换的场景：中间纸页是明确标注的静态示例（不录音、不调用模型或后端），真实能力在 `/talk`、`/podcasts`、`/vocabulary`。未操作时每 7 秒自动换一幕，鼠标悬停或键盘聚焦时暂停，访客选过标签后不再自动切换；`prefers-reduced-motion` 下不自动切换也不播放动效。
+- `SceneArt` 的人物是分节的 SVG「皮影」：四肢是先描墨线、再上色的圆头线段，关节是带 CSS `transform: rotate()` 过渡的 `<g>`。换场景只改姿势角度（`*_POSES`）和道具的 `data-on`，转场动作由 CSS 完成，不要改成整幅替换或淡入淡出。插画颜色只用 `globals.css` 的 `--home-art-*`。
+- 首页的语言选择在 `HomeStart`，桌面与手机共用；仅明确点击开始后保存偏好，未登录时保留 `/talk` 登录回跳。
 
 ### 登录与账号
 
@@ -91,6 +94,11 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 - 数据表的 `user_id` 通常是 Supabase UUID。但生产旧 `user_preferences.user_id`
   是 `text`，迁移会保留这个类型以兼容旧 OAuth ID。
 - 管理员不是数据库 role；`ADMIN_EMAILS` 是逗号分隔的 NextAuth email allowlist。
+- 登录后的默认落点是 `/talk`：`sign-in` 的 `getSafeCallbackUrl()` 只接受同源 `callbackUrl`，
+  缺省或不安全时回退 `/talk`；邮箱注册成功后跳 `/sign-in?callbackUrl=%2Ftalk`，注册页的
+  OAuth 按钮也直接回 `/talk`。
+- `/talk` 首次进入显示 `OnboardingGuide`；「跳过（使用新闻模式）」调用 `onSkipToNews`
+  切到新闻模式并记住已完成引导。
 
 ### 语言偏好
 
@@ -141,17 +149,30 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 - `playbackEpoch` 使打断/断开前排队的异步音频工作失效（含 `pendingAudioParts` 与 flush 监听）。
 - `connectionEpoch` 使旧 WebSocket 的迟到 `open/message/close/error` 无法影响新连接。
 - 输入静音只代表麦克风 mute，不得同时将模型输出静音。
+- 20 秒 setup 超时只覆盖 token/WebSocket/`setupComplete`；`setupComplete` 后清除超时，
+  麦克风授权是单独可取消的阶段（`onConnectionPhase('microphone')`），授权成功、麦克风启动后
+  才算连接完成。不要把 `getUserMedia()` 重新放进 setup 超时。
+- `micStreamHold`：从 setup 到模型首个 `turnComplete`，麦克风帧照常采集但不上传，避免环境
+  噪音打断开场问候；10 秒兜底自动解除。
+- 开场上下文由 `sendContextMessage()` 发送：先用 `clientContent` 发完整新闻/场景背景并
+  `turnComplete: false`，再在同一通道发一句简短提示并 `turnComplete: true`。若把长背景作为
+  一个已完成 turn 发出，模型只回文字转录（没有 `inlineData` 音频）；改用 `realtimeInput.text`
+  发提示则会丢失背景。Live 的内部指令由 `buildLiveInstructions()` 固定生成英文版本（与 UI
+  语言无关），长篇中文内部指令同样会导致无音频开场。
+- 文字消息 `sendText()` 返回是否被 socket 接受；输入框草稿只在发送成功后清空。
 - 账号或语言对变更时，必须取消正在连接的 socket，并清除旧账号的
   上下文与待保存数据。
 
 Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理”避免阻塞实时会话：
 
 - `record_unfamiliar_learning_items`：抽取用户不会的学习项，异步写 `/api/learning/items`。
-  旧 tool 名 `extract_unfamiliar_english` 仍兼容。
 - `record_language_correction`：用户表达有可改进处时给一条地道改写
   （`original/corrected/explanation/category`）。通过 `config.onCorrection` 回调推给
-  UI，在对话流里渲染为 `CorrectionCard`；**不落库**——correction 项在持久化前按
-  `type === 'correction'` 过滤，不写入 `chat_history`。
+  UI，在对话流里渲染为 `CorrectionCard`；以 `type === 'correction'` 写入
+  `chat_history.history`，恢复时仍显示为纠错卡。客户端与服务端校验字段：original/corrected
+  各最多 2000 字符，explanation 最多 4000 字符，category 为 grammar/vocabulary/phrasing/other。
+  纠错不是对话轮次，不得进入 Live prompt/上下文重播、进度计数、历史摘要或真实用户消息判定。
+  iOS 同步只读取 source_type=practice 的 news.session，不读取网页 history 中的纠错项。
 
 ### 对话历史、生词和进度
 
@@ -159,7 +180,11 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 - 流式转录通过 `itemId` 合并；同一消息优先保留已 final 或文本更完整的版本。
 - 客户端串行化保存；DB 用 `revision` 做乐观并发。冲突时合并服务端和客户端历史，
   最多重试一次。
-- 页面隐藏/卸载时使用 compact keepalive payload；必须保留最近的真实用户轮次。
+- 页面隐藏/卸载时使用 compact keepalive payload；必须保留最近的真实用户轮次及其后的
+  AI 回复（截断而非丢弃），并合并卸载前最新的 `historyRef`。导航 keepalive 会取代排队中的旧保存。
+- `POST /api/chat-history` 必须带 `expectedUserId`，与当前 session 不一致时返回
+  `403 ACCOUNT_MISMATCH`，防止旧账号排队的保存写进新账号；`newsContentIsCompact` 保证
+  完整文章能替换已存的压缩快照，反之不行；409 重试用 `mergeOnServer` 在服务端合并。
 - 历史列表游标是 `updated_at|id`，生词列表游标是 `timestamp|id`。
   不能退回只用时间戳，否则同一毫秒内的记录会重复或丢失。
 - `unfamiliar_english` 是历史表名，现在存储任意学习语言的 word/phrase/grammar/other，
@@ -180,7 +205,7 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
    整次失败，避免模型凭空编新闻），调 Gemini 生成严格 JSON 脚本。
 4. 对 intro/world/tech/business/outro 五个 chunk 分别调 Gemini multi-speaker TTS
    （最多 3 段并行、长段先开始，`PODCAST_TTS_CONCURRENCY` 可调）：拼接响应内全部音频
-   part、裁剪首尾静音，并按文稿估算时长校验（约 0.5x–1.6x 窗口）；单次调用超过
+   part、裁剪首尾静音，并按文稿估算时长逐轮校验（下限约 0.4x 朗读时长，上限 1.6x + 10 秒）；单次调用超过
    150 秒（`PODCAST_TTS_CALL_TIMEOUT_MS`）、过载或校验失败会在同一模型上退避重试。
    **同一期只用一个 TTS 模型**：某段在主模型上用尽重试时，整期改用稳定模型重新合成，
    绝不逐段混用（两代模型同名音色听感不同）。拼接前每段按说话音量（有声 50 ms 帧 RMS
@@ -234,7 +259,6 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 | `GET/POST /api/user/preferences` | 登录 | 读取/upsert 语言偏好 |
 | `GET/POST/DELETE /api/chat-history` | 登录 | 历史详情/列表/保存/删除、revision 冲突 |
 | `GET/POST /api/learning/items` | 登录 | 学习项事件写入与复合游标分页 |
-| `GET/POST /api/learning/unfamiliar-english` | 登录，旧别名 | 转发到 `learning/items` |
 | `GET /api/learning/progress` | 登录 | 由历史实时聚合学习进度 |
 | `GET/POST/DELETE /api/scenarios` | 混合 | 公开读、用户场景创建/删除 |
 | `POST /api/scenarios/generate` | 登录 | Gemini 生成场景草稿 |
@@ -295,7 +319,7 @@ RLS 只允许 authenticated 读、插入和更新自己的行；不提供用户�
 | `news_key` | 用户内的主题 identity；场景必须是 `scenario:<uuid>` |
 | `news_title` | 列表标题 |
 | `news` | JSONB 主题快照，用于恢复对话 |
-| `history` | JSONB array，消息和 system context |
+| `history` | JSONB array，消息、system context 和经过校验的 correction 卡 |
 | `summary` | 可选摘要 |
 | `source_type` | `news`、`scenario` 或 `practice`（iOS 原生练习，只由 `/api/ios/sync` 写入，网页只读、不能续聊） |
 | `revision` | 从 1 开始的乐观并发版本 |
@@ -414,10 +438,6 @@ completed 只有 force 可重领，进行中租约超过 30 分钟可重领。
 这些分支是为了先部署代码、后迁移数据库，删除前必须确认生产已完成迁移：
 
 - `/api/gemini-token` → `/api/realtime-token` 的弃用别名。
-- `/api/learning/unfamiliar-english` → `/api/learning/items` 的旧别名。
-- 学习项 API 在语言列缺失时，只允许默认 `en/zh-CN` 旧写入；非默认语言返回 503，
-  避免丢失语言 identity。
-- 场景 API 在新语言列缺失时，也只容许默认 `en/zh-CN` 回退。
 - 对话 API 在 `revision/source_type` 列或 `save_chat_history` RPC 缺失时有兼容路径。
 - 播客生成接口的租约/归档和 RSS 可以使用本地 manifest/feed 兼容路径；公开
   `/api/podcasts`、列表页和详情页仍只读数据库，DB 不可用时返回 503，不会从本地
@@ -445,7 +465,10 @@ npm run check
 修改不同模块时的最低验证：
 
 - Live/音频：`tests/lib/GeminiLiveService.test.js` 和 `tests/talk/liveConnection.test.js`。
-- 对话 identity/合并/keepalive：`tests/talk/conversation.test.js`。
+- 对话 identity/合并/keepalive：`tests/talk/conversation.test.js`、`tests/talk/persistence.test.js`、
+  `tests/api/conversationPersistence.test.js`。
+- Live 内部指令/开场：`tests/talk/liveInstructions.test.js`；文字发送：`tests/talk/textSubmission.test.js`。
+- 首页：`tests/home.test.js`；注册落点与新手引导：`tests/lib/signupOnboarding.test.js`。
 - 播客 prompt/shownotes/RSS：`tests/podcast/*.test.js`。
 - 任何 schema/RLS/RPC/SQL 变更：`npm run test:migrations`，并更新生产 fixture、
   preflight 和 postflight。

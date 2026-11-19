@@ -1,4 +1,5 @@
 import { auth } from "@/app/auth"
+import { normalizeCorrectionItem } from "@/app/lib/history/corrections"
 import {
   CHAT_LIST_SOURCE_TYPES,
   CHAT_SOURCE_TYPES,
@@ -56,6 +57,9 @@ function validatePostPayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return { error: "Request body must be a JSON object" }
   }
+  if (typeof payload.expectedUserId !== "string" || !payload.expectedUserId.trim()) {
+    return { error: "'expectedUserId' is required" }
+  }
 
   if (typeof payload.newsKey !== "string" || !payload.newsKey.trim()) {
     return { error: "'newsKey' is required" }
@@ -73,6 +77,15 @@ function validatePostPayload(payload) {
   if (payload.history.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
     return { error: "Every history item must be an object" }
   }
+  const history = []
+  for (const item of payload.history) {
+    if (item.type !== "correction") history.push(item)
+    else {
+      const correction = normalizeCorrectionItem(item)
+      if (!correction) return { error: "Invalid correction history item" }
+      history.push(correction)
+    }
+  }
 
   const title = validateOptionalText(payload.newsTitle, "newsTitle", MAX_TITLE_LENGTH)
   if (title.error) return title
@@ -88,6 +101,9 @@ function validatePostPayload(payload) {
   if (payload.mergeOnServer !== undefined && typeof payload.mergeOnServer !== "boolean") {
     return { error: "'mergeOnServer' must be a boolean" }
   }
+  if (payload.newsContentIsCompact !== undefined && typeof payload.newsContentIsCompact !== "boolean") {
+    return { error: "'newsContentIsCompact' must be a boolean" }
+  }
 
   let revision = null
   if (payload.revision !== undefined && payload.revision !== null) {
@@ -99,14 +115,16 @@ function validatePostPayload(payload) {
 
   return {
     value: {
+      expectedUserId: payload.expectedUserId,
       newsKey,
       newsTitle: title.value,
       newsContent: hasNewsContent ? newsContent : undefined,
-      history: payload.history,
+      history,
       summary: summary.value,
       sourceType,
       revision,
       mergeOnServer: payload.mergeOnServer === true,
+      newsContentIsCompact: payload.newsContentIsCompact,
     },
   }
 }
@@ -179,7 +197,9 @@ function mergePayloadWithRow(payload, currentRow) {
   return {
     ...payload,
     newsTitle: payload.newsTitle ?? currentRow?.news_title ?? null,
-    newsContent: currentRow?.news ?? payload.newsContent ?? null,
+    newsContent: payload.newsContentIsCompact === false
+      ? payload.newsContent ?? currentRow?.news ?? null
+      : currentRow?.news ?? payload.newsContent ?? null,
     history: mergeChatHistories(currentRow?.history || [], payload.history),
     revision: currentRevision,
   }
@@ -308,6 +328,9 @@ export async function POST(req) {
     const validation = validatePostPayload(parsedBody.value)
     if (validation.error) return jsonResponse({ error: validation.error }, 400)
     let payload = validation.value
+    if (payload.expectedUserId !== session.user.id) {
+      return jsonResponse({ ok: false, skipped: true, code: "ACCOUNT_MISMATCH" }, 403)
+    }
 
     if (getRealUserMessages(payload.history).length === 0) {
       return jsonResponse({ ok: true, skipped: true })

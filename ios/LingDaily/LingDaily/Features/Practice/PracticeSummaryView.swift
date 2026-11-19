@@ -3,6 +3,7 @@ import SwiftUI
 struct PracticeSummaryView: View {
     @EnvironmentObject private var store: PracticeStore
     @EnvironmentObject private var account: AccountStore
+    @Environment(\.practiceService) private var api
     @AppStorage(AIDataConsent.key) private var consentVersion = ""
     @State private var reviewing = false
     @State private var reviewError: String?
@@ -114,7 +115,7 @@ struct PracticeSummaryView: View {
             while let request = reviewedSession.nextSentenceReview {
                 try Task.checkCancellation()
                 guard account.canPractice, account.session?.userID == owner, AIDataConsent.isGranted() else { return }
-                let records = try await PracticeAPIClient().reviewSentences(request)
+                let records = try await api.reviewSentences(request)
                 try Task.checkCancellation()
                 guard account.canPractice, account.session?.userID == owner, AIDataConsent.isGranted(),
                       var latest = store.archive.sessions.first(where: { $0.id == session.id }) else { return }

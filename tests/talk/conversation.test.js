@@ -6,6 +6,8 @@ import {
   ensureContextMessage,
   getNewsKey,
   mergeConversationHistory,
+  reconcilePersistSnapshot,
+  historyContainsSnapshot,
 } from '@/app/talk/_lib/conversation'
 
 function message({
@@ -116,6 +118,40 @@ describe('conversation identity and reconciliation', () => {
 })
 
 describe('keepalive payload compaction', () => {
+  it('handles empty histories', () => {
+    expect(compactHistoryForKeepalive(null)).toEqual([])
+    expect(compactHistoryForKeepalive([])).toEqual([])
+  })
+
+  it.each(['x', '語😊'])('truncates oversized latest exchanges without evicting any assistant replies (%s)', text => {
+    const items = [
+      message({ id: 'old', role: 'assistant', text: 'opener' }),
+      message({ id: 'u', role: 'user', text: text.repeat(30000) }),
+      message({ id: 'a1', role: 'assistant', text: text.repeat(15000) }),
+      message({ id: 'a2', role: 'assistant', text: text.repeat(15000), isFinal: false }),
+    ]
+    const result = compactHistoryForKeepalive(items)
+    expect(result.map(item => item.itemId)).toEqual(['u', 'a1', 'a2'])
+    expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThanOrEqual(40000)
+    expect(result.every(item => item.content[0].text.length > 0)).toBe(true)
+    expect(result[2].metadata.isFinal).toBe(false)
+  })
+
+  it('preserves a normal complete exchange unchanged', () => {
+    const items = [message({ id: 'u', role: 'user', text: 'Hi' }), message({ id: 'a', role: 'assistant', text: 'Hello' })]
+    expect(compactHistoryForKeepalive(items)).toEqual(items)
+  })
+
+  it('keeps valid correction cards alongside the latest oversized exchange', () => {
+    const card = { itemId: 'c', type: 'correction', role: 'assistant', metadata: { isFinal: true }, correction: { original: 'I goes', corrected: 'I go', explanation: 'Base form', category: 'grammar' } }
+    const compacted = compactHistoryForKeepalive([
+      message({ id: 'u', role: 'user', text: 'x'.repeat(30000) }),
+      message({ id: 'a', role: 'assistant', text: 'y'.repeat(15000) }), card,
+    ])
+    expect(compacted.map(item => item.itemId)).toEqual(['u', 'a', 'c'])
+    expect(compacted.at(-1).correction).toEqual(card.correction)
+    expect(new TextEncoder().encode(JSON.stringify(compacted)).byteLength).toBeLessThanOrEqual(40000)
+  })
   it('omits system context while retaining the latest real user turn', () => {
     const context = message({ id: 'context', role: 'system', text: 'x'.repeat(500) })
     const older = message({ id: 'assistant-old', role: 'assistant', text: 'y'.repeat(500) })
@@ -153,5 +189,51 @@ describe('keepalive payload compaction', () => {
     expect(compacted.title).toHaveLength(500)
     expect(compacted.description).toHaveLength(500)
     expect(compacted._systemPrompt).toHaveLength(2000)
+  })
+})
+
+describe('unload snapshot reconciliation', () => {
+  const user = message({ id: 'u', role: 'user', text: 'Hello' })
+  const partial = message({ id: 'a', role: 'assistant', text: 'Partial', isFinal: false })
+  const final = message({ id: 'a', role: 'assistant', text: 'Complete reply', isFinal: true })
+  const pending = { news: { title: 'Topic' }, userId: 'account', identityGeneration: 1, topicGeneration: 2, history: [user, partial] }
+
+  it('merges fresher live items by ID, preferring final then longer', () => {
+    expect(reconcilePersistSnapshot(pending, { ...pending, history: [user, final] }).history).toEqual([user, final])
+    expect(reconcilePersistSnapshot({ ...pending, history: [user] }, { ...pending, history: [user, partial] }).history).toEqual([user, partial])
+    const longer = { ...partial, content: [{ type: 'output_text', text: 'Partial reply' }] }
+    expect(reconcilePersistSnapshot(pending, { ...pending, history: [user, longer] }).history).toEqual([user, longer])
+    expect(reconcilePersistSnapshot({ ...pending, history: [user, final] }, pending).history).toEqual([user, final])
+  })
+
+  it.each([
+    { news: { title: 'Other topic' } }, { userId: 'other-account' }, { userId: null },
+    { identityGeneration: 2 }, { topicGeneration: 3 },
+  ])('never merges across topic/account generations: %o', difference => {
+    expect(reconcilePersistSnapshot(pending, { ...pending, ...difference, history: [final] })).toBe(pending)
+  })
+
+  it('falls back to the only available snapshot', () => {
+    expect(reconcilePersistSnapshot(null, pending)).toBe(pending)
+    expect(reconcilePersistSnapshot(pending, null)).toBe(pending)
+    expect(reconcilePersistSnapshot(null, null)).toBeNull()
+  })
+})
+
+describe('already-persisted snapshots', () => {
+  const partial = message({ id: 'a', role: 'assistant', text: 'Hello', isFinal: false })
+  const final = message({ id: 'a', role: 'assistant', text: 'Hello there', isFinal: true })
+  it('accepts equal or more complete saved items while ignoring system context', () => {
+    expect(historyContainsSnapshot([final], [final])).toBe(true)
+    expect(historyContainsSnapshot([final], [partial])).toBe(true)
+    expect(historyContainsSnapshot([final], [message({ id: 'system', role: 'system', text: 'Context' }), partial])).toBe(true)
+  })
+  it('does not swallow missing IDs, incomplete finalization or changed corrections', () => {
+    expect(historyContainsSnapshot([], [final])).toBe(false)
+    expect(historyContainsSnapshot([partial], [final])).toBe(false)
+    expect(historyContainsSnapshot([{ ...final, itemId: 'other' }], [final])).toBe(false)
+    const card = { itemId: 'c', type: 'correction', role: 'assistant', correction: { original: 'old', corrected: 'new' } }
+    expect(historyContainsSnapshot([card], [card])).toBe(true)
+    expect(historyContainsSnapshot([card], [{ ...card, correction: { ...card.correction, corrected: 'different' } }])).toBe(false)
   })
 })

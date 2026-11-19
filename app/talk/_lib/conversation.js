@@ -1,4 +1,5 @@
 // Conversation identity, reconciliation, and persistence payload helpers.
+import { sanitizeHistoryCorrections } from '@/app/lib/history/corrections';
 
 const sanitizeKeyString = (value) => String(value || 'default').replace(/\s+/g, '');
 
@@ -10,7 +11,7 @@ export const getNewsKey = (news) => {
 };
 
 export const ensureContextMessage = (historyItems, contextMessage) => {
-    const list = Array.isArray(historyItems) ? historyItems : [];
+    const list = sanitizeHistoryCorrections(historyItems);
     if (!contextMessage) return list;
     const currentTopicItems = list.filter((item) => (
         item?.itemId === contextMessage.itemId
@@ -26,6 +27,7 @@ export const ensureContextMessage = (historyItems, contextMessage) => {
 };
 
 export const extractMessageText = (message) => {
+    if (message?.type === 'correction') return '';
     if (!message?.content) return '';
     for (const content of message.content) {
         if (
@@ -108,53 +110,75 @@ export const mergeConversationHistory = (serverHistory, localHistory) => {
     return dedupeManualMessages(merged);
 };
 
+export const reconcilePersistSnapshot = (pending, live) => {
+    if (!pending) return live;
+    if (!live || !pending.userId || pending.userId !== live.userId
+        || pending.identityGeneration !== live.identityGeneration
+        || pending.topicGeneration !== live.topicGeneration
+        || getNewsKey(pending.news) !== getNewsKey(live.news)) return pending;
+    return { ...pending, history: mergeConversationHistory(pending.history, live.history) };
+};
+
+export const historyContainsSnapshot = (savedHistory, snapshot) => {
+    const savedByKey = new Map((savedHistory || []).map(item => [conversationItemKey(item), item]));
+    return (snapshot || []).filter(item => item?.role !== 'system').every(item => {
+        const saved = savedByKey.get(conversationItemKey(item));
+        if (!saved || saved.role !== item.role || saved.type !== item.type) return false;
+        if (item.type === 'correction') {
+            return Object.entries(item.correction || {}).every(([field, value]) => saved.correction?.[field] === value);
+        }
+        if (item.metadata?.isFinal && !saved.metadata?.isFinal) return false;
+        if (saved.metadata?.isFinal && !item.metadata?.isFinal) return true;
+        return extractMessageText(saved).includes(extractMessageText(item));
+    });
+};
+
 export const compactHistoryForKeepalive = (historyItems, maxBytes = 40000) => {
-    const items = Array.isArray(historyItems) ? historyItems : [];
-    const selected = [];
-    let bytes = 0;
+    const items = sanitizeHistoryCorrections(historyItems).filter(item => item?.role !== 'system');
+    if (!items.length) return [];
     const byteLength = (value) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
-    const shrinkItem = (item) => ({
-        ...item,
+    const shrinkItem = (item, limit) => ({
+        itemId: item.itemId,
+        type: item.type,
+        role: item.role,
+        metadata: {
+            isFinal: item.metadata?.isFinal,
+            createdAt: item.metadata?.createdAt,
+            manualInput: item.metadata?.manualInput,
+        },
         content: Array.isArray(item?.content)
             ? item.content.map((part) => (
-                typeof part?.text === 'string' && part.text.length > 8000
-                    ? { ...part, text: part.text.slice(-8000) }
+                typeof part?.text === 'string'
+                    ? { type: part.type, text: limit ? part.text.slice(-limit) : '' }
                     : part
             ))
             : item?.content,
+        ...(item.correction ? { correction: item.correction } : {}),
     });
-
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-        let item = items[index];
-        if (item?.role === 'system') continue;
-        let itemBytes = byteLength(item);
-        if (selected.length === 0 && itemBytes > maxBytes) {
-            item = shrinkItem(item);
-            itemBytes = byteLength(item);
+    const latestUserIndex = items.findLastIndex(item => item?.role === 'user' && extractMessageText(item));
+    const start = latestUserIndex < 0 ? items.length - 1 : latestUserIndex;
+    let selected = items.slice(start);
+    if (byteLength(selected) > maxBytes) {
+        // Keep dialogue ahead of older cards when correction fields alone exhaust the budget.
+        while (byteLength(selected.map(item => shrinkItem(item, 0))) > maxBytes) {
+            const correctionIndex = selected.findIndex(item => item?.type === 'correction');
+            if (correctionIndex < 0) break;
+            selected.splice(correctionIndex, 1);
         }
-        if (selected.length > 0 && bytes + itemBytes > maxBytes) break;
-        selected.unshift(item);
-        bytes += itemBytes;
+        let low = 0;
+        let high = Math.max(...selected.map(item => extractMessageText(item).length));
+        while (low < high) {
+            const limit = Math.ceil((low + high) / 2);
+            if (byteLength(selected.map(item => shrinkItem(item, limit))) <= maxBytes) low = limit;
+            else high = limit - 1;
+        }
+        selected = selected.map(item => shrinkItem(item, low));
     }
-
-    const latestUserItem = [...items].reverse().find(
-        (item) => item?.role === 'user' && extractMessageText(item),
-    );
-    if (latestUserItem && !selected.some(
-        (item) => conversationItemKey(item) === conversationItemKey(latestUserItem),
-    )) {
-        let userItem = latestUserItem;
-        let userBytes = byteLength(userItem);
-        if (userBytes > maxBytes) {
-            userItem = shrinkItem(userItem);
-            userBytes = byteLength(userItem);
-        }
-        while (selected.length > 0 && bytes + userBytes > maxBytes) {
-            bytes -= byteLength(selected.shift());
-        }
-        selected.unshift(userItem);
+    for (let index = start - 1; index >= 0; index -= 1) {
+        const candidate = [items[index], ...selected];
+        if (byteLength(candidate) > maxBytes) break;
+        selected = candidate;
     }
-
     return selected;
 };
 

@@ -186,7 +186,7 @@ export const createNewsContextMessage = (news, languagePair) => {
 
 export const buildResumeTranscript = (historyItems) => {
     const turns = (Array.isArray(historyItems) ? historyItems : [])
-        .filter((item) => item?.role === 'user' || item?.role === 'assistant')
+        .filter((item) => item?.type !== 'correction' && (item?.role === 'user' || item?.role === 'assistant'))
         .map((item) => ({ role: item.role, text: extractMessageText(item) }))
         .filter((item) => item.text)
         .slice(-24)

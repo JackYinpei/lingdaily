@@ -4,6 +4,24 @@ vi.mock('canvas-confetti', () => ({ default: vi.fn() }))
 
 import { GeminiLiveServiceImpl } from '@/app/lib/GeminiLiveService'
 
+describe('bounded correction tool results', () => {
+  it('bounds client fields and normalizes categories before forwarding', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const onCorrection = vi.fn()
+    const service = new GeminiLiveServiceImpl({ onCorrection })
+    await service.handleCorrection({ original: 'x'.repeat(4000), corrected: 'y'.repeat(4000), explanation: 'z'.repeat(8000), category: 'unknown' })
+    expect(onCorrection).toHaveBeenCalledWith({ original: 'x'.repeat(2000), corrected: 'y'.repeat(2000), explanation: 'z'.repeat(4000), category: 'other' })
+  })
+
+  it('does not forward empty, identical or malformed corrections', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const onCorrection = vi.fn()
+    const service = new GeminiLiveServiceImpl({ onCorrection })
+    for (const value of [null, {}, { original: 'same', corrected: 'same' }, { original: {}, corrected: 'text' }]) await service.handleCorrection(value)
+    expect(onCorrection).not.toHaveBeenCalled()
+  })
+})
+
 class FakeAudioContext {
   static instances = []
 
@@ -96,6 +114,7 @@ function createService() {
     onError: vi.fn(),
     onMessage: vi.fn(),
     onPlaybackError: vi.fn(),
+    onConnectionPhase: vi.fn(),
   }
   return { config, service: new GeminiLiveServiceImpl(config) }
 }
@@ -252,6 +271,211 @@ describe('Gemini Live connection epochs', () => {
   })
 })
 
+describe('Gemini Live microphone permission', () => {
+  async function openSocket(service) {
+    const connection = service.connect('prompt', 'token')
+    await waitForSocketCount(FakeWebSocket.instances.length || 1)
+    const socket = FakeWebSocket.instances.at(-1)
+    socket.readyState = FakeWebSocket.OPEN
+    socket.onopen()
+    return { connection, socket }
+  }
+
+  it('waits for setupComplete before requesting the microphone', async () => {
+    const { service } = createService()
+    const { connection, socket } = await openSocket(service)
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled()
+    await socket.onmessage({ data: JSON.stringify({ setupComplete: true }) })
+    await expect(connection).resolves.toBe(true)
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce()
+    service.disconnect()
+  })
+
+  it('does not time out while permission is pending and connects after approval', async () => {
+    vi.useFakeTimers()
+    try {
+      let approve
+      navigator.mediaDevices.getUserMedia.mockImplementation(() => new Promise(resolve => { approve = resolve }))
+      const { service, config } = createService()
+      const { connection, socket } = await openSocket(service)
+      const setup = socket.onmessage({ data: JSON.stringify({ setupComplete: true }) })
+      await Promise.resolve()
+      expect(config.onConnectionPhase).toHaveBeenCalledWith('microphone')
+      expect(service.micStreamHold).toBe(true)
+      await vi.advanceTimersByTimeAsync(120000)
+      expect(config.onError).not.toHaveBeenCalled()
+      expect(config.onConnectionUpdate).not.toHaveBeenCalledWith(true)
+      expect(socket.close).not.toHaveBeenCalled()
+      expect(service.micStreamHold).toBe(true)
+      approve({ getTracks: () => [{ stop: vi.fn() }] })
+      await setup
+      await expect(connection).resolves.toBe(true)
+      expect(config.onConnectionUpdate).toHaveBeenCalledWith(true)
+      expect(service.micStreamHold).toBe(true)
+      service.disconnect()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['before approval', 'after approval'])('plays the first PCM received %s after a 29-second permission wait even with pending resume promises', async timing => {
+    vi.useFakeTimers()
+    const { service, config } = createService()
+    try {
+      let approve
+      navigator.mediaDevices.getUserMedia.mockImplementation(() => new Promise(resolve => { approve = resolve }))
+      service.primeOutputAudio()
+      const { connection, socket } = await openSocket(service)
+      const setup = socket.onmessage({ data: JSON.stringify({ setupComplete: true }) })
+      await vi.advanceTimersByTimeAsync(29000)
+      const context = service.outputAudioContext
+      context.state = 'suspended'
+      context.resume = vi.fn(() => new Promise(() => {}))
+      const audio = () => socket.onmessage({ data: JSON.stringify({ serverContent: {
+        outputTranscription: { text: 'Audible reply' },
+        modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm;rate=24000', data: pcmBase64(16384, -16384) } }] },
+      } }) })
+      let playback
+      if (timing === 'before approval') {
+        playback = audio()
+        for (let i = 0; i < 15; i++) await Promise.resolve()
+        expect(service.pendingAudioParts).toHaveLength(1)
+        context.resume.mockImplementation(async () => { context.state = 'running' })
+      }
+      approve({ getTracks: () => [{ stop: vi.fn() }] })
+      await setup
+      await expect(connection).resolves.toBe(true)
+      if (timing === 'after approval') {
+        playback = audio()
+        for (let i = 0; i < 15; i++) await Promise.resolve()
+        expect(service.pendingAudioParts).toHaveLength(1)
+        context.state = 'running'
+        context.emit('statechange')
+      }
+      await playback
+      expect(context.bufferSources).toHaveLength(2)
+      expect(Array.from(context.bufferSources[1].buffer.getChannelData(0))).toEqual([0.5, -0.5])
+      expect(service.pendingAudioParts).toHaveLength(0)
+      expect(config.onPlaybackError).not.toHaveBeenCalled()
+      expect(service.micStreamHold).toBe(true)
+    } finally {
+      service.disconnect()
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['running', 'suspended'])('retains a complete opening received as Blobs during permission with output %s', async outputState => {
+    vi.useFakeTimers()
+    const { service, config } = createService()
+    try {
+      let approve
+      navigator.mediaDevices.getUserMedia.mockImplementation(() => new Promise(resolve => { approve = resolve }))
+      service.primeOutputAudio()
+      const { connection, socket } = await openSocket(service)
+      expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled()
+      expect(JSON.parse(socket.send.mock.calls[0][0]).setup.generationConfig.responseModalities).toEqual(['AUDIO'])
+      const setup = socket.onmessage({ data: new Blob([JSON.stringify({ setupComplete: true })]) })
+      for (let i = 0; i < 15; i++) await Promise.resolve()
+      expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce()
+      expect(service.micStreamHold).toBe(true)
+      expect(config.onConnectionUpdate).not.toHaveBeenCalledWith(true)
+      const context = service.outputAudioContext
+      const epoch = service.playbackEpoch
+      context.state = outputState
+      context.resume = vi.fn(async () => {})
+      for (const sample of [16384, -16384]) {
+        await socket.onmessage({ data: new Blob([JSON.stringify({ serverContent: {
+          modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm;rate=24000', data: pcmBase64(sample) } }] },
+          outputTranscription: { text: 'Opening reply' },
+        } })]) })
+        expect(service.micStreamHold).toBe(true)
+      }
+      await socket.onmessage({ data: new Blob([JSON.stringify({ serverContent: { turnComplete: true } })]) })
+      expect(config.onMessage).toHaveBeenCalledWith('Opening reply', false, 'model')
+      expect(service.micStreamHold).toBe(false)
+      if (outputState === 'suspended') expect(service.pendingAudioParts).toHaveLength(2)
+      await vi.advanceTimersByTimeAsync(30000)
+      expect(config.onConnectionUpdate).not.toHaveBeenCalledWith(true)
+      context.resume.mockImplementation(async () => { context.state = 'running' })
+      approve({ getTracks: () => [{ stop: vi.fn() }] })
+      await setup
+      await expect(connection).resolves.toBe(true)
+      expect(service.playbackEpoch).toBe(epoch)
+      expect(context.bufferSources).toHaveLength(3)
+      expect(context.bufferSources.slice(1).map(source => Array.from(source.buffer.getChannelData(0)))).toEqual([[0.5], [-0.5]])
+      for (const source of context.bufferSources.slice(1)) {
+        expect(source.start).toHaveBeenCalledOnce()
+        expect(source.stop).not.toHaveBeenCalled()
+      }
+      expect(service.pendingAudioParts).toHaveLength(0)
+      expect(config.onPlaybackError).not.toHaveBeenCalled()
+      expect(config.onError).not.toHaveBeenCalled()
+    } finally {
+      service.disconnect()
+      vi.useRealTimers()
+    }
+  })
+
+  it('still times out when the server never completes setup', async () => {
+    vi.useFakeTimers()
+    try {
+      const { service, config } = createService()
+      const { connection } = await openSocket(service)
+      const rejected = expect(connection).rejects.toThrow('Gemini Live setup timed out')
+      await vi.advanceTimersByTimeAsync(20000)
+      await rejected
+      expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled()
+      expect(config.onConnectionUpdate).not.toHaveBeenCalledWith(true)
+      expect(service.webSocket).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reports microphone denial and does not connect', async () => {
+    navigator.mediaDevices.getUserMedia.mockRejectedValue(new Error('Permission denied'))
+    const { service, config } = createService()
+    const { connection, socket } = await openSocket(service)
+    await socket.onmessage({ data: JSON.stringify({ setupComplete: true }) })
+    await expect(connection).resolves.toBe(false)
+    expect(config.onError).toHaveBeenCalledWith('Could not access microphone.')
+    expect(service.micStreamHold).toBe(false)
+    expect(service.micStreamHoldTimer).toBeNull()
+    expect(config.onConnectionUpdate).not.toHaveBeenCalledWith(true)
+    expect(service.webSocket).toBeNull()
+  })
+
+  it.each(['cancel', 'supersede'])('stops late tracks after %s without connecting the old attempt', async action => {
+    let approve
+    navigator.mediaDevices.getUserMedia.mockImplementationOnce(() => new Promise(resolve => { approve = resolve }))
+    const { service, config } = createService()
+    const { connection, socket } = await openSocket(service)
+    const setup = socket.onmessage({ data: JSON.stringify({ setupComplete: true }) })
+    await Promise.resolve()
+    let nextConnection
+    if (action === 'cancel') service.disconnect()
+    else nextConnection = service.connect('new prompt', 'new token')
+    expect(service.micStreamHold).toBe(false)
+    expect(service.micStreamHoldTimer).toBeNull()
+    await expect(connection).resolves.toBe(false)
+    const stop = vi.fn()
+    approve({ getTracks: () => [{ stop }] })
+    await setup
+    expect(stop).toHaveBeenCalledOnce()
+    expect(config.onConnectionUpdate).not.toHaveBeenCalledWith(true)
+    if (nextConnection) {
+      await waitForSocketCount(2)
+      const nextSocket = FakeWebSocket.instances.at(-1)
+      nextSocket.readyState = FakeWebSocket.OPEN
+      nextSocket.onopen()
+      await nextSocket.onmessage({ data: JSON.stringify({ setupComplete: true }) })
+      await expect(nextConnection).resolves.toBe(true)
+      expect(service.webSocket).toBe(nextSocket)
+    }
+    service.disconnect()
+  })
+})
+
 async function connectService(service) {
   const connectPromise = service.connect('prompt', 'token')
   await waitForSocketCount(1)
@@ -272,6 +496,27 @@ function emitMicFrame(service) {
     inputBuffer: { getChannelData: () => new Float32Array([0, 0.5, -0.5, 1]) },
   })
 }
+
+describe('Gemini Live text acceptance', () => {
+  it('rejects a disconnected send without a local message', async () => {
+    const { service, config } = createService()
+    await expect(service.sendText('hello')).resolves.toBe(false)
+    expect(config.onMessage).not.toHaveBeenCalled()
+  })
+
+  it.each(['closed', 'throws', 'empty'])('rejects %s sends without a local message', async condition => {
+    const { service, config } = createService()
+    const socket = await connectService(service)
+    socket.send.mockClear()
+    config.onMessage.mockClear()
+    if (condition === 'closed') socket.readyState = FakeWebSocket.CLOSED
+    if (condition === 'throws') socket.send.mockImplementation(() => { throw new Error('closed') })
+    await expect(service.sendText(condition === 'empty' ? '   ' : 'hello')).resolves.toBe(false)
+    expect(config.onMessage).not.toHaveBeenCalled()
+    expect(service.micStreamHold).toBe(true)
+    service.disconnect()
+  })
+})
 
 describe('Gemini Live first turn', () => {
   it('sends context messages as clientContent with an explicit turnComplete', async () => {
@@ -312,7 +557,7 @@ describe('Gemini Live first turn', () => {
     const socket = await connectService(service)
     expect(service.micStreamHold).toBe(true)
 
-    await service.sendText('hello')
+    await expect(service.sendText('hello')).resolves.toBe(true)
 
     expect(service.micStreamHold).toBe(false)
     emitMicFrame(service)

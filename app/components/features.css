@@ -86,7 +86,10 @@
 .feature-composer button { border-radius: 3px; }
 .feature-skip { position: fixed; top: -100px; left: 16px; z-index: 100; padding: 12px; background: var(--foreground); color: var(--background); }
 .feature-skip:focus { top: 12px; }
-@media (min-width: 1024px) { .feature-practice-layout { height: max(480px, calc(100dvh - 290px)); gap: 28px; } }
+@media (min-width: 1024px) {
+  .feature-practice-layout { display: grid; grid-template-columns: minmax(0, .36fr) minmax(0, .64fr); flex: none; height: max(480px, calc(100dvh - 290px)); gap: 28px; }
+  .feature-practice-layout > div { width: auto; height: 100%; min-height: 0; }
+}
 @media (max-width: 1050px) { .feature-header-inner { gap: 20px; padding-inline: 24px; } .feature-header nav { gap: 16px; } .feature-header nav a { gap: 5px; } }
 @media (max-width: 767px) {
   .feature-header-inner { flex-wrap: wrap; padding: 17px 20px 0; gap: 16px; justify-content: space-between; min-height: 0; }

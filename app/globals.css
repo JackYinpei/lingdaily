@@ -214,11 +214,24 @@
   --home-support: hsl(331 49% 39%);
   --home-support-wash: hsl(331 55% 94%);
   --home-note: var(--home-support-wash);
-  --home-art-wall: var(--home-wash);
-  --home-art-window: var(--home-action-wash);
-  --home-art-line: #91a684;
-  --home-art-green: #91a684;
-  --home-art-sun: #91a684;
+  /* Stage illustration paints: the page palette plus one warm tone for wood, sun and skin. */
+  --home-art-ink: #26382f;
+  --home-art-ground: #26382f;
+  --home-art-wire: #26382f;
+  --home-art-pine: #365d4a;
+  --home-art-sage: #91a684;
+  --home-art-mist: #dfe8d8;
+  --home-art-rose: hsl(331 49% 45%);
+  --home-art-blush: hsl(331 60% 86%);
+  --home-art-paper: #fdfef9;
+  --home-art-ochre: hsl(38 68% 62%);
+  --home-art-sun: hsl(40 85% 80%);
+  --home-art-skin-a: #f0c4a4;
+  --home-art-skin-b: #b98360;
+  --home-art-skin-c: #f6dcc6;
+  --home-art-hair: #26382f;
+  --home-art-hair-warm: hsl(22 45% 38%);
+  --home-art-face: #26382f;
   --home-shadow: #26382f20;
   --home-serif: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', 'Noto Serif CJK SC', 'Songti SC', 'Yu Mincho', Georgia, serif;
 }
@@ -238,8 +251,18 @@
   --home-action-wash: hsl(331 55% 21%);
   --home-support: hsl(331 52% 82%);
   --home-support-wash: hsl(331 55% 21%);
-  --home-art-line: #789574;
-  --home-art-green: #789574;
-  --home-art-sun: #789574;
+  --home-art-ink: #0c130f;
+  --home-art-ground: #789574;
+  --home-art-wire: #789574;
+  --home-art-pine: #4d7d66;
+  --home-art-sage: #7f9a78;
+  --home-art-mist: #cfdcc8;
+  --home-art-rose: hsl(331 50% 58%);
+  --home-art-blush: hsl(331 55% 80%);
+  --home-art-paper: #f1f5ea;
+  --home-art-ochre: hsl(38 60% 60%);
+  --home-art-sun: hsl(40 70% 72%);
+  --home-art-hair: #34493c;
+  --home-art-face: #1b2a22;
   --home-shadow: #00000035;
 }

@@ -41,8 +41,8 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | 位置 | 职责 |
 | --- | --- |
 | `app/page.js` | SEO 首页与产品入口 |
-| `app/components/HomePageClient.jsx` | 首页服务端 UI：场景介绍、能力展示和学习路径；子组件在 `app/components/home/` |
-| `app/components/home/` | 首页专用组件：`copy.js` 三语文案、`ScenePreview` 可切换示例、`HomeStart` 语言与开始入口、`HomeNav` 响应式导航；`home.css` 布局与动效 |
+| `app/components/HomePageClient.jsx` | 首页服务端 UI：标语、功能舞台、使用步骤和语言入口；子组件在 `app/components/home/` |
+| `app/components/home/` | 首页专用组件：`copy.js` 三语文案、`FeatureStage` 功能舞台（标签页 + 示例纸页）、`SceneArt` 两侧的手绘插画、`HomeStart` 语言与开始入口、`HomeNav` 响应式导航；`home.css` 布局与动效 |
 | `app/globals.css` | 主题单一来源：shadcn CSS 变量 + 品牌配色 + `.bg-aurora`/`.grain-overlay` 工具类 |
 | `app/talk/page.jsx` | 主对话页：新闻/场景、Live 连接、文本流、历史同步 |
 | `app/lib/GeminiLiveService.js` | WebSocket、麦克风 PCM、模型音频播放、打断、Live tool call |
@@ -81,7 +81,8 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 - `ThemeContext` + `layout.js` 内联无闪烁脚本负责 system/dark/light 三态切换；
   `ThemeToggle` 循环这三态。
 - 首页使用 `.home-editorial` 范围内的纸墨配色（`--home-*`），仍统一定义在 `globals.css` 并支持深浅主题，不影响练习页品牌色。
-- `ScenePreview` 是明确标注的静态英语示例，可切换场景，不录音、不调用模型或后端。真实能力在 `/talk`、`/vocabulary` 和 `/progress`。
+- `FeatureStage` 把口语练习、每日播客、生词本做成三个可切换的场景：中间纸页是明确标注的静态示例（不录音、不调用模型或后端），真实能力在 `/talk`、`/podcasts`、`/vocabulary`。未操作时每 7 秒自动换一幕，鼠标悬停或键盘聚焦时暂停，访客选过标签后不再自动切换；`prefers-reduced-motion` 下不自动切换也不播放动效。
+- `SceneArt` 的人物是分节的 SVG「皮影」：四肢是先描墨线、再上色的圆头线段，关节是带 CSS `transform: rotate()` 过渡的 `<g>`。换场景只改姿势角度（`*_POSES`）和道具的 `data-on`，转场动作由 CSS 完成，不要改成整幅替换或淡入淡出。插画颜色只用 `globals.css` 的 `--home-art-*`。
 - 首页的语言选择在 `HomeStart`，桌面与手机共用；仅明确点击开始后保存偏好，未登录时保留 `/talk` 登录回跳。
 
 ### 登录与账号

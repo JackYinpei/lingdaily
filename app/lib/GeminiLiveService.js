@@ -5,6 +5,7 @@
  */
 import confetti from 'canvas-confetti';
 import { DEFAULT_LEARNING_LANGUAGE, DEFAULT_NATIVE_LANGUAGE } from '@/app/lib/languages';
+import { normalizeCorrection } from '@/app/lib/history/corrections';
 
 const OUTPUT_SAMPLE_RATE = 24000;
 const PLAYBACK_LEAD_TIME_SECONDS = 0.03;
@@ -741,17 +742,8 @@ export class GeminiLiveServiceImpl {
             this.webSocket.send(JSON.stringify(toolResponse));
         }
 
-        const original = typeof payload.original === 'string' ? payload.original.trim() : '';
-        const corrected = typeof payload.corrected === 'string' ? payload.corrected.trim() : '';
-        // Nothing to show if the two are missing or identical.
-        if (!original || !corrected || original === corrected) return;
-
-        this.config.onCorrection?.({
-            original,
-            corrected,
-            explanation: typeof payload.explanation === 'string' ? payload.explanation.trim() : '',
-            category: typeof payload.category === 'string' ? payload.category : 'other',
-        });
+        const correction = normalizeCorrection(payload, { truncate: true });
+        if (correction) this.config.onCorrection?.(correction);
     }
 
     // ─── Send text ─────────────────────────────────────────────────────

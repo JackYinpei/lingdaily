@@ -1,4 +1,5 @@
 import { auth } from "@/app/auth"
+import { normalizeCorrectionItem } from "@/app/lib/history/corrections"
 import {
   CHAT_LIST_SOURCE_TYPES,
   CHAT_SOURCE_TYPES,
@@ -73,6 +74,15 @@ function validatePostPayload(payload) {
   if (payload.history.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
     return { error: "Every history item must be an object" }
   }
+  const history = []
+  for (const item of payload.history) {
+    if (item.type !== "correction") history.push(item)
+    else {
+      const correction = normalizeCorrectionItem(item)
+      if (!correction) return { error: "Invalid correction history item" }
+      history.push(correction)
+    }
+  }
 
   const title = validateOptionalText(payload.newsTitle, "newsTitle", MAX_TITLE_LENGTH)
   if (title.error) return title
@@ -102,7 +112,7 @@ function validatePostPayload(payload) {
       newsKey,
       newsTitle: title.value,
       newsContent: hasNewsContent ? newsContent : undefined,
-      history: payload.history,
+      history,
       summary: summary.value,
       sourceType,
       revision,

@@ -24,6 +24,7 @@ import {
     getNewsKey,
     hasUserMessage,
     mergeConversationHistory,
+    reconcilePersistSnapshot,
 } from './_lib/conversation';
 import {
     buildInstructions,
@@ -33,6 +34,7 @@ import {
 } from './_lib/prompts';
 import { cancelLiveConnectionAttempt, fetchRealtimeTokenAfterPriming } from './_lib/liveConnection';
 import { sendTalkText } from './_lib/textSubmission';
+import { normalizeCorrection, sanitizeHistoryCorrections } from '@/app/lib/history/corrections';
 import {
     clearSelectedNewsFromStorage,
     loadSelectedNewsFromStorage,
@@ -226,10 +228,7 @@ export default function Home() {
         );
         if (!news || !hasUserMessage(conversationHistory) || !userId || !isCurrentIdentity()) return 'skipped';
 
-        // Correction cards are UI-only advisory items; never persist them.
-        const persistableHistory = Array.isArray(conversationHistory)
-            ? conversationHistory.filter((item) => item?.type !== 'correction')
-            : conversationHistory;
+        const persistableHistory = sanitizeHistoryCorrections(conversationHistory);
 
         const newsKey = getNewsKey(news);
         const baseline = conversationBaselineRef.current.get(newsKey) || [];
@@ -342,16 +341,18 @@ export default function Home() {
             clearTimeout(persistTimeoutRef.current);
             persistTimeoutRef.current = null;
         }
-        const snapshot = pendingPersistRef.current || (
+        const liveSnapshot = (
             selectedNewsRef.current && hasUserMessage(historyRef.current)
                 ? {
                     news: selectedNewsRef.current,
                     history: historyRef.current,
                     userId: userSession?.user?.id || null,
                     identityGeneration: identityGenerationRef.current,
+                    topicGeneration: topicGenerationRef.current,
                 }
                 : null
         );
+        const snapshot = reconcilePersistSnapshot(pendingPersistRef.current, liveSnapshot);
         pendingPersistRef.current = null;
         if (!snapshot) return Promise.resolve();
         if (keepalive) {
@@ -378,6 +379,7 @@ export default function Home() {
             history: dedupeManualMessages(conversationHistory),
             userId: userSession.user.id,
             identityGeneration: identityGenerationRef.current,
+            topicGeneration: topicGenerationRef.current,
         };
         if (persistTimeoutRef.current) clearTimeout(persistTimeoutRef.current);
         persistTimeoutRef.current = setTimeout(() => {
@@ -669,7 +671,8 @@ export default function Home() {
         lastUnloadFingerprintRef.current = null;
         setHistory(prev => {
             const prevHistory = [...prev];
-            const lastMsg = prevHistory[prevHistory.length - 1];
+            const lastMsgIndex = prevHistory.findLastIndex(item => item?.type !== 'correction');
+            const lastMsg = prevHistory[lastMsgIndex];
 
             // Update existing message (streaming)
             if (lastMsg && lastMsg.role === (role === 'model' ? 'assistant' : 'user') && !lastMsg.metadata?.isFinal) {
@@ -685,10 +688,9 @@ export default function Home() {
                     }
                 };
 
-                const newHistory = [...prevHistory.slice(0, -1), updatedMsg];
+                const newHistory = prevHistory.map((item, index) => index === lastMsgIndex ? updatedMsg : item);
 
-                // Persist if final
-                if (isFinal && selectedNewsRef.current) {
+                if ((isFinal || role === 'model') && selectedNewsRef.current) {
                     scheduleConversationPersist(selectedNewsRef.current, newHistory);
                 }
 
@@ -713,7 +715,7 @@ export default function Home() {
                 };
 
                 const newHistory = [...prevHistory, newMsg];
-                if (isFinal && selectedNewsRef.current) {
+                if ((isFinal || role === 'model') && selectedNewsRef.current) {
                     scheduleConversationPersist(selectedNewsRef.current, newHistory);
                 }
                 historyRef.current = newHistory;
@@ -723,7 +725,7 @@ export default function Home() {
             // Finalize command for empty text
             if (!text && isFinal && lastMsg && !lastMsg.metadata?.isFinal) {
                 const finalizedMsg = { ...lastMsg, metadata: { ...lastMsg.metadata, isFinal: true } };
-                const newHistory = [...prevHistory.slice(0, -1), finalizedMsg];
+                const newHistory = prevHistory.map((item, index) => index === lastMsgIndex ? finalizedMsg : item);
                 if (selectedNewsRef.current) {
                     scheduleConversationPersist(selectedNewsRef.current, newHistory);
                 }
@@ -742,24 +744,24 @@ export default function Home() {
         onMessageRef.current = handleGeminiMessage;
     }, [handleGeminiMessage]);
 
-    // AI correction tool result. Rendered inline in the conversation flow but
-    // intentionally NOT persisted (stripped before serialization) so saved
-    // transcripts stay limited to real dialogue turns.
     const handleCorrection = useCallback((correction) => {
         if (topicHistoryLoadingRef.current) return;
+        const normalized = normalizeCorrection(correction, { truncate: true });
+        if (!normalized) return;
         const item = {
             itemId: uuidv4(),
             type: 'correction',
             role: 'assistant',
-            correction,
+            correction: normalized,
             metadata: { isFinal: true, createdAt: new Date().toISOString() },
         };
         setHistory((prev) => {
             const next = [...prev, item];
             historyRef.current = next;
+            if (selectedNewsRef.current) scheduleConversationPersist(selectedNewsRef.current, next);
             return next;
         });
-    }, []);
+    }, [scheduleConversationPersist]);
 
     const onCorrectionRef = useRef(null);
     useEffect(() => {

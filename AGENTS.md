@@ -151,8 +151,11 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 - `record_unfamiliar_learning_items`：抽取用户不会的学习项，异步写 `/api/learning/items`。
 - `record_language_correction`：用户表达有可改进处时给一条地道改写
   （`original/corrected/explanation/category`）。通过 `config.onCorrection` 回调推给
-  UI，在对话流里渲染为 `CorrectionCard`；**不落库**——correction 项在持久化前按
-  `type === 'correction'` 过滤，不写入 `chat_history`。
+  UI，在对话流里渲染为 `CorrectionCard`；以 `type === 'correction'` 写入
+  `chat_history.history`，恢复时仍显示为纠错卡。客户端与服务端校验字段：original/corrected
+  各最多 2000 字符，explanation 最多 4000 字符，category 为 grammar/vocabulary/phrasing/other。
+  纠错不是对话轮次，不得进入 Live prompt/上下文重播、进度计数、历史摘要或真实用户消息判定。
+  iOS 同步只读取 source_type=practice 的 news.session，不读取网页 history 中的纠错项。
 
 ### 对话历史、生词和进度
 
@@ -295,7 +298,7 @@ RLS 只允许 authenticated 读、插入和更新自己的行；不提供用户�
 | `news_key` | 用户内的主题 identity；场景必须是 `scenario:<uuid>` |
 | `news_title` | 列表标题 |
 | `news` | JSONB 主题快照，用于恢复对话 |
-| `history` | JSONB array，消息和 system context |
+| `history` | JSONB array，消息、system context 和经过校验的 correction 卡 |
 | `summary` | 可选摘要 |
 | `source_type` | `news`、`scenario` 或 `practice`（iOS 原生练习，只由 `/api/ios/sync` 写入，网页只读、不能续聊） |
 | `revision` | 从 1 开始的乐观并发版本 |

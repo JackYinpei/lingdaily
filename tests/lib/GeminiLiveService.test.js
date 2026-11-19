@@ -4,6 +4,24 @@ vi.mock('canvas-confetti', () => ({ default: vi.fn() }))
 
 import { GeminiLiveServiceImpl } from '@/app/lib/GeminiLiveService'
 
+describe('bounded correction tool results', () => {
+  it('bounds client fields and normalizes categories before forwarding', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const onCorrection = vi.fn()
+    const service = new GeminiLiveServiceImpl({ onCorrection })
+    await service.handleCorrection({ original: 'x'.repeat(4000), corrected: 'y'.repeat(4000), explanation: 'z'.repeat(8000), category: 'unknown' })
+    expect(onCorrection).toHaveBeenCalledWith({ original: 'x'.repeat(2000), corrected: 'y'.repeat(2000), explanation: 'z'.repeat(4000), category: 'other' })
+  })
+
+  it('does not forward empty, identical or malformed corrections', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const onCorrection = vi.fn()
+    const service = new GeminiLiveServiceImpl({ onCorrection })
+    for (const value of [null, {}, { original: 'same', corrected: 'same' }, { original: {}, corrected: 'text' }]) await service.handleCorrection(value)
+    expect(onCorrection).not.toHaveBeenCalled()
+  })
+})
+
 class FakeAudioContext {
   static instances = []
 

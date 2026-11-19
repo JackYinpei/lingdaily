@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { fetchRealtimeTokenAfterPriming } from '@/app/talk/_lib/liveConnection'
+import {
+  cancelLiveConnectionAttempt,
+  fetchRealtimeTokenAfterPriming,
+} from '@/app/talk/_lib/liveConnection'
 
 describe('fetchRealtimeTokenAfterPriming', () => {
   it('primes output audio synchronously before starting the token request', async () => {
@@ -39,5 +42,29 @@ describe('fetchRealtimeTokenAfterPriming', () => {
     await expect(fetchRealtimeTokenAfterPriming({ service, fetchImpl }))
       .rejects.toThrow('Unauthorized')
     expect(service.primeOutputAudio).toHaveBeenCalledOnce()
+  })
+})
+
+describe('cancelLiveConnectionAttempt', () => {
+  it('invalidates the attempt, aborts the token request and disconnects the service', () => {
+    const controller = new AbortController()
+    const attemptRef = { current: 3 }
+    const abortControllerRef = { current: controller }
+    const service = { disconnect: vi.fn() }
+
+    cancelLiveConnectionAttempt({ attemptRef, abortControllerRef, service })
+
+    expect(attemptRef.current).toBe(0)
+    expect(controller.signal.aborted).toBe(true)
+    expect(abortControllerRef.current).toBeNull()
+    expect(service.disconnect).toHaveBeenCalledTimes(1)
+  })
+
+  it('tolerates a missing controller and service', () => {
+    const attemptRef = { current: 0 }
+    const abortControllerRef = { current: null }
+
+    expect(() => cancelLiveConnectionAttempt({ attemptRef, abortControllerRef, service: null })).not.toThrow()
+    expect(abortControllerRef.current).toBeNull()
   })
 })

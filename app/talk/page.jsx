@@ -31,7 +31,7 @@ import {
     buildTopicContext,
     createNewsContextMessage,
 } from './_lib/prompts';
-import { fetchRealtimeTokenAfterPriming } from './_lib/liveConnection';
+import { cancelLiveConnectionAttempt, fetchRealtimeTokenAfterPriming } from './_lib/liveConnection';
 
 export default function Home() {
     const { data: userSession, status: sessionStatus } = useSession()
@@ -94,34 +94,40 @@ export default function Home() {
     const identityStateRef = useRef({ initialized: false, userId: null })
     const identityGenerationRef = useRef(0)
 
+    // Cancels any in-flight or open Live connection. `resetConnected: false`
+    // keeps isConnected for callers that only cancel a pending attempt;
+    // `updateState: false` is for unmount cleanup.
+    const cancelLiveConnection = useCallback(({ resetConnected = true, updateState = true } = {}) => {
+        cancelLiveConnectionAttempt({
+            attemptRef: activeConnectionAttemptRef,
+            abortControllerRef: connectionAbortControllerRef,
+            service: serviceRef.current,
+        });
+        if (!updateState) return;
+        if (resetConnected) setIsConnected(false);
+        setIsConnecting(false);
+    }, []);
+
     // When category changes, clear the selected news (which cascades to clearing chat history)
     const handleCategoryChange = useCallback(() => {
         flushPendingRef.current();
         topicGenerationRef.current += 1;
         if (activeConnectionAttemptRef.current !== 0) {
-            activeConnectionAttemptRef.current = 0;
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            serviceRef.current?.disconnect();
-            setIsConnecting(false);
+            cancelLiveConnection({ resetConnected: false });
         }
         setSelectedNews(null);
-    }, []);
+    }, [cancelLiveConnection]);
 
     const handleModeToggle = useCallback((newMode) => {
         flushPendingRef.current();
         topicGenerationRef.current += 1;
         if (activeConnectionAttemptRef.current !== 0) {
-            activeConnectionAttemptRef.current = 0;
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            serviceRef.current?.disconnect();
-            setIsConnecting(false);
+            cancelLiveConnection({ resetConnected: false });
         }
         setMode(newMode);
         setSelectedNews(null);
         try { localStorage.setItem('talk-mode', newMode); } catch (_) { /* ignore */ }
-    }, []);
+    }, [cancelLiveConnection]);
 
     const handleArticleSelect = useCallback((news) => {
         if (selectedNewsRef.current
@@ -129,16 +135,12 @@ export default function Home() {
         flushPendingRef.current();
         topicGenerationRef.current += 1;
         if (activeConnectionAttemptRef.current !== 0) {
-            activeConnectionAttemptRef.current = 0;
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            serviceRef.current?.disconnect();
-            setIsConnecting(false);
+            cancelLiveConnection({ resetConnected: false });
         }
         topicHistoryLoadingRef.current = true;
         setIsTopicHistoryLoading(true);
         setSelectedNews(news);
-    }, []);
+    }, [cancelLiveConnection]);
 
     const handleArticleUpdate = useCallback((patch) => {
         const current = selectedNewsRef.current;
@@ -430,10 +432,7 @@ export default function Home() {
         if (persistTimeoutRef.current) clearTimeout(persistTimeoutRef.current);
         persistTimeoutRef.current = null;
         pendingPersistRef.current = null;
-        activeConnectionAttemptRef.current = 0;
-        connectionAbortControllerRef.current?.abort();
-        connectionAbortControllerRef.current = null;
-        serviceRef.current?.disconnect();
+        cancelLiveConnection();
         topicGenerationRef.current += 1;
         conversationMetaRef.current.clear();
         conversationBaselineRef.current.clear();
@@ -443,11 +442,9 @@ export default function Home() {
         topicHistoryLoadingRef.current = false;
         setSelectedNews(null);
         setHistory([]);
-        setIsConnected(false);
-        setIsConnecting(false);
         setIsTopicHistoryLoading(false);
         try { localStorage.removeItem('selectedNews'); } catch (_) { /* ignore */ }
-    }, [sessionStatus, userSession?.user?.id]);
+    }, [cancelLiveConnection, sessionStatus, userSession?.user?.id]);
 
     // Flush the current transcript before a language switch causes topic
     // context to be rebuilt. A connecting socket is also cancelled so it can
@@ -464,15 +461,10 @@ export default function Home() {
             || isConnecting
             || Boolean(service?.session || service?.webSocket);
         if (hadActiveAttempt) {
-            activeConnectionAttemptRef.current = 0;
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            service?.disconnect();
-            setIsConnected(false);
-            setIsConnecting(false);
+            cancelLiveConnection();
             setError('学习语言已更改，请重新连接以使用新的语言组合。');
         }
-    }, [isConnecting, languagePairKey]);
+    }, [cancelLiveConnection, isConnecting, languagePairKey]);
 
     // Restore a conversation selected from /history before falling back to the
     // browser's last selected topic. The skip ref prevents the topic effect
@@ -796,12 +788,7 @@ export default function Home() {
 
     async function connect() {
         if (isConnecting || activeConnectionAttemptRef.current !== 0) {
-            activeConnectionAttemptRef.current = 0;
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            serviceRef.current?.disconnect();
-            setIsConnected(false);
-            setIsConnecting(false);
+            cancelLiveConnection();
             setError('已取消连接。');
             return;
         }
@@ -811,20 +798,13 @@ export default function Home() {
             return;
         }
         if (isConnected) {
-            activeConnectionAttemptRef.current = 0;
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            serviceRef.current?.disconnect();
-            setIsConnected(false);
+            cancelLiveConnection();
         } else {
             // Clear any half-open service state before priming audio for this
             // new, user-initiated attempt.
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            serviceRef.current?.disconnect();
+            cancelLiveConnection();
             const connectionAttemptId = ++connectionAttemptSequenceRef.current;
             activeConnectionAttemptRef.current = connectionAttemptId;
-            connectionAbortControllerRef.current?.abort();
             const connectionController = new AbortController();
             connectionAbortControllerRef.current = connectionController;
             const isCurrentAttempt = () => (
@@ -992,13 +972,8 @@ export default function Home() {
 
     // Clean up on unmount
     useEffect(() => {
-        return () => {
-            activeConnectionAttemptRef.current = 0;
-            connectionAbortControllerRef.current?.abort();
-            connectionAbortControllerRef.current = null;
-            serviceRef.current?.disconnect();
-        };
-    }, []);
+        return () => cancelLiveConnection({ updateState: false });
+    }, [cancelLiveConnection]);
 
     return (
         <div className="min-h-screen bg-background">

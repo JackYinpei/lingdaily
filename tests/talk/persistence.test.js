@@ -75,6 +75,54 @@ async function mountAndConnect(strict = false) {
 }
 
 describe('talk persistence lifecycle', () => {
+  it('uses server merging on an ordinary retry racing a newer revision without compacting news', async () => {
+    const fullNews = { title: 'Topic', content: 'Full article detail. '.repeat(500), extra: { preserved: true } }
+    const originalFetch = fetchMock.getMockImplementation()
+    fetchMock.mockImplementation(async (url, options) => {
+      const response = await originalFetch(url, options)
+      if (url === '/api/realtime-token') return response
+      if (options?.method !== 'POST') {
+        const json = await response.json()
+        return Response.json({ ...json, data: { ...json.data, newsContent: fullNews } })
+      }
+      if (posts.length === 1) return Response.json({ current: { id: 'saved', revision: 2, history: [user] } }, { status: 409 })
+      if (!posts.at(-1).mergeOnServer) return Response.json({ error: 'This conversation was updated in another session', current: { id: 'saved', revision: 3, history: [user] } }, { status: 409 })
+      return Response.json({ data: { id: 'saved', revision: 4, history: posts.at(-1).history } })
+    })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await mountAndConnect(true)
+    await act(async () => state.config.onMessage('Final reply', true, 'model'))
+    await act(async () => vi.advanceTimersByTimeAsync(800))
+    expect(posts.map(post => post.mergeOnServer)).toEqual([false, true])
+    expect(posts.map(post => post.revision)).toEqual([1, 2])
+    expect(posts.every(post => !post.keepalive)).toBe(true)
+    expect(posts[1].newsContent).toEqual(fullNews)
+    expect(error).not.toHaveBeenCalled()
+    expect(container.textContent).not.toContain('This conversation could not be saved.')
+    expect(state.props.history.at(-1).content[0].text).toBe('Final reply')
+  })
+
+  it.each(['http', 'network'])('does not report late %s failures after unmount while still dispatching keepalive', async failure => {
+    await mountAndConnect(true)
+    const originalFetch = fetchMock.getMockImplementation()
+    let finish, reject
+    fetchMock.mockImplementation(async (url, options) => {
+      const response = await originalFetch(url, options)
+      if (options?.method !== 'POST') return response
+      return new Promise((resolve, fail) => { finish = resolve; reject = fail })
+    })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await act(async () => state.config.onMessage('Final reply', true, 'model'))
+    await act(async () => root.unmount())
+    expect(posts).toHaveLength(1)
+    expect(posts[0].keepalive).toBe(true)
+    await act(async () => {
+      if (failure === 'http') finish(Response.json({ error: 'This conversation was updated in another session' }, { status: 409 }))
+      else reject(new Error('Late network failure'))
+    })
+    expect(error).not.toHaveBeenCalled()
+  })
+
   it.each([0, 1])('silently accepts an already-saved navigation snapshot after %i conflict retries', async missingAttempts => {
     await mountAndConnect(true)
     const originalFetch = fetchMock.getMockImplementation()

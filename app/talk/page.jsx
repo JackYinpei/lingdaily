@@ -107,6 +107,12 @@ export default function Home() {
     const previousLanguagePairKeyRef = useRef(languagePairKey)
     const identityStateRef = useRef({ initialized: false, userId: null })
     const identityGenerationRef = useRef(0)
+    const pageMountedRef = useRef(true)
+
+    useEffect(() => {
+        pageMountedRef.current = true;
+        return () => { pageMountedRef.current = false; };
+    }, []);
 
     // Cancels any in-flight or open Live connection. `resetConnected: false`
     // keeps isConnected for callers that only cancel a pending attempt;
@@ -229,6 +235,7 @@ export default function Home() {
             identityGeneration === identityGenerationRef.current
             && userId === (userSession?.user?.id || null)
             && persistEpoch === (persistEpochsRef.current.get(getNewsKey(news)) || 0)
+            && (pageMountedRef.current || keepalive)
         );
         if (!news || !hasUserMessage(conversationHistory) || !userId || !isCurrentSave()) return 'skipped';
 
@@ -239,6 +246,7 @@ export default function Home() {
         let historyToSave = mergeConversationHistory(baseline, persistableHistory);
         if (keepalive) historyToSave = compactHistoryForKeepalive(historyToSave);
         let expectedRevision = conversationMetaRef.current.get(newsKey)?.revision ?? 0;
+        let shouldMergeOnServer = mergeOnServer;
 
         for (let attempt = 0; attempt < 2; attempt += 1) {
             if (!isCurrentSave()) return 'skipped';
@@ -249,8 +257,8 @@ export default function Home() {
                 summary: null,
                 sourceType: news._isScenario ? 'scenario' : 'news',
                 revision: expectedRevision,
-                mergeOnServer,
-                newsContent: mergeOnServer ? compactNewsForKeepalive(news) : news,
+                mergeOnServer: shouldMergeOnServer,
+                newsContent: keepalive ? compactNewsForKeepalive(news) : news,
             };
 
             try {
@@ -274,6 +282,7 @@ export default function Home() {
                     else if (attempt === 0 && current && Array.isArray(current.history)) {
                         historyToSave = mergeConversationHistory(current.history, historyToSave);
                         expectedRevision = current.revision ?? null;
+                        shouldMergeOnServer = true;
                         conversationBaselineRef.current.set(newsKey, historyToSave);
                         if (pendingPersistRef.current?.news
                             && getNewsKey(pendingPersistRef.current.news) === newsKey) {
@@ -294,11 +303,13 @@ export default function Home() {
                 }
 
                 if (!res.ok && !alreadySaved) {
-                    console.error('Failed to persist chat history:', json?.error || res.status);
-                    setSaveError(true);
+                    if (pageMountedRef.current) {
+                        console.error('Failed to persist chat history:', json?.error || res.status);
+                        setSaveError(true);
+                    }
                     return 'failed';
                 }
-                setSaveError(false);
+                if (pageMountedRef.current) setSaveError(false);
                 if (json?.skipped) return 'skipped';
 
                 if (saved?.id) {
@@ -319,13 +330,15 @@ export default function Home() {
                 if (getNewsKey(selectedNewsRef.current) === newsKey) {
                     const visibleHistory = mergeConversationHistory(savedHistory, historyRef.current);
                     historyRef.current = visibleHistory;
-                    if (attempt > 0) setHistory(visibleHistory);
+                    if (attempt > 0 && pageMountedRef.current) setHistory(visibleHistory);
                 }
                 return 'saved';
             } catch (persistError) {
                 if (!isCurrentSave()) return 'skipped';
-                console.error('Error saving chat history:', persistError);
-                setSaveError(true);
+                if (pageMountedRef.current) {
+                    console.error('Error saving chat history:', persistError);
+                    setSaveError(true);
+                }
                 return 'failed';
             }
         }

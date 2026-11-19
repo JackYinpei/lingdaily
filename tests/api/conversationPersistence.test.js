@@ -61,6 +61,29 @@ describe('correction validation and dialogue exclusions', () => {
 })
 
 describe('chat-history correction persistence', () => {
+  it.each([false, true])('server merging accepts or retains full news (already stored: %s)', async hasStoredNews => {
+    const fullNews = { title: 'Topic', content: 'Full article. '.repeat(500), extra: { preserved: true } }
+    let stored = { ...row([user]), news: hasStoredNews ? fullNews : null }
+    let writes = 0
+    database.mockImplementation(async (_config, resource, options) => {
+      if (resource !== 'rpc/save_chat_history') return { ok: true, data: [stored] }
+      expect(options.body.p_news).toEqual(fullNews)
+      if (++writes === 1) {
+        stored = { ...stored, revision: 2 }
+        return { ok: false, status: 409, data: { message: 'CHAT_HISTORY_REVISION_CONFLICT' } }
+      }
+      expect(options.body.p_expected_revision).toBe(2)
+      stored = { ...stored, news: options.body.p_news, history: options.body.p_history, revision: 3 }
+      return { ok: true, data: stored }
+    })
+    const response = await POST(new Request('https://test/api/chat-history', {
+      method: 'POST', body: JSON.stringify({ ...payload, newsContent: fullNews, history: [user, reply], mergeOnServer: true }),
+    }))
+    expect(response.status).toBe(200)
+    expect(writes).toBe(2)
+    expect((await response.json()).data.history).toEqual([user, reply])
+  })
+
   it('saves correction cards and returns their rendering shape on detail/resume', async () => {
     let saved
     database.mockImplementation(async (_config, resource, options) => {

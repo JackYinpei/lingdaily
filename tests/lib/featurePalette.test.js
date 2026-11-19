@@ -7,18 +7,30 @@ const palettes = {
   light: { background: '#f6f7f2', card: '#fdfef9', foreground: '#26382f', 'muted-foreground': '#58675d', secondary: '#e8eee5', border: '#cbd5c9', primary: '#365d4a', 'primary-hover': '#294b3b', 'primary-foreground': '#ffffff' },
   dark: { background: '#18241e', card: '#213128', foreground: '#eef3e9', 'muted-foreground': '#b6c5b7', secondary: '#2c3f32', border: '#465f4d', primary: '#b1cbaa', 'primary-hover': '#c8dabd', 'primary-foreground': '#18241e' },
 }
+const rose = {
+  light: { 'feature-action': 'hsl(331 49% 39%)', 'feature-action-hover': 'hsl(331 52% 34%)', 'feature-action-foreground': '#ffffff', 'feature-action-wash': 'hsl(331 55% 94%)', 'feature-support': 'hsl(331 49% 39%)', 'feature-support-wash': 'hsl(331 55% 94%)' },
+  dark: { 'feature-action': 'hsl(331 52% 82%)', 'feature-action-hover': 'hsl(331 55% 91%)', 'feature-action-foreground': '#18241e', 'feature-action-wash': 'hsl(331 55% 21%)', 'feature-support': 'hsl(331 52% 82%)', 'feature-support-wash': 'hsl(331 55% 21%)' },
+}
 
 function tokens(theme) {
   const selector = theme === 'dark' ? '.dark .feature-app' : '.feature-app'
   const block = css.split(`${selector} {`)[1].split('}')[0]
-  return Object.fromEntries([...block.matchAll(/--([\w-]+):\s*(#[\da-f]+);/g)].map(([, name, value]) => [name, value]))
+  return Object.fromEntries([...block.matchAll(/--([\w-]+):\s*(#[\da-f]+|hsl\([^)]+\));/g)].map(([, name, value]) => [name, value]))
 }
 
-function luminance(hex) {
-  const [red, green, blue] = hex.slice(1).match(/../g).map((channel) => {
-    const value = Number.parseInt(channel, 16) / 255
-    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+function channels(color) {
+  if (color.startsWith('#')) return color.slice(1).match(/../g).map(value => Number.parseInt(value, 16) / 255)
+  const [hue, saturation, lightness] = color.match(/[\d.]+/g).map(Number)
+  const light = lightness / 100
+  const amplitude = saturation / 100 * Math.min(light, 1 - light)
+  return [0, 8, 4].map(offset => {
+    const step = (offset + hue / 30) % 12
+    return light - amplitude * Math.max(-1, Math.min(step - 3, 9 - step, 1))
   })
+}
+
+function luminance(color) {
+  const [red, green, blue] = channels(color).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
   return red * 0.2126 + green * 0.7152 + blue * 0.0722
 }
 
@@ -28,6 +40,20 @@ function contrast(a, b) {
 }
 
 describe('selected Paper & Pine feature palette', () => {
+  it.each(['light', 'dark'])('adds exact option 01 Rose roles with readable contrast in %s mode', (theme) => {
+    const palette = tokens(theme)
+    expect(palette).toMatchObject(rose[theme])
+    for (const role of ['feature-action', 'feature-action-hover']) {
+      expect(contrast(palette['feature-action-foreground'], palette[role])).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(palette[role], palette.background)).toBeGreaterThanOrEqual(4.5)
+    }
+    expect(contrast(palette['feature-support'], palette['feature-support-wash'])).toBeGreaterThanOrEqual(4.5)
+    expect(featureCss).toContain('.feature-heading-emphasis { color: var(--primary); font-weight: 500; }')
+    expect(featureCss).toContain('.feature-app .feature-connect-action { background: var(--feature-action); color: var(--feature-action-foreground); }')
+    const history = readFileSync(new URL('../../app/components/History.js', import.meta.url), 'utf8')
+    expect(history).toContain("? 'bg-destructive text-white hover:bg-destructive/90'")
+  })
+
   it('keeps topic focus inside the scrollable card and short onboarding actions on one line', () => {
     expect(featureCss).toContain('.feature-topic-list { position: relative; }')
     expect(featureCss).toContain('.feature-app .feature-topic-card:focus-visible { outline-offset: -3px; }')

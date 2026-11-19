@@ -152,9 +152,7 @@ export function History({
                     onClick={connect}
                     className={`flex w-10 h-10 lg:w-auto lg:px-4 rounded-full lg:rounded-lg font-medium transition-colors items-center justify-center text-lg flex-shrink-0 ${isConnected
                         ? 'bg-destructive text-white hover:bg-destructive/90'
-                        : isConnecting
-                            ? 'bg-primary/70 text-primary-foreground hover:bg-primary/60'
-                            : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                        : 'feature-connect-action'
                         }`}
                     title={isConnected ? t.disconnect : isConnecting ? t.cancel : t.connect}
                     aria-label={isConnected ? t.disconnect : isConnecting ? t.cancel : t.connect}

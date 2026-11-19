@@ -53,11 +53,14 @@
 .feature-empty > svg { width: 24px; height: 24px; color: var(--primary); margin-bottom: var(--feature-space-6); }
 .feature-empty h2 { font-family: var(--feature-serif); font-size: 24px; font-weight: 400; margin-bottom: var(--feature-space-2); }
 .feature-empty p { font-size: 14px; line-height: 1.75; color: var(--muted-foreground); max-width: 40ch; }
-.feature-action { display: inline-flex; align-items: center; justify-content: center; gap: var(--feature-space-3); min-height: 44px; padding: var(--feature-space-3) var(--feature-space-6); border: 1px solid var(--foreground); border-radius: 4px; background: var(--foreground); color: var(--background); font-size: 14px; font-weight: 500; transition: transform .2s; }
+.feature-action { display: inline-flex; align-items: center; justify-content: center; gap: var(--feature-space-3); min-height: 44px; padding: var(--feature-space-3) var(--feature-space-6); border: 1px solid var(--feature-action); border-radius: 4px; background: var(--feature-action); color: var(--feature-action-foreground); font-size: 14px; font-weight: 500; transition: transform .2s, background-color .2s; }
 .feature-action:hover { transform: translateY(-2px); }
+.feature-action:not(.feature-action-secondary):hover { background: var(--feature-action-hover); border-color: var(--feature-action-hover); }
 .feature-action-secondary { color: var(--foreground); border-color: var(--border); background: transparent; }
-.feature-text-link { display: inline-flex; align-items: center; gap: var(--feature-space-2); min-height: 44px; font-size: 14px; font-weight: 500; }
-.feature-text-link:hover { color: var(--primary); }
+.feature-text-link { display: inline-flex; align-items: center; gap: var(--feature-space-2); min-height: 44px; font-size: 14px; font-weight: 500; color: var(--feature-action); }
+.feature-text-link:hover { color: var(--feature-action-hover); }
+.feature-app .feature-connect-action { background: var(--feature-action); color: var(--feature-action-foreground); }
+.feature-app .feature-connect-action:hover { background: var(--feature-action-hover); }
 .feature-app [data-slot="button"] { border-radius: 4px; box-shadow: none; }
 .feature-page-history .feature-heading ~ div { max-width: 960px; }
 .feature-history-list { border-top: 1px solid var(--border); }
@@ -68,8 +71,8 @@
 .feature-history-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--feature-space-3); margin-bottom: var(--feature-space-3); font-size: 12px; line-height: 1.5; color: var(--muted-foreground); }
 .feature-history-meta > span:first-child { padding: 0; border-radius: 0; background: none; }
 .feature-history-actions { display: flex; flex-shrink: 0; align-items: center; gap: var(--feature-space-3); }
-.feature-history-actions a { min-height: 44px; color: var(--foreground); background: transparent; padding-inline: 0; }
-.feature-history-actions a:hover { color: var(--primary); }
+.feature-history-actions a { min-height: 44px; color: var(--feature-action); background: transparent; padding-inline: 0; }
+.feature-history-actions a:hover { color: var(--feature-action-hover); }
 .feature-history-actions button { min-width: 44px; min-height: 44px; color: var(--muted-foreground); border-color: transparent; background: transparent; }
 .feature-history-actions button:hover { color: var(--destructive); background: var(--secondary); }
 .feature-vocab-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--feature-space-6); }
@@ -79,9 +82,9 @@
 .feature-item-context > p, .feature-item-context blockquote { font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
 .feature-vocab-item blockquote { border-left: 2px solid var(--border); padding-left: var(--feature-space-3); margin-bottom: var(--feature-space-3); }
 .feature-item-context .feature-item-date { margin-top: var(--feature-space-4); font-size: 12px; }
-.feature-type { display: inline-flex; align-items: center; gap: var(--feature-space-1); padding: var(--feature-space-1) var(--feature-space-2); font-size: 12px; line-height: 1.5; color: var(--muted-foreground); background: var(--secondary); border-radius: 4px; }
+.feature-type { display: inline-flex; align-items: center; gap: var(--feature-space-1); padding: var(--feature-space-1) var(--feature-space-2); font-size: 12px; line-height: 1.5; color: var(--feature-support); background: var(--feature-support-wash); border-radius: 4px; }
 .feature-podcast-intro { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: var(--feature-space-8); padding-bottom: var(--feature-space-8); border-bottom: 1px solid var(--border); margin-bottom: var(--feature-space-8); }
-.feature-podcast-art { min-height: 128px; padding: var(--feature-space-4); background: var(--secondary); display: flex; flex-direction: column; justify-content: space-between; color: var(--primary); border-radius: 4px; }
+.feature-podcast-art { min-height: 128px; padding: var(--feature-space-4); background: var(--feature-action-wash); display: flex; flex-direction: column; justify-content: space-between; color: var(--feature-action); border-radius: 4px; }
 .feature-podcast-art strong { font-family: var(--feature-serif); font-size: 24px; font-weight: 400; }
 .feature-podcast-art span { font-size: 12px; letter-spacing: .05em; }
 .feature-podcast-intro p:last-child { max-width: 56ch; }
@@ -108,6 +111,7 @@
 .feature-progress-metrics > div { padding-inline: var(--feature-space-6); border-left: 1px solid var(--border); }
 .feature-progress-metrics > div:first-child { border-left: 0; padding-left: 0; }
 .feature-progress-metrics dt { display: flex; align-items: center; flex-wrap: wrap; gap: var(--feature-space-2); font-size: 12px; line-height: 1.5; color: var(--muted-foreground); }
+.feature-progress-metrics dt svg { color: var(--feature-support); }
 .feature-progress-metrics dd { margin-top: var(--feature-space-3); font-size: 30px; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; }
 .feature-progress-chart { gap: var(--feature-space-6); }
 .feature-chart-header { display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between; gap: var(--feature-space-6); }

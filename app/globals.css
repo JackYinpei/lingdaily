@@ -6,6 +6,12 @@
 
 body:has(.feature-app),
 .feature-app {
+  --feature-action: hsl(331 49% 39%);
+  --feature-action-hover: hsl(331 52% 34%);
+  --feature-action-foreground: #ffffff;
+  --feature-action-wash: hsl(331 55% 94%);
+  --feature-support: hsl(331 49% 39%);
+  --feature-support-wash: hsl(331 55% 94%);
   --background: #f6f7f2;
   --foreground: #26382f;
   --card: #fdfef9;
@@ -34,6 +40,12 @@ body:has(.feature-app),
 
 .dark body:has(.feature-app),
 .dark .feature-app {
+  --feature-action: hsl(331 52% 82%);
+  --feature-action-hover: hsl(331 55% 91%);
+  --feature-action-foreground: #18241e;
+  --feature-action-wash: hsl(331 55% 21%);
+  --feature-support: hsl(331 52% 82%);
+  --feature-support-wash: hsl(331 55% 21%);
   --background: #18241e;
   --foreground: #eef3e9;
   --card: #213128;

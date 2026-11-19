@@ -58,7 +58,7 @@
 .home-editorial:lang(zh-CN) .home-hero h1 { line-height: 1.35; letter-spacing: -.04em; }
 .home-editorial:lang(zh-CN) .home-hero h1 em, .home-editorial:lang(ja) .home-hero h1 em { font-style: normal; }
 .home-editorial:lang(ja) .home-hero h1 { font-size: var(--home-text-4xl); line-height: 1.4; letter-spacing: -.03em; }
-.home-intro { max-width: 28rem; color: var(--home-muted); font-size: var(--home-text-base); line-height: 1.8; }
+.home-intro { max-width: 28rem; color: var(--home-muted); font-size: var(--home-text-base); line-height: 1.8; text-wrap: balance; }
 .home-hero-actions { display: flex; align-items: center; gap: 16px 24px; margin-top: 32px; flex-wrap: wrap; }
 .home-button { display: inline-flex; align-items: center; justify-content: center; gap: 24px; min-height: 52px; padding: 12px 24px; border: 1px solid var(--home-accent); background: var(--home-accent); color: var(--home-accent-ink); font-size: var(--home-text-sm); font-weight: 600; transition: background-color .2s, border-color .2s, transform .2s, box-shadow .2s; }
 .home-button:hover { background: var(--home-accent-hover); border-color: var(--home-accent-hover); transform: translateY(-2px); box-shadow: 0 4px 0 var(--home-shadow); }

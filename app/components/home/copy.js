@@ -5,7 +5,7 @@ export const HOME_COPY = {
     headline: '找个话题，',
     headlineAccent: '练练口语。',
     intro:
-      '练习点单、面试，或聊聊新闻。和 AI 用语音对话，查看表达建议。',
+      '和 AI 用语音练习餐厅点单、工作面试，或聊聊今天的新闻。',
     start: '开始练习',
     continue: '继续练习',
     listen: '听新闻播客',

@@ -148,7 +148,7 @@ export default function HomePageClient({
                   ))}
                 </div>
                 <span className="home-podcast-caption">
-                  NEWS, IN TWO LANGUAGES.
+                  CHINESE · ENGLISH
                 </span>
               </div>
               <Link href="/podcasts" className="home-feature-link">
@@ -233,7 +233,6 @@ export default function HomePageClient({
         </nav>
         <p className="home-colophon">
           © {new Date().getFullYear()} LingDaily
-          <br />A LITTLE PRACTICE. EVERY DAY.
         </p>
       </footer>
     </div>

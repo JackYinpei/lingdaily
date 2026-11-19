@@ -5,7 +5,7 @@ export const HOME_COPY = {
     headline: '找个话题，',
     headlineAccent: '练练口语。',
     intro:
-      '点单、面试，或聊聊今天的新闻。和 AI 用语音对话，也可以先听一期播客。',
+      '练习点单、面试，或聊聊新闻。和 AI 用语音对话，查看表达建议。',
     start: '开始练习',
     continue: '继续练习',
     listen: '听新闻播客',
@@ -261,7 +261,7 @@ export const HOME_COPY = {
     headline: '話題を選んで、',
     headlineAccent: '会話の練習。',
     intro:
-      'レストランの注文や面接、今日のニュース。AIと音声で会話を練習できます。声を出せないときは、ポッドキャストを聴けます。',
+      'レストランの注文や面接をAIと音声で練習。今日のニュースを選んで話すこともできます。',
     start: '練習を始める',
     continue: '練習を続ける',
     listen: 'ニュースを聴く',

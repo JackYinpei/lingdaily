@@ -24,12 +24,12 @@ function detectPreferredLocale(acceptLanguageHeader = "") {
 }
 
 export const metadata = {
-  title: 'LingDaily — Practice Languages Through Real Conversations',
-  description: 'Practice everyday conversations, role-play real situations, and discuss the news with AI in 8 learning languages. Listen to Chinese–English news podcasts and keep the vocabulary you discover.',
+  title: 'LingDaily — AI Speaking Practice & News Podcasts',
+  description: 'Practice speaking with AI using news and role-play topics. Listen to Chinese–English news podcasts, read transcripts, and review saved vocabulary.',
   keywords: 'language practice, AI conversation, role-play, bilingual news podcasts, vocabulary, speaking practice, LingDaily',
   openGraph: {
-    title: 'LingDaily — A Little More Conversation',
-    description: 'Real-life speaking practice, Chinese–English news podcasts, and words worth keeping. Make language part of your everyday.',
+    title: 'LingDaily — AI Speaking Practice & News Podcasts',
+    description: 'Practice speaking with AI using news and role-play topics. Listen to Chinese–English news podcasts, read transcripts, and review saved vocabulary.',
   }
 };
 
@@ -59,7 +59,7 @@ export default async function Home() {
     "@context": "https://schema.org",
     "@type": "WebApplication",
     "name": "LingDaily",
-    "description": "Practice languages through AI voice conversations, news discussions, and role-play scenarios. Listen to Chinese–English news podcasts and collect useful vocabulary.",
+    "description": metadata.description,
     "url": siteUrl,
     "applicationCategory": "EducationalApplication",
     "operatingSystem": "Web",

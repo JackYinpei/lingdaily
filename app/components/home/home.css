@@ -58,7 +58,7 @@
 .home-editorial:lang(zh-CN) .home-hero h1 { line-height: 1.35; letter-spacing: -.04em; }
 .home-editorial:lang(zh-CN) .home-hero h1 em, .home-editorial:lang(ja) .home-hero h1 em { font-style: normal; }
 .home-editorial:lang(ja) .home-hero h1 { font-size: var(--home-text-4xl); line-height: 1.4; letter-spacing: -.03em; }
-.home-intro { max-width: 28rem; color: var(--home-muted); font-size: var(--home-text-base); line-height: 1.8; }
+.home-intro { max-width: 28rem; color: var(--home-muted); font-size: var(--home-text-base); line-height: 1.8; text-wrap: balance; }
 .home-hero-actions { display: flex; align-items: center; gap: 16px 24px; margin-top: 32px; flex-wrap: wrap; }
 .home-button { display: inline-flex; align-items: center; justify-content: center; gap: 24px; min-height: 52px; padding: 12px 24px; border: 1px solid var(--home-accent); background: var(--home-accent); color: var(--home-accent-ink); font-size: var(--home-text-sm); font-weight: 600; transition: background-color .2s, border-color .2s, transform .2s, box-shadow .2s; }
 .home-button:hover { background: var(--home-accent-hover); border-color: var(--home-accent-hover); transform: translateY(-2px); box-shadow: 0 4px 0 var(--home-shadow); }
@@ -118,7 +118,7 @@
 
 .home-method-strip { border-block: 1px solid var(--home-line); }
 .home-method-inner { display: flex; align-items: center; justify-content: space-between; min-height: 96px; gap: 24px; padding-block: 24px; }
-.home-method-inner > p { font-family: var(--home-serif); font-size: var(--home-text-lg); }
+.home-method-inner > p { font-family: var(--home-serif); font-size: var(--home-text-lg); white-space: pre-line; }
 .home-method-inner > span { display: flex; align-items: baseline; gap: 12px; font-size: var(--home-text-sm); }
 .home-method-inner i { color: var(--home-muted); font-size: var(--home-text-xs); font-style: normal; }
 .home-method-inner svg { align-self: center; margin-left: 24px; color: var(--home-muted); }
@@ -126,7 +126,7 @@
 .home-features { padding-block: var(--home-section-space); scroll-margin-top: 32px; }
 .home-section-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 48px; margin-bottom: 48px; }
 .home-section-heading h2, .home-how h2, .home-start-inner h2 { font-family: var(--home-serif); font-size: var(--home-text-3xl); line-height: 1.4; font-weight: 400; letter-spacing: -.03em; text-wrap: balance; }
-.home-section-heading h2 { margin-top: 16px; }
+.home-section-heading h2 { margin-top: 16px; white-space: pre-line; }
 .home-section-heading > p { max-width: 20rem; color: var(--home-muted); font-size: var(--home-text-sm); line-height: 1.75; }
 
 /* Shared rows align titles, descriptions, examples and links across locales.
@@ -137,6 +137,8 @@
 .home-feature-top > span { font-size: var(--home-text-xs); letter-spacing: .08em; color: var(--home-muted); }
 .home-feature-top svg { color: var(--home-accent); }
 .home-feature h3 { font-size: var(--home-text-xl); font-weight: 400; line-height: 1.4; font-family: var(--home-serif); margin-bottom: 12px; letter-spacing: -.03em; }
+.home-feature h3 > span { display: block; }
+.home-feature h3 > span + span { color: var(--home-accent); }
 .home-feature > p { font-size: var(--home-text-sm); color: var(--home-muted); line-height: 1.75; }
 .home-prompt-list, .home-podcast-art, .home-vocab-note { align-self: start; margin-block: 24px 0; }
 .home-prompt-list { background: var(--home-wash); padding-inline: 16px; }

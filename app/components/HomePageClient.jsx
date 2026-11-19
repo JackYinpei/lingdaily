@@ -15,6 +15,16 @@ import HomeNav from '@/app/components/home/HomeNav'
 import ScenePreview from '@/app/components/home/ScenePreview'
 import { HOME_COPY } from '@/app/components/home/copy'
 
+function FeatureHeading({ title }) {
+  return (
+    <h3>
+      {title.split('\n').map((line) => (
+        <span key={line}>{line}</span>
+      ))}
+    </h3>
+  )
+}
+
 export default function HomePageClient({
   signedIn,
   signOutAction,
@@ -109,7 +119,7 @@ export default function HomePageClient({
                 <span>01 / SPEAK</span>
                 <MessageCircle size={21} strokeWidth={1.5} aria-hidden="true" />
               </div>
-              <h3>{t.talk.title}</h3>
+              <FeatureHeading title={t.talk.title} />
               <p>{t.talk.desc}</p>
               <div className="home-prompt-list">
                 {t.talk.prompts.map((prompt, i) => (
@@ -130,7 +140,7 @@ export default function HomePageClient({
                 <span>02 / LISTEN</span>
                 <Headphones size={21} strokeWidth={1.5} aria-hidden="true" />
               </div>
-              <h3>{t.podcast.title}</h3>
+              <FeatureHeading title={t.podcast.title} />
               <p>{t.podcast.desc}</p>
               <div className="home-podcast-art" aria-hidden="true">
                 <span className="home-podcast-edition">THE DAILY LISTEN</span>
@@ -148,7 +158,7 @@ export default function HomePageClient({
                   ))}
                 </div>
                 <span className="home-podcast-caption">
-                  NEWS, IN TWO LANGUAGES.
+                  CHINESE · ENGLISH
                 </span>
               </div>
               <Link href="/podcasts" className="home-feature-link">
@@ -161,7 +171,7 @@ export default function HomePageClient({
                 <span>03 / KEEP</span>
                 <BookOpen size={21} strokeWidth={1.5} aria-hidden="true" />
               </div>
-              <h3>{t.keep.title}</h3>
+              <FeatureHeading title={t.keep.title} />
               <p>{t.keep.desc}</p>
               <div className="home-vocab-note">
                 <span>{t.example}</span>
@@ -233,7 +243,6 @@ export default function HomePageClient({
         </nav>
         <p className="home-colophon">
           © {new Date().getFullYear()} LingDaily
-          <br />A LITTLE PRACTICE. EVERY DAY.
         </p>
       </footer>
     </div>

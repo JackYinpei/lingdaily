@@ -194,7 +194,8 @@
   }
 }
 
-/* Paper & Pine (proposal A). Match the feature-app palette's semantic roles.
+/* Paper & Pine foundation with option 01 Pine × Rose action/support roles.
+   Match the feature-app palette's semantic roles in both themes.
    Scoped homepage palette; layout lives in components/home/home.css. */
 .home-editorial {
   --home-paper: #f6f7f2;
@@ -206,9 +207,15 @@
   --home-accent-hover: #294b3b;
   --home-accent-ink: #ffffff;
   --home-wash: #e8eee5;
-  --home-note: var(--home-wash);
+  --home-action: hsl(331 49% 39%);
+  --home-action-hover: hsl(331 52% 34%);
+  --home-action-ink: #ffffff;
+  --home-action-wash: hsl(331 55% 94%);
+  --home-support: hsl(331 49% 39%);
+  --home-support-wash: hsl(331 55% 94%);
+  --home-note: var(--home-support-wash);
   --home-art-wall: var(--home-wash);
-  --home-art-window: var(--home-surface);
+  --home-art-window: var(--home-action-wash);
   --home-art-line: #91a684;
   --home-art-green: #91a684;
   --home-art-sun: #91a684;
@@ -225,6 +232,12 @@
   --home-accent-hover: #c8dabd;
   --home-accent-ink: #18241e;
   --home-wash: #2c3f32;
+  --home-action: hsl(331 52% 82%);
+  --home-action-hover: hsl(331 55% 91%);
+  --home-action-ink: #18241e;
+  --home-action-wash: hsl(331 55% 21%);
+  --home-support: hsl(331 52% 82%);
+  --home-support-wash: hsl(331 55% 21%);
   --home-art-line: #789574;
   --home-art-green: #789574;
   --home-art-sun: #789574;

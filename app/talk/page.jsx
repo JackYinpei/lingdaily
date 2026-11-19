@@ -258,6 +258,7 @@ export default function Home() {
                 revision: expectedRevision,
                 mergeOnServer: shouldMergeOnServer,
                 newsContent: keepalive ? compactNewsForKeepalive(news) : news,
+                newsContentIsCompact: keepalive,
             };
 
             try {

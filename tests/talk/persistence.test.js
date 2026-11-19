@@ -129,6 +129,7 @@ describe('talk persistence lifecycle', () => {
     expect(posts.map(post => post.revision)).toEqual([1, 2])
     expect(posts.every(post => !post.keepalive)).toBe(true)
     expect(posts[1].newsContent).toEqual(fullNews)
+    expect(posts[1].newsContentIsCompact).toBe(false)
     expect(error).not.toHaveBeenCalled()
     expect(container.textContent).not.toContain('This conversation could not be saved.')
     expect(state.props.history.at(-1).content[0].text).toBe('Final reply')
@@ -148,6 +149,7 @@ describe('talk persistence lifecycle', () => {
     await act(async () => root.unmount())
     expect(posts).toHaveLength(1)
     expect(posts[0].keepalive).toBe(true)
+    expect(posts[0].newsContentIsCompact).toBe(true)
     await act(async () => {
       if (failure === 'http') finish(Response.json({ error: 'This conversation was updated in another session' }, { status: 409 }))
       else reject(new Error('Late network failure'))

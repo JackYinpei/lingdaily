@@ -61,6 +61,52 @@ describe('correction validation and dialogue exclusions', () => {
 })
 
 describe('chat-history correction persistence', () => {
+  it.each([false, true, undefined])('keeps full news through a revision conflict (incoming compact: %s)', async incomingCompact => {
+    const fullNews = { title: 'Topic', content: 'Full article. '.repeat(500), detail: { retained: true } }
+    const compactNews = { title: 'Topic', content: fullNews.content.slice(0, 2000) }
+    let stored = { ...row([user]), news: incomingCompact === false ? compactNews : fullNews }
+    const writes = []
+    database.mockImplementation(async (_config, resource, options) => {
+      if (resource !== 'rpc/save_chat_history') return { ok: true, data: [stored] }
+      writes.push(options.body.p_news)
+      if (writes.length === 1) {
+        stored = { ...stored, revision: 2 }
+        return { ok: false, status: 409, data: { message: 'CHAT_HISTORY_REVISION_CONFLICT' } }
+      }
+      stored = { ...stored, news: options.body.p_news, history: options.body.p_history, revision: 3 }
+      return { ok: true, data: stored }
+    })
+    const response = await POST(new Request('https://test/api/chat-history', {
+      method: 'POST', body: JSON.stringify({ ...payload, newsContent: incomingCompact === false ? fullNews : compactNews, newsContentIsCompact: incomingCompact, history: [user, reply], mergeOnServer: true }),
+    }))
+    expect(response.status).toBe(200)
+    expect(writes).toEqual([fullNews, fullNews])
+    const resumed = await (await GET(new Request(`https://test/api/chat-history?id=${stored.id}`))).json()
+    expect(resumed.data.newsContent).toEqual(fullNews)
+  })
+
+  it.each([null, 'false', 1, {}])('rejects invalid news compactness markers: %o', async newsContentIsCompact => {
+    const response = await POST(new Request('https://test/api/chat-history', {
+      method: 'POST', body: JSON.stringify({ ...payload, history: [user], newsContentIsCompact }),
+    }))
+    expect(response.status).toBe(400)
+    expect(database).not.toHaveBeenCalled()
+  })
+
+  it.each([null, undefined])('retains stored full news when an explicitly full request has no news: %s', async newsContent => {
+    const fullNews = { title: 'Topic', content: 'Full article.' }
+    const stored = { ...row([user]), news: fullNews }
+    database.mockImplementation(async (_config, resource, options) => {
+      if (resource !== 'rpc/save_chat_history') return { ok: true, data: [stored] }
+      expect(options.body.p_news).toEqual(fullNews)
+      return { ok: true, data: stored }
+    })
+    const response = await POST(new Request('https://test/api/chat-history', {
+      method: 'POST', body: JSON.stringify({ ...payload, newsContent, newsContentIsCompact: false, history: [user], mergeOnServer: true }),
+    }))
+    expect(response.status).toBe(200)
+  })
+
   it.each([false, true])('server merging accepts or retains full news (already stored: %s)', async hasStoredNews => {
     const fullNews = { title: 'Topic', content: 'Full article. '.repeat(500), extra: { preserved: true } }
     let stored = { ...row([user]), news: hasStoredNews ? fullNews : null }

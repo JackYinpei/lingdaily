@@ -98,6 +98,9 @@ function validatePostPayload(payload) {
   if (payload.mergeOnServer !== undefined && typeof payload.mergeOnServer !== "boolean") {
     return { error: "'mergeOnServer' must be a boolean" }
   }
+  if (payload.newsContentIsCompact !== undefined && typeof payload.newsContentIsCompact !== "boolean") {
+    return { error: "'newsContentIsCompact' must be a boolean" }
+  }
 
   let revision = null
   if (payload.revision !== undefined && payload.revision !== null) {
@@ -117,6 +120,7 @@ function validatePostPayload(payload) {
       sourceType,
       revision,
       mergeOnServer: payload.mergeOnServer === true,
+      newsContentIsCompact: payload.newsContentIsCompact,
     },
   }
 }
@@ -189,7 +193,9 @@ function mergePayloadWithRow(payload, currentRow) {
   return {
     ...payload,
     newsTitle: payload.newsTitle ?? currentRow?.news_title ?? null,
-    newsContent: currentRow?.news ?? payload.newsContent ?? null,
+    newsContent: payload.newsContentIsCompact === false
+      ? payload.newsContent ?? currentRow?.news ?? null
+      : currentRow?.news ?? payload.newsContent ?? null,
     history: mergeChatHistories(currentRow?.history || [], payload.history),
     revision: currentRevision,
   }

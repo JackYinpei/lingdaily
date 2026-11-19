@@ -96,8 +96,18 @@ struct AIConnectionConfiguration: Codable {
     }
 }
 
+/// The AI calls practice features make; views and controllers take one injected instance.
 protocol PracticeServing {
     func respond(to request: AIPracticeRequest) async throws -> AIPracticeResponse
+    func reviewSentences(_ request: SentenceReviewRequest) async throws -> [SentenceReviewRecord]
+    func createScenario(from description: String) async throws -> PracticeScenario
+    func translate(_ text: String) async throws -> String
+    func suggest(for session: PracticeSession) async throws -> LiveSuggestion
+    func liveToken(for session: PracticeSession) async throws -> LiveToken
+    func scenarioIdeas(avoiding shown: [String]) async throws -> [String]
+    func reportLiveUsage(_ report: LiveUsageReport) async throws
+    func usageSummary() async throws -> AIUsageSummary
+    func modelCatalog() async throws -> AIModelCatalog
 }
 
 private struct ServerFailure: Decodable { let message: String }

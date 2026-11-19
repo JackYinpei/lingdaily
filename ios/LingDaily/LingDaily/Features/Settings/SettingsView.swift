@@ -271,6 +271,7 @@ private struct ReminderCard: View {
 /// Lets the learner pick a model per feature from the server's allowed list.
 /// The choice is stored on this device; empty means the server default.
 private struct AIModelCard: View {
+    @Environment(\.practiceService) private var api
     @State private var catalog: AIModelCatalog?
     @State private var failed = false
 
@@ -296,7 +297,7 @@ private struct AIModelCard: View {
 
     private func load() async {
         failed = false
-        do { catalog = try await PracticeAPIClient().modelCatalog() } catch { failed = true }
+        do { catalog = try await api.modelCatalog() } catch { failed = true }
     }
 }
 
@@ -330,6 +331,7 @@ private struct ModelRow: View {
 
 /// The learner's own AI token usage over the last 30 days (no prices).
 private struct UsageCard: View {
+    @Environment(\.practiceService) private var api
     @State private var summary: AIUsageSummary?
     @State private var failed = false
 
@@ -370,7 +372,7 @@ private struct UsageCard: View {
 
     private func load() async {
         failed = false
-        do { summary = try await PracticeAPIClient().usageSummary() } catch { failed = true }
+        do { summary = try await api.usageSummary() } catch { failed = true }
     }
 
     private static func format(_ value: Int) -> String {

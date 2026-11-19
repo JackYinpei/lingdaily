@@ -6,6 +6,7 @@ struct ScenarioComposerView: View {
     @EnvironmentObject private var account: AccountStore
     @EnvironmentObject private var reminders: ReminderCenter
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.practiceService) private var api
     /// The day of the real conversation; reminders go out the evening before and that morning.
     @State private var eventDay: Date?
     @State private var notificationsDenied = false
@@ -147,7 +148,7 @@ struct ScenarioComposerView: View {
         Task {
             defer { refreshing = false }
             do {
-                let ideas = try await PracticeAPIClient().scenarioIdeas(avoiding: avoid)
+                let ideas = try await api.scenarioIdeas(avoiding: avoid)
                 examples = ideas
                 shownIdeas += ideas
             } catch {
@@ -164,7 +165,7 @@ struct ScenarioComposerView: View {
         let text = trimmed
         task = Task {
             do {
-                let scenario = try await PracticeAPIClient().createScenario(from: text)
+                let scenario = try await api.createScenario(from: text)
                 guard !Task.isCancelled else { return }
                 store.addScenario(scenario)
                 if let eventDay { reminders.scheduleEvent(for: scenario, on: eventDay) }

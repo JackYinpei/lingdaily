@@ -12,10 +12,10 @@ const FLOOR = 420
 const STAND = FLOOR - 134.5 * SCALE
 const SIT = FLOOR - 74.5 * SCALE
 
-function Joint({ at, turn = 0, children }) {
+function Joint({ at, turn = 0, leg, children }) {
   return (
     <g
-      className="ill-joint"
+      className={leg ? 'ill-joint ill-leg' : 'ill-joint'}
       style={{
         transformOrigin: `${at[0]}px ${at[1]}px`,
         transform: `rotate(${-turn}deg)`,
@@ -99,9 +99,9 @@ function Arm({ o, x, pose, lean, sleeve, skin, children }) {
 function Leg({ o, x, pose, c, shoe }) {
   const [hip, knee] = pose
   return (
-    <Joint at={[x, 0]} turn={hip}>
+    <Joint at={[x, 0]} turn={hip} leg>
       <Tube o={o} x1={x} y1={0} x2={x} y2={60} w={24} c={c} />
-      <Joint at={[x, 60]} turn={-knee}>
+      <Joint at={[x, 60]} turn={-knee} leg>
         <Tube o={o} x1={x} y1={60} x2={x} y2={112} w={24} c={c} />
         {!o && (
           <path
@@ -224,12 +224,17 @@ function Head({ look, headphones }) {
   )
 }
 
-function Person({ look, pose, flip, wear, holdA, holdB, headphones }) {
+function Person({ look, pose, was, flip, wear, holdA, holdB, headphones }) {
   const { at, lean = 0, head = 0, a, b, legs } = pose
   const arm = { lean, sleeve: look.top, skin: look.skin }
+  // Body and legs cannot share one clock without the shoes dipping through
+  // the floor, so say which way the hips are going and let CSS order them.
+  const from = was ? was.at[1] : at[1]
+  const shift = at[1] < from ? 'up' : at[1] > from ? 'down' : undefined
   return (
     <g
       className="ill-move"
+      data-shift={shift}
       style={{ transform: `translate(${at[0]}px, ${at[1]}px)` }}
     >
       <g
@@ -333,11 +338,11 @@ const LEGS_STANDING = [
 ]
 const LEGS_SEATED = [
   [90, 90],
-  [86, 87],
+  [90, 82],
 ]
 const LEGS_AT_DESK = [
-  [30, 60],
-  [20, 50],
+  [54, 84],
+  [52, 82],
 ]
 // Arms are [shoulder, elbow] in degrees, measured forward from hanging down.
 const PARTNER_POSES = [
@@ -394,7 +399,7 @@ function Frame({ children, side }) {
 
 /* The partner side: a waiter for role-play, two hosts for the podcast,
    and someone handing over phrase cards for the vocabulary book. */
-export function PartnerArt({ scene }) {
+export function PartnerArt({ scene, from = scene }) {
   return (
     <Frame side="partner">
       <Prop on={scene === 0} off="translateX(-140px)">
@@ -435,6 +440,7 @@ export function PartnerArt({ scene }) {
       <Person
         look={PARTNER}
         pose={PARTNER_POSES[scene]}
+        was={PARTNER_POSES[from]}
         headphones={scene === 1}
         wear={
           <>
@@ -692,7 +698,7 @@ function Cat({ scene }) {
 
 /* The learner side: at a café table, out with headphones as the sun
    comes up, then pegging the phrases worth keeping onto a line. */
-export function LearnerArt({ scene }) {
+export function LearnerArt({ scene, from = scene }) {
   return (
     <Frame side="learner">
       <defs>
@@ -777,6 +783,7 @@ export function LearnerArt({ scene }) {
       <Person
         look={LEARNER}
         pose={LEARNER_POSES[scene]}
+        was={LEARNER_POSES[from]}
         flip
         headphones={scene === 1}
         holdA={

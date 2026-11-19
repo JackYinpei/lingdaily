@@ -219,6 +219,20 @@ describe('Feature stage', () => {
     }
   })
 
+  it('tells the art which way each figure is moving so shoes stay on the floor', async () => {
+    await render('zh')
+    const learner = () =>
+      container
+        .querySelector('.home-art-learner .ill-move[data-shift]')
+        ?.getAttribute('data-shift')
+    const tabs = container.querySelectorAll('[role="tab"]')
+    expect(learner()).toBeUndefined()
+    await act(async () => tabs[1].click())
+    expect(learner()).toBe('up')
+    await act(async () => tabs[0].click())
+    expect(learner()).toBe('down')
+  })
+
   it('does not turn on its own for visitors who ask for reduced motion', async () => {
     vi.useFakeTimers()
     window.matchMedia = vi.fn(() => ({ matches: true }))

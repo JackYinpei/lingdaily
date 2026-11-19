@@ -81,7 +81,13 @@ function KeepSample({ t }) {
 const SAMPLES = [TalkSample, PodcastSample, KeepSample]
 
 export default function FeatureStage({ t, signedIn }) {
-  const [active, setActive] = useState(0)
+  // `from` lets the art time each move by where a figure is coming from.
+  const [{ active, from }, setTurn] = useState({ active: 0, from: 0 })
+  const setActive = (pick) =>
+    setTurn((now) => {
+      const next = typeof pick === 'function' ? pick(now.active) : pick
+      return next === now.active ? now : { active: next, from: now.active }
+    })
   const [auto, setAuto] = useState(true)
   const [held, setHeld] = useState(false)
   const [seen, setSeen] = useState(true)
@@ -138,7 +144,7 @@ export default function FeatureStage({ t, signedIn }) {
       onFocus={() => setHeld(true)}
       onBlur={() => setHeld(false)}
     >
-      <PartnerArt scene={active} />
+      <PartnerArt scene={active} from={from} />
       <div className="home-sheet">
         <div className="home-scene-tabs" role="tablist" aria-label={t.label}>
           {t.features.map((feature, index) => (
@@ -196,7 +202,7 @@ export default function FeatureStage({ t, signedIn }) {
           {t.note}
         </p>
       </div>
-      <LearnerArt scene={active} />
+      <LearnerArt scene={active} from={from} />
     </div>
   )
 }

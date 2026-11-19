@@ -139,6 +139,12 @@
 .home-art .i-face { fill: var(--home-art-face); }
 .ill-joint { transition: transform .9s cubic-bezier(.34, 1.4, .5, 1); }
 .ill-move { transition: transform .9s cubic-bezier(.5, 0, .2, 1); }
+/* Shoes stay on the floor: a figure getting up lifts first and unfolds its legs
+   after; one sitting down folds its legs first and then lowers. */
+.ill-move[data-shift='up'] { transition: transform .55s cubic-bezier(.2, .8, .3, 1); }
+.ill-move[data-shift='up'] .ill-leg { transition: transform .6s cubic-bezier(.45, 0, .3, 1) .1s; }
+.ill-move[data-shift='down'] { transition: transform .6s cubic-bezier(.45, 0, .3, 1) .1s; }
+.ill-move[data-shift='down'] .ill-leg { transition: transform .5s cubic-bezier(.2, .8, .3, 1); }
 .ill-prop { transition: transform .6s cubic-bezier(.3, 1.3, .5, 1) .3s, opacity .2s ease .3s; }
 .ill-prop-late { transition-delay: .55s; }
 .ill-prop[data-on='false'] { transform: var(--ill-off); opacity: 0; transition: transform .45s cubic-bezier(.5, -.3, .7, .4), opacity .15s ease .3s; }

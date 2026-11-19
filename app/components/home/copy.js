@@ -5,7 +5,7 @@ export const HOME_COPY = {
     headline: '找个话题，',
     headlineAccent: '练练口语。',
     intro:
-      '点单、面试，或聊聊今天的新闻。选个话题，和 AI 用语音对话；不方便开口时，也可以先听播客。',
+      '点单、面试，或聊聊今天的新闻。和 AI 用语音对话，也可以先听一期播客。',
     start: '开始练习',
     continue: '继续练习',
     listen: '听新闻播客',
@@ -261,15 +261,15 @@ export const HOME_COPY = {
     headline: '話題を選んで、',
     headlineAccent: '会話の練習。',
     intro:
-      'レストランの注文、面接、今日のニュース。話題を選んでAIと音声で話せます。声を出せないときは、ニュースのポッドキャストも聴けます。',
+      'レストランの注文や面接、今日のニュース。AIと音声で会話を練習できます。声を出せないときは、ポッドキャストを聴けます。',
     start: '練習を始める',
     continue: '練習を続ける',
     listen: 'ニュースを聴く',
     entryNote: '会話練習はログインが必要 · ポッドキャストは登録不要',
-    languages: '英語・日本語・スペイン語など、8言語の練習に対応',
+    languages: '英語・日本語など8言語に対応',
     discover: '機能を見る',
     methodLabel: '学習の流れ',
-    methodIntro: 'ニュースを聴く、会話を練習する。',
+    methodIntro: '聴く練習、話す練習。',
     methods: ['ニュースを聴く', 'AIと話す', '単語を見返す'],
     nav: {
       features: 'できること',
@@ -330,12 +330,12 @@ export const HOME_COPY = {
       ],
     },
     featuresEyebrow: 'FEATURES / 機能',
-    featuresTitle: '会話練習・ポッドキャスト・単語帳',
+    featuresTitle: 'できること',
     featuresIntro:
-      '話したいときは会話練習。声を出せないときは、ポッドキャストや過去の会話、保存した単語を確認できます。',
+      '声を出せないときは、ポッドキャストを聴いたり、過去の会話や単語を見返したりできます。',
     talk: {
       title: '会話練習',
-      desc: 'ニュースやロールプレイの場面を選んで、AIと音声で話せます。会話中に単語の使い方や文法のアドバイスを確認できます。',
+      desc: 'ニュースやロールプレイを選んでAIと音声で話せます。単語や文法のアドバイスも確認できます。',
       prompts: [
         'レストランで注文する',
         '仕事の面接を練習する',
@@ -357,7 +357,7 @@ export const HOME_COPY = {
     example: '表現のサンプル',
     howEyebrow: 'GETTING STARTED / 使い方',
     howTitle: '初めての方へ',
-    howNote: '音声での練習にはログインとマイクの許可が必要です。\nポッドキャストはログインせずに聴けます。',
+    howNote: '音声練習はログインが必要です。\nマイクの使用も許可してください。\nポッドキャストはログイン不要です。',
     steps: [
       {
         title: '言語を選んでログイン',
@@ -373,12 +373,12 @@ export const HOME_COPY = {
       },
     ],
     startEyebrow: 'LANGUAGES / 言語設定',
-    startTitle: '言語を選んでください',
-    startDesc: '母語は翻訳と説明に、練習する言語は会話に使います。',
+    startTitle: '言語を選ぶ',
+    startDesc: '母語は翻訳や説明に使います。',
     native: '母語',
     learning: '練習する言語',
     starting: '移動中…',
-    footer: 'AI会話練習・中国語と英語のニュースポッドキャスト',
+    footer: 'AI会話練習・ニュースポッドキャスト',
     footerNav: 'フッターナビゲーション',
     support: 'ヘルプ・お問い合わせ',
     privacy: 'プライバシー',

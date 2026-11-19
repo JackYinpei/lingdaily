@@ -28,7 +28,7 @@ import {
     reconcilePersistSnapshot,
 } from './_lib/conversation';
 import {
-    buildInstructions,
+    buildLiveInstructions,
     buildResumeContext,
     buildTopicContext,
     createNewsContextMessage,
@@ -889,8 +889,7 @@ export default function Home() {
             const connectedNewsKey = getNewsKey(selectedNewsRef.current);
 
             // Build Context Prompt
-            const baseInstructions = buildInstructions(
-                uiLangCode,
+            const baseInstructions = buildLiveInstructions(
                 nativeLanguage?.label || '中文',
                 learningLanguage?.label || 'English',
                 selectedNewsRef.current?._isScenario || false,

@@ -519,20 +519,96 @@ describe('Gemini Live text acceptance', () => {
 })
 
 describe('Gemini Live first turn', () => {
-  it('sends context messages as clientContent with an explicit turnComplete', async () => {
-    const { service } = createService()
+  it('loads the full context before a short completed client turn without releasing the mic hold', async () => {
+    const { service, config } = createService()
     const socket = await connectService(service)
+    const text = '[System Initialize] ' + 'News and scenario context. '.repeat(120)
+    socket.send.mockClear()
 
-    await service.sendContextMessage('[System Initialize] intro please')
+    await service.sendContextMessage(text)
 
-    const clientContent = sentMessages(socket).find((msg) => msg.clientContent)
-    expect(clientContent).toEqual({
+    expect(sentMessages(socket)).toEqual([{
       clientContent: {
-        turns: [{ role: 'user', parts: [{ text: '[System Initialize] intro please' }] }],
+        turns: [{ role: 'user', parts: [{ text }] }],
+        turnComplete: false,
+      },
+    }, {
+      clientContent: {
+        turns: [{ role: 'user', parts: [{ text: 'Please respond aloud to the context above.' }] }],
         turnComplete: true,
       },
-    })
+    }])
+    expect(config.onMessage).not.toHaveBeenCalled()
+    expect(service.micStreamHold).toBe(true)
+    emitMicFrame(service)
+    expect(socket.send).toHaveBeenCalledTimes(2)
 
+    await socket.onmessage({ data: JSON.stringify({ serverContent: {
+      modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm;rate=24000', data: pcmBase64(16384) } }] },
+    } }) })
+    const source = service.outputAudioContext.bufferSources.at(-1)
+    expect(Array.from(source.buffer.getChannelData(0))).toEqual([0.5])
+    expect(source.start).toHaveBeenCalledOnce()
+    expect(service.micStreamHold).toBe(true)
+    await socket.onmessage({ data: JSON.stringify({ serverContent: { turnComplete: true } }) })
+    expect(service.micStreamHold).toBe(false)
+
+    service.disconnect()
+  })
+
+  it('sends the context and opening cue only after setup and microphone initialization resolve', async () => {
+    const { service } = createService()
+    let approve
+    navigator.mediaDevices.getUserMedia.mockImplementation(() => new Promise(resolve => { approve = resolve }))
+    service.primeOutputAudio()
+    const connection = service.connect('prompt', 'token').then(() => service.sendContextMessage('Resume our conversation.'))
+    await waitForSocketCount(1)
+    const socket = FakeWebSocket.instances[0]
+    socket.readyState = FakeWebSocket.OPEN
+    socket.onopen()
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled()
+    const setup = socket.onmessage({ data: JSON.stringify({ setupComplete: true }) })
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce()
+    expect(sentMessages(socket)).toHaveLength(1)
+    expect(service.micStreamHold).toBe(true)
+    approve({ getTracks: () => [{ stop: vi.fn() }] })
+    await setup
+    await connection
+    expect(sentMessages(socket).map(msg => Object.keys(msg)[0])).toEqual(['setup', 'clientContent', 'clientContent'])
+    expect(service.micStreamHold).toBe(true)
+
+    service.disconnect()
+  })
+
+  it.each(['', '   ', null, undefined])('does not trigger a greeting for empty context %j', async text => {
+    const { service } = createService()
+    const socket = await connectService(service)
+    socket.send.mockClear()
+    await service.sendContextMessage(text)
+    expect(socket.send).not.toHaveBeenCalled()
+    service.disconnect()
+  })
+
+  it('does not send an opening cue when the context send fails', async () => {
+    const { service } = createService()
+    const socket = await connectService(service)
+    socket.send.mockClear()
+    socket.send.mockImplementationOnce(() => { throw new Error('closed during send') })
+    await expect(service.sendContextMessage('Context')).rejects.toThrow('closed during send')
+    expect(socket.send).toHaveBeenCalledOnce()
+    expect(service.micStreamHold).toBe(true)
+    service.disconnect()
+  })
+
+  it('does not send context or an opening cue on a closed or disconnected socket', async () => {
+    const { service } = createService()
+    await service.sendContextMessage('Context')
+    const socket = await connectService(service)
+    socket.send.mockClear()
+    socket.readyState = FakeWebSocket.CLOSED
+    await service.sendContextMessage('Context')
+    expect(socket.send).not.toHaveBeenCalled()
     service.disconnect()
   })
 

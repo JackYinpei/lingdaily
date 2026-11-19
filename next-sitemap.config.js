@@ -1,9 +1,10 @@
 const { getSiteUrl } = require('./app/lib/siteUrl.cjs');
+const { getSupabaseAnonKey, getSupabaseSchema, getSupabaseUrl } = require('./app/lib/supabaseEnv');
 
 const siteUrl = getSiteUrl();
-const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabaseSchema = process.env.SUPABASE_SCHEMA || 'public';
+const supabaseUrl = getSupabaseUrl();
+const supabaseAnonKey = getSupabaseAnonKey();
+const supabaseSchema = getSupabaseSchema();
 
 // Completed podcasts are publicly readable through RLS, so sitemap generation
 // never needs the service-role key and never reads user-owned tables.

@@ -1,24 +1,13 @@
 import { auth } from "@/app/auth"
 import { getLanguageFromPreference, resolveDistinctLanguagePair } from '@/app/lib/languages'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-const supabaseSchema = process.env.SUPABASE_SCHEMA || 'public'
+import { getSupabaseRestConfig, SUPABASE_CREDENTIALS, supabaseRestRequest } from '@/app/lib/server/supabaseRest'
 
 function jsonResponse(body, status = 200) {
   return Response.json(body, { status })
 }
 
 function getSupabaseCredentials(session) {
-  const bearer = supabaseServiceRoleKey || session?.supabaseAccessToken
-  const apiKey = supabaseServiceRoleKey || supabaseAnonKey
-  if (!supabaseUrl || !bearer || !apiKey) return null
-  return { bearer, apiKey }
-}
-
-function parseJson(text, fallback) {
-  try { return text ? JSON.parse(text) : fallback } catch { return fallback }
+  return getSupabaseRestConfig({ credentials: SUPABASE_CREDENTIALS.SERVICE_ROLE_OR_SESSION, session })
 }
 
 export async function GET() {
@@ -29,24 +18,13 @@ export async function GET() {
     const credentials = getSupabaseCredentials(session)
     if (!credentials) return jsonResponse({ error: 'Language preferences storage is not configured' }, 500)
 
-    const url = new URL(`${supabaseUrl}/rest/v1/user_preferences`)
-    url.searchParams.set('user_id', `eq.${session.user.id}`)
-    url.searchParams.set('select', 'user_id,native_language_code,native_language_label,learning_language_code,learning_language_label,updated_at')
-    url.searchParams.set('limit', '1')
-
-    const res = await fetch(url.toString(), {
-      headers: {
-        apikey: credentials.apiKey,
-        Authorization: `Bearer ${credentials.bearer}`,
-        'Accept-Profile': supabaseSchema,
-        Accept: 'application/json',
-        'Cache-Control': 'no-cache',
-      },
-      cache: 'no-store',
+    const params = new URLSearchParams({
+      user_id: `eq.${session.user.id}`,
+      select: 'user_id,native_language_code,native_language_label,learning_language_code,learning_language_label,updated_at',
+      limit: '1',
     })
-
-    const text = await res.text()
-    const data = parseJson(text, [])
+    const res = await supabaseRestRequest(credentials, 'user_preferences', { params })
+    const data = res.data ?? []
     if (!res.ok) {
       console.error('Failed to fetch language preferences:', res.status, data)
       return jsonResponse({ error: 'Failed to fetch language preferences' }, 502)
@@ -100,23 +78,13 @@ export async function POST(req) {
       learning_language_label: learning.label,
     }
 
-    const url = new URL(`${supabaseUrl}/rest/v1/user_preferences`)
-    url.searchParams.set('on_conflict', 'user_id')
-    const res = await fetch(url.toString(), {
+    const res = await supabaseRestRequest(credentials, 'user_preferences', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: credentials.apiKey,
-        Authorization: `Bearer ${credentials.bearer}`,
-        'Content-Profile': supabaseSchema,
-        Prefer: 'resolution=merge-duplicates,return=representation',
-      },
-      body: JSON.stringify(row),
-      cache: 'no-store',
+      params: new URLSearchParams({ on_conflict: 'user_id' }),
+      body: row,
+      prefer: 'resolution=merge-duplicates,return=representation',
     })
-
-    const text = await res.text()
-    const data = parseJson(text, { raw: text })
+    const data = res.data ?? { raw: res.text }
     if (!res.ok) {
       console.error('Failed to save language preferences:', res.status, data)
       return jsonResponse({ error: 'Failed to save language preferences' }, 502)

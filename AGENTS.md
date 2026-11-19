@@ -50,6 +50,7 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | `app/progress/progress-client.jsx` | 学习看板：今日进度环、词汇掌握、本周量表（复用 progress + items API） |
 | `app/api/` | 认证、新闻、翻译、历史、学习项、场景和播客 API |
 | `app/lib/history/` | PostgREST 请求、历史合并、复合游标和 DTO |
+| `app/lib/supabaseEnv.js`、`app/lib/server/supabaseRest.js` | Supabase 配置唯一来源：CommonJS env 读取（`NEXT_PUBLIC_*` 优先，sitemap 也 require 它）；PostgREST 请求按显式 credentials 模式（service role / +session / +anon）选 key，及 Auth admin/匿名 headers。新代码不要再直接读 Supabase env |
 | `app/lib/news/` | 纯函数：Kagi RSS → 新闻卡片 article（`parseKagiRss`、`cleanKagiDescription`），由 `NewsFeed` 调用 |
 | `app/lib/podcast/` | 新闻抓取、脚本验证、TTS、COS、DB repository、shownotes/RSS |
 | `app/lib/languages.js` | 唯一语言目录、归一化与语言对规则 |

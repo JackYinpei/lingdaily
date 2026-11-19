@@ -1,5 +1,4 @@
-const supabaseUrl = () => process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const serviceRoleKey = () => process.env.SUPABASE_SERVICE_ROLE_KEY
+import { getSupabaseAdminConfig } from './supabaseRest'
 
 /**
  * Ensure an externally verified user exists in Supabase auth.users via Admin API.
@@ -7,20 +6,13 @@ const serviceRoleKey = () => process.env.SUPABASE_SERVICE_ROLE_KEY
  * Shared by web OAuth (NextAuth) and native iOS Sign in with Apple.
  */
 export async function ensureAuthUser({ email, name, image }) {
-  const url = supabaseUrl()
-  const key = serviceRoleKey()
-  if (!url || !key || !email) return null
-
-  const headers = {
-    'Content-Type': 'application/json',
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-  }
+  const admin = getSupabaseAdminConfig()
+  if (!admin || !email) return null
 
   // Try creating the user via Supabase Admin API
-  const createRes = await fetch(`${url}/auth/v1/admin/users`, {
+  const createRes = await fetch(`${admin.baseUrl}/auth/v1/admin/users`, {
     method: 'POST',
-    headers,
+    headers: admin.headers({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       email,
       email_confirm: true,
@@ -44,12 +36,11 @@ export async function ensureAuthUser({ email, name, image }) {
 
 /** Looks up an existing Supabase auth user without creating one. */
 export async function findAuthUserIdByEmail(email) {
-  const url = supabaseUrl()
-  const key = serviceRoleKey()
-  if (!url || !key || !email) return null
+  const admin = getSupabaseAdminConfig()
+  if (!admin || !email) return null
   const listRes = await fetch(
-    `${url}/auth/v1/admin/users?filter=${encodeURIComponent(email)}&page=1&per_page=10`,
-    { method: 'GET', headers: { apikey: key, Authorization: `Bearer ${key}` } },
+    `${admin.baseUrl}/auth/v1/admin/users?filter=${encodeURIComponent(email)}&page=1&per_page=10`,
+    { method: 'GET', headers: admin.headers() },
   )
   if (!listRes.ok) return null
   const listData = await listRes.json()
@@ -60,22 +51,20 @@ export async function findAuthUserIdByEmail(email) {
 
 /** Permanently deletes the Supabase auth user; owned rows cascade via FKs. */
 export async function deleteAuthUser(userId) {
-  const url = supabaseUrl()
-  const key = serviceRoleKey()
-  if (!url || !key) return false
-  const res = await fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
-    method: 'DELETE', headers: { apikey: key, Authorization: `Bearer ${key}` },
+  const admin = getSupabaseAdminConfig()
+  if (!admin) return false
+  const res = await fetch(`${admin.baseUrl}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'DELETE', headers: admin.headers(),
   })
   return res.ok || res.status === 404
 }
 
 /** Email of a Supabase auth user (admin views only), or null. */
 export async function authUserEmail(userId) {
-  const url = supabaseUrl()
-  const key = serviceRoleKey()
-  if (!url || !key) return null
-  const res = await fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
-    headers: { apikey: key, Authorization: `Bearer ${key}` },
+  const admin = getSupabaseAdminConfig()
+  if (!admin) return null
+  const res = await fetch(`${admin.baseUrl}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+    headers: admin.headers(),
   })
   if (!res.ok) return null
   return (await res.json())?.email || null

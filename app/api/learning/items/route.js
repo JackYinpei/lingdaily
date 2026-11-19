@@ -4,11 +4,7 @@ import {
   DEFAULT_NATIVE_LANGUAGE,
   getLanguageFromPreference,
 } from '@/app/lib/languages'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-const supabaseSchema = process.env.SUPABASE_SCHEMA || 'public'
+import { getSupabaseRestConfig, SUPABASE_CREDENTIALS, supabaseRestRequest } from '@/app/lib/server/supabaseRest'
 
 const ALLOWED_ITEM_TYPES = new Set(['word', 'phrase', 'grammar', 'other'])
 const MAX_ITEMS_PER_EVENT = 20
@@ -30,14 +26,7 @@ function jsonResponse(body, status = 200) {
 }
 
 function getSupabaseCredentials(session) {
-  const bearer = supabaseServiceRoleKey || session?.supabaseAccessToken
-  const apiKey = supabaseServiceRoleKey || supabaseAnonKey
-  if (!supabaseUrl || !bearer || !apiKey) return null
-  return { bearer, apiKey }
-}
-
-function parseJson(text, fallback) {
-  try { return text ? JSON.parse(text) : fallback } catch { return fallback }
+  return getSupabaseRestConfig({ credentials: SUPABASE_CREDENTIALS.SERVICE_ROLE_OR_SESSION, session })
 }
 
 function optionalText(value, maxLength) {
@@ -113,38 +102,17 @@ function decorateRecord(record) {
   }
 }
 
-function requestHeaders(credentials, { write = false } = {}) {
-  return {
-    apikey: credentials.apiKey,
-    Authorization: `Bearer ${credentials.bearer}`,
-    [write ? 'Content-Profile' : 'Accept-Profile']: supabaseSchema,
-    ...(write
-      ? { 'Content-Type': 'application/json', Prefer: 'return=representation' }
-      : { Accept: 'application/json', 'Cache-Control': 'no-cache' }),
-  }
+async function learningItemsRequest(credentials, options) {
+  const result = await supabaseRestRequest(credentials, 'unfamiliar_english', options)
+  return { ...result, data: result.data ?? { raw: result.text } }
 }
 
-async function insertRecord(credentials, row) {
-  const res = await fetch(`${supabaseUrl}/rest/v1/unfamiliar_english`, {
-    method: 'POST',
-    headers: requestHeaders(credentials, { write: true }),
-    body: JSON.stringify(row),
-    cache: 'no-store',
-  })
-  const text = await res.text()
-  return { res, data: parseJson(text, { raw: text }) }
+function insertRecord(credentials, row) {
+  return learningItemsRequest(credentials, { method: 'POST', body: row, prefer: 'return=representation' })
 }
 
-async function fetchRecords(credentials, params) {
-  const res = await fetch(
-    `${supabaseUrl}/rest/v1/unfamiliar_english?${params.toString()}`,
-    {
-      headers: requestHeaders(credentials),
-      cache: 'no-store',
-    },
-  )
-  const text = await res.text()
-  return { res, data: parseJson(text, { raw: text }) }
+function fetchRecords(credentials, params) {
+  return learningItemsRequest(credentials, { params })
 }
 
 export async function POST(req) {
@@ -191,8 +159,8 @@ export async function POST(req) {
     }
 
     const result = await insertRecord(credentials, row)
-    if (!result.res.ok) {
-      console.error('Failed to save learning items:', result.res.status, result.data)
+    if (!result.ok) {
+      console.error('Failed to save learning items:', result.status, result.data)
       return jsonResponse({ error: 'Failed to save learning items' }, 502)
     }
 
@@ -247,8 +215,8 @@ export async function GET(req) {
     }
 
     const result = await fetchRecords(credentials, params)
-    if (!result.res.ok) {
-      console.error('Failed to fetch learning items:', result.res.status, result.data)
+    if (!result.ok) {
+      console.error('Failed to fetch learning items:', result.status, result.data)
       return jsonResponse({ error: 'Failed to fetch learning items' }, 502)
     }
 

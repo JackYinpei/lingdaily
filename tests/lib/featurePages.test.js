@@ -89,5 +89,20 @@ describe('editorial feature pages', () => {
     expect(action.getAttribute('href')).toBe('/talk')
     expect(action.className).toContain('feature-action')
     expect(action.className).not.toMatch(/red|destructive/)
+    expect(container.querySelector('.feature-filters')).toBeNull()
+  })
+
+  it('consolidates the weekly summary into one chart while keeping all-time metrics', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url) => respond({ data: url.includes('/items') ? [] : {
+      totalConversations: 3, totalUserTurns: 29, activeDays: 2, currentStreak: 2,
+      recent7Days: [{ date: '2026-01-09', userTurns: 8 }, { date: '2026-01-10', userTurns: 13 }],
+    } })))
+    await render(ProgressClient)
+    expect(container.querySelectorAll('.feature-progress-summary > [data-slot="card"]')).toHaveLength(2)
+    expect(container.querySelectorAll('[role="list"]')).toHaveLength(1)
+    expect(container.querySelector('.feature-chart-total strong').textContent).toContain('21')
+    expect([...container.querySelectorAll('.feature-progress-metrics dd')].map(el => Number.parseInt(el.textContent, 10)))
+      .toEqual([3, 29, 2, 2])
+    expect(container.querySelectorAll('.feature-progress-links a')).toHaveLength(2)
   })
 })

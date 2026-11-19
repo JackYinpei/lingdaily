@@ -18,7 +18,7 @@ export function ScenarioCard({ scenario, isSelected, onSelect, compact = false, 
   return (
     <Card
       className={cn(
-        "feature-topic-card cursor-pointer transition-colors duration-200 w-full h-full flex flex-col overflow-hidden p-0",
+        "feature-topic-card feature-scenario-card cursor-pointer transition-colors duration-200 w-full h-full flex flex-col overflow-hidden p-0",
         isSelected ? "bg-secondary" : "hover:bg-card/80"
       )}
       onClick={onSelect}

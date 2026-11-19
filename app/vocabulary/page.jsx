@@ -128,7 +128,7 @@ export default function VocabularyPage() {
             </div>
             <div>
                 {/* Filter tabs */}
-                <div className="feature-filters mb-6">
+                {uniqueItems.length > 0 && <div className="feature-filters mb-6">
                     {['all', 'word', 'phrase', 'grammar', 'other'].map(type => (
                         <button
                             key={type}
@@ -143,7 +143,7 @@ export default function VocabularyPage() {
                             }
                         </button>
                     ))}
-                </div>
+                </div>}
 
                 {error && (
                     <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-lg mb-4 text-sm">
@@ -194,27 +194,29 @@ export default function VocabularyPage() {
                                             {item.meaning}
                                         </p>
                                     )}
+                                    <div className="feature-item-context">
                                     {item.original && item.original !== item.text && (
                                         <blockquote className="text-muted-foreground text-xs leading-6 line-clamp-2">
-                                            <span className="text-muted-foreground/60">{t.original}: </span>
+                                            <span>{t.original}: </span>
                                             {item.original}
                                         </blockquote>
                                     )}
                                     {item.userMessage && (
                                         <p className="text-muted-foreground text-xs mt-1 line-clamp-2">
-                                            <span className="text-muted-foreground/60">{t.from}: </span>
+                                            <span>{t.from}: </span>
                                             {item.userMessage}
                                         </p>
                                     )}
                                     {item.context && (
                                         <p className="text-muted-foreground text-xs mt-1 line-clamp-1">
-                                            <span className="text-muted-foreground/60">{t.context}: </span>
+                                            <span>{t.context}: </span>
                                             {item.context}
                                         </p>
                                     )}
-                                    <p className="text-muted-foreground/40 text-xs mt-2">
+                                    <p className="feature-item-date">
                                         {item.timestamp ? new Date(item.timestamp).toLocaleDateString() : ''}
                                     </p>
+                                    </div>
                                 </div>
                             ))}
                         </div>

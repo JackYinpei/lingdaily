@@ -39,7 +39,7 @@ export default function FeatureShell({ active, children, className = '' }) {
   const ThemeIcon = theme === 'system' ? Monitor : theme === 'dark' ? Moon : Sun
   const themeLabel = { en: 'Change theme', zh: '切换主题', ja: 'テーマを切り替える' }[lang]
   return (
-    <div className={`feature-app ${className}`} lang={lang === 'zh' ? 'zh-CN' : lang}>
+    <div className={`feature-app feature-page-${active} ${className}`} lang={lang === 'zh' ? 'zh-CN' : lang}>
       <a href="#feature-content" className="feature-skip">{lang === 'zh' ? '跳至内容' : lang === 'ja' ? '本文へ' : 'Skip to content'}</a>
       <header className="feature-header">
         <div className="feature-header-inner">

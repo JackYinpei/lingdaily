@@ -24,9 +24,7 @@ export default async function PodcastsPage() {
 
   return (
     <FeatureShell active="podcasts">
-      <FeatureHeading number="04" eyebrow="The daily listening room · 每日听读" title="成杨英语日刊" description="每天十分钟，LL 和 DD 用自然英文和中文拆解全球热点。">
-        <a href="/podcasts/feed.xml" className="feature-action shrink-0"><Rss size={15} aria-hidden="true" /> RSS Feed</a>
-      </FeatureHeading>
+      <FeatureHeading number="04" eyebrow="The daily listening room · 每日听读" title="成杨英语日刊" description="每天十分钟，LL 和 DD 用自然英文和中文拆解全球热点。" />
       <section className="feature-podcast-intro" aria-label="节目介绍">
         <div className="feature-podcast-art" aria-hidden="true"><AudioLines strokeWidth={1.2} size={28} /><strong>LL / DD</strong><span>LINGDAILY RADIO</span></div>
         <div className="self-center">
@@ -36,7 +34,10 @@ export default async function PodcastsPage() {
         </div>
       </section>
       <div>
-        <div className="feature-toolbar"><h2 className="feature-eyebrow">EPISODE ARCHIVE · 往期节目</h2><span className="feature-count">{episodes.length} episodes</span></div>
+        <div className="feature-toolbar">
+          <div><h2 className="feature-eyebrow">EPISODE ARCHIVE · 往期节目</h2><span className="feature-count">{episodes.length} episodes</span></div>
+          <a href="/podcasts/feed.xml" className="feature-text-link"><Rss size={15} aria-hidden="true" /> RSS Feed</a>
+        </div>
         {unavailable ? (
           <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-5 text-sm">播客服务暂时不可用，请稍后再试。</div>
         ) : episodes.length === 0 ? (
@@ -51,7 +52,7 @@ export default async function PodcastsPage() {
                 <div className="min-w-0">
                 <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                     <h2>
-                      <Link href={`/podcasts/${episode.date}`} className="hover:text-primary">{episode.title}<ArrowUpRight size={17} className="inline ml-2" aria-hidden="true" /></Link>
+                      <Link href={`/podcasts/${episode.date}`} className="feature-episode-link hover:text-primary">{episode.title}<ArrowUpRight size={17} aria-hidden="true" /></Link>
                     </h2>
                   <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 size={13} aria-hidden="true" />{formatDuration(episode.duration)}</span>
                 </div>

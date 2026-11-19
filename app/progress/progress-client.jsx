@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
+  ArrowRight,
   BookOpen,
   CalendarDays,
   Flame,
@@ -182,10 +183,8 @@ export default function ProgressClient() {
           </div>
         ) : (
           <>
-            {/* Highlight cards mirroring the homepage dashboard preview */}
-            <section aria-label={t.todayOverview} className="grid gap-4 lg:grid-cols-3">
-              {/* Today's progress ring */}
-              <Card className="bg-card/70 backdrop-blur">
+            <section aria-label={t.todayOverview} className="feature-progress-summary">
+              <Card>
                 <CardHeader>
                   <CardTitle className="text-base">{t.todayProgress}</CardTitle>
                 </CardHeader>
@@ -194,98 +193,60 @@ export default function ProgressClient() {
                     <ProgressRing percent={todayPercent} />
                     <div className="absolute text-center">
                       <span className="block text-xl font-bold leading-none">{todayPercent}%</span>
-                      <span className="block text-[10px] text-muted-foreground">{t.goal} {DAILY_TURN_GOAL} {t.turnUnit}</span>
                     </div>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">{t.todayTurns}</p>
-                    <p className="text-2xl font-bold">
+                    <p className="feature-progress-value">
                       {todayTurns}
                       <span className="ml-1 text-sm font-normal text-muted-foreground">/ {DAILY_TURN_GOAL} {t.turnUnit}</span>
                     </p>
+                    <p className="mt-2 text-xs text-muted-foreground">{t.goal}: {DAILY_TURN_GOAL} {t.turnUnit}</p>
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Vocabulary mastery */}
-              <Card className="bg-card/70 backdrop-blur">
+              <Card>
                 <CardHeader>
                   <CardTitle className="text-base">{t.vocabulary}</CardTitle>
                 </CardHeader>
-                <CardContent className="flex items-end justify-between">
+                <CardContent className="flex flex-wrap items-end justify-between gap-4">
                   <div>
                     <p className="text-xs text-muted-foreground">{t.savedWords}</p>
-                    <p className="text-3xl font-bold">{vocabCount ?? '—'}</p>
+                    <p className="feature-progress-value">{vocabCount ?? '—'}</p>
                   </div>
-                  <Link href="/vocabulary" className="text-sm text-brand hover:underline">
-                    {t.vocabulary} →
+                  <Link href="/vocabulary" className="feature-text-link">
+                    {t.vocabulary}<ArrowRight size={16} aria-hidden="true" />
                   </Link>
                 </CardContent>
               </Card>
-
-              {/* This week summary */}
-              <Card className="bg-card/70 backdrop-blur">
-                <CardHeader>
-                  <CardTitle className="text-base">{t.week}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="mb-3 flex justify-between text-sm">
-                    <div>
-                      <p className="text-xs text-muted-foreground">{t.weekTurns}</p>
-                      <p className="text-xl font-bold">{weekTurns} {t.turnUnit}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-muted-foreground">{t.streak}</p>
-                      <p className="text-xl font-bold text-brand">{safeCount(progress.currentStreak)} {t.days}</p>
-                    </div>
-                  </div>
-                  <div className="flex h-16 items-end justify-between gap-1" aria-hidden>
-                    {recentDays.length === 0
-                      ? Array.from({ length: 7 }).map((_, i) => (
-                          <div key={i} className="w-full rounded-t bg-muted" style={{ height: '8%' }} />
-                        ))
-                      : recentDays.map((day) => {
-                          const height = day.userTurns === 0 ? 6 : Math.max(12, Math.round((day.userTurns / maxTurns) * 100))
-                          return (
-                            <div
-                              key={day.date}
-                              className="w-full rounded-t bg-gradient-to-t from-brand-from to-brand-to"
-                              style={{ height: `${height}%` }}
-                            />
-                          )
-                        })}
-                  </div>
-                </CardContent>
-              </Card>
             </section>
 
-            {/* All-time metrics */}
-            <section aria-labelledby="overview-heading" className="mt-6">
+            <section aria-labelledby="overview-heading" className="feature-progress-overview">
               <h2 id="overview-heading" className="sr-only">{t.overview}</h2>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <dl className="feature-progress-metrics">
                 {metrics.map((metric) => {
                   const Icon = metric.icon
                   return (
-                    <Card key={metric.label} className="gap-4 bg-card/70 py-5 backdrop-blur">
-                      <CardContent className="px-5">
-                        <Icon className="mb-4 size-5 text-brand" aria-hidden />
-                        <p className="text-2xl font-bold md:text-3xl">
-                          {metric.value}
-                          <span className="ml-1 text-sm font-normal text-muted-foreground">{metric.suffix}</span>
-                        </p>
-                        <p className="mt-1 text-sm text-muted-foreground">{metric.label}</p>
-                      </CardContent>
-                    </Card>
+                    <div key={metric.label}>
+                      <dt><Icon size={16} aria-hidden />{metric.label}</dt>
+                      <dd>
+                        {metric.value}
+                        <span className="ml-1 text-sm font-normal text-muted-foreground">{metric.suffix}</span>
+                      </dd>
+                    </div>
                   )
                 })}
-              </div>
+              </dl>
             </section>
 
-            {/* Detailed weekly chart */}
-            <Card className="mt-6 bg-card/70 backdrop-blur">
-              <CardHeader>
-                <CardTitle>{t.recentTurns}</CardTitle>
-                <p className="text-sm text-muted-foreground">{t.recentDescription}</p>
+            <Card className="feature-progress-chart">
+              <CardHeader className="feature-chart-header">
+                <div>
+                  <CardTitle>{t.recentTurns}</CardTitle>
+                  <p className="mt-2 text-sm text-muted-foreground">{t.recentDescription}</p>
+                </div>
+                <p className="feature-chart-total"><span>{t.week}</span><strong>{weekTurns} <small>{t.turnUnit}</small></strong></p>
               </CardHeader>
               <CardContent>
                 {recentDays.length === 0 ? (
@@ -293,7 +254,7 @@ export default function ProgressClient() {
                     {t.noProgress}
                   </div>
                 ) : (
-                  <div className="grid h-56 grid-cols-7 items-end gap-2" role="list" aria-label={t.recentLabel}>
+                  <div className="grid h-48 grid-cols-7 items-end gap-2" role="list" aria-label={t.recentLabel}>
                     {recentDays.map((day) => {
                       const height = day.userTurns === 0 ? 4 : Math.max(12, Math.round((day.userTurns / maxTurns) * 144))
                       return (
@@ -306,7 +267,7 @@ export default function ProgressClient() {
                             style={{ height: `${height}px` }}
                             aria-hidden
                           />
-                          <span className="mt-2 truncate text-[11px] text-muted-foreground">{formatDay(day.date, locale)}</span>
+                          <span className="mt-2 text-xs text-muted-foreground">{formatDay(day.date, locale)}</span>
                         </div>
                       )
                     })}
@@ -315,16 +276,22 @@ export default function ProgressClient() {
               </CardContent>
             </Card>
 
-            <section className="mt-6 grid gap-4 sm:grid-cols-2" aria-label={t.records}>
-              <Link href="/history" className="group rounded-xl border border-border bg-card/70 p-5 backdrop-blur transition-colors hover:border-brand/40 hover:bg-card">
-                <MessagesSquare className="mb-3 size-6 text-brand" aria-hidden />
-                <h2 className="font-semibold">{t.history}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">{t.historyLink}</p>
+            <section className="feature-progress-links" aria-label={t.records}>
+              <Link href="/history">
+                <MessagesSquare size={20} aria-hidden />
+                <div>
+                  <h2 className="font-semibold">{t.history}</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">{t.historyLink}</p>
+                </div>
+                <ArrowRight size={16} aria-hidden />
               </Link>
-              <Link href="/vocabulary" className="group rounded-xl border border-border bg-card/70 p-5 backdrop-blur transition-colors hover:border-brand/40 hover:bg-card">
-                <BookOpen className="mb-3 size-6 text-brand" aria-hidden />
-                <h2 className="font-semibold">{t.vocabulary}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">{t.vocabLink}</p>
+              <Link href="/vocabulary">
+                <BookOpen size={20} aria-hidden />
+                <div>
+                  <h2 className="font-semibold">{t.vocabulary}</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">{t.vocabLink}</p>
+                </div>
+                <ArrowRight size={16} aria-hidden />
               </Link>
             </section>
           </>

@@ -970,12 +970,12 @@ export default function Home() {
     }, [cancelLiveConnection]);
 
     return (
-        <FeatureShell active="talk" className="feature-practice">
+        <FeatureShell active="talk" className={`feature-practice${selectedNews ? ' feature-has-topic' : ''}`}>
             <FeatureHeading number="01" eyebrow={uiLangCode === 'zh' ? '你的口语练习室' : uiLangCode === 'ja' ? 'あなたの会話練習室' : 'Your conversation studio'} title={uiLangCode === 'zh' ? '从一个话题，聊开去。' : uiLangCode === 'ja' ? 'ひとつの話題から、話そう。' : 'One topic. A world to say.'} description={uiLangCode === 'zh' ? '选一条新闻，或走进一个场景。用自己的话，练习真实的表达。' : uiLangCode === 'ja' ? 'ニュースやシナリオを選び、自分の言葉で話してみましょう。' : 'Choose a story or step into a scenario. Practice expressing what you really mean.'} icon={MessagesSquare} />
 
             {/* Main Content */}
             <div
-                className="flex flex-col min-h-0"
+                className="feature-practice-workspace flex flex-col min-h-0"
                 style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}
             >
                 <div className="feature-practice-layout flex-col lg:flex-row">

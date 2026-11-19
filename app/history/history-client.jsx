@@ -180,7 +180,7 @@ export default function HistoryClient() {
                 <article key={item.id}>
                     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
                       <div className="min-w-0 flex-1">
-                        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <div className="feature-history-meta">
                           <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1">
                             <SourceIcon className="size-3.5" aria-hidden />
                             {t[source.label]}
@@ -196,7 +196,7 @@ export default function HistoryClient() {
                           {item.preview || t.noPreview}
                         </p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-2">
+                      <div className="feature-history-actions">
                         {item.sourceType === 'practice' ? (
                           <span className="text-xs text-muted-foreground">{t.continueApp}</span>
                         ) : (

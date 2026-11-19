@@ -52,7 +52,7 @@
 .feature-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 320px; padding: var(--feature-space-12) var(--feature-space-6); text-align: center; background: var(--card); border: 1px solid var(--border); border-radius: 4px; }
 .feature-empty > svg { width: 24px; height: 24px; color: var(--primary); margin-bottom: var(--feature-space-6); }
 .feature-empty h2 { font-family: var(--feature-serif); font-size: 24px; font-weight: 400; margin-bottom: var(--feature-space-2); }
-.feature-empty p { font-size: 14px; line-height: 1.75; color: var(--muted-foreground); max-width: 40ch; }
+.feature-empty p { white-space: pre-line; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); max-width: 40ch; }
 .feature-action { display: inline-flex; align-items: center; justify-content: center; gap: var(--feature-space-3); min-height: 44px; padding: var(--feature-space-3) var(--feature-space-6); border: 1px solid var(--feature-action); border-radius: 4px; background: var(--feature-action); color: var(--feature-action-foreground); font-size: 14px; font-weight: 500; transition: transform .2s, background-color .2s; }
 .feature-action:hover { transform: translateY(-2px); }
 .feature-action:not(.feature-action-secondary):hover { background: var(--feature-action-hover); border-color: var(--feature-action-hover); }
@@ -141,8 +141,8 @@
 .feature-chat-status { color: var(--muted-foreground); font-size: 12px; }
 .feature-chat-empty { min-height: 192px; height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column; text-align: center; gap: var(--feature-space-4); padding: var(--feature-space-8); }
 .feature-chat-empty > svg { color: var(--primary); width: 24px; height: 24px; }
-.feature-chat-empty h2 { font-family: var(--feature-serif); font-size: 24px; font-weight: 400; }
-.feature-chat-empty p { max-width: 36ch; color: var(--muted-foreground); font-size: 14px; line-height: 1.75; }
+.feature-chat-empty h2 { white-space: pre-line; font-family: var(--feature-serif); font-size: 24px; font-weight: 400; }
+.feature-chat-empty p { white-space: pre-line; max-width: 36ch; color: var(--muted-foreground); font-size: 14px; line-height: 1.75; }
 .feature-composer { padding: var(--feature-space-3); border-top: 1px solid var(--border); background: var(--background); }
 .feature-composer button { min-width: 44px; min-height: 44px; border-radius: 4px; }
 .feature-composer input { font-size: 14px; border-radius: 4px; }

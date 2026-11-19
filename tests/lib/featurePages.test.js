@@ -43,6 +43,10 @@ function respond(data) { return { ok: true, json: async () => data } }
 describe('editorial feature pages', () => {
   it.each(['en', 'zh', 'ja'])('uses styled line breaks instead of punctuation in %s feature headings', async (lang) => {
     const copy = featureCopy[lang]
+    for (const value of Object.values(copy)) {
+      if (typeof value === 'string') expect(value).not.toMatch(/[，。！？、,.!?;:：；…「」“”]/)
+    }
+    expect(copy.practiceEmptyTitle.split('\n')).toHaveLength(2)
     for (const key of ['practiceTitle', 'historyTitle', 'vocabularyTitle', 'progressTitle']) {
       expect(copy[key].split('\n')).toHaveLength(2)
       expect(copy[key]).not.toMatch(/[，。！？、,.!?;:：；]/)

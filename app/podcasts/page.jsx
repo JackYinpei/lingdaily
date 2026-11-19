@@ -39,9 +39,9 @@ export default async function PodcastsPage() {
           <a href="/podcasts/feed.xml" className="feature-text-link"><Rss size={15} aria-hidden="true" /> 订阅 RSS</a>
         </div>
         {unavailable ? (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-5 text-sm">播客服务暂时不可用，请稍后再试。</div>
+          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-5 text-sm">播客服务暂时不可用 请稍后再试</div>
         ) : episodes.length === 0 ? (
-          <div className="feature-empty"><Headphones aria-hidden="true" /><h2>暂无节目</h2><p>节目发布后会显示在这里。</p></div>
+          <div className="feature-empty"><Headphones aria-hidden="true" /><h2>暂无节目</h2><p>节目发布后会显示在这里</p></div>
         ) : (
           <div>
             {episodes.map((episode) => {

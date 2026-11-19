@@ -3,6 +3,7 @@ import { submitTextDraft } from '@/app/talk/_lib/textSubmission';
 import { useEffect, useState, useRef } from 'react';
 import { useLanguage } from '@/app/contexts/LanguageContext';
 
+import { featureCopy } from '@/app/lib/featureCopy';
 import { TextMessage } from './TextMessage';
 import { CorrectionCard } from './CorrectionCard';
 import { AudioLines, LoaderCircle, Mic, MicOff, Phone, PhoneOff, Send } from 'lucide-react';
@@ -25,39 +26,40 @@ export function History({
             ? 'ja'
             : 'en';
 
+    const pageCopy = featureCopy[langCode];
     const t = {
         en: {
             connect: 'Connect',
-            connecting: 'Connecting...',
+            connecting: 'Connecting',
             cancel: 'Cancel',
             disconnect: 'Disconnect',
             mute: 'Mute',
             unmute: 'Unmute',
-            placeholder: 'Type your message...',
+            placeholder: 'Type your message',
             send: 'Send',
-            studio: 'Conversation', ready: 'Ready when you are', live: 'Live conversation', emptyTitle: 'A conversation starts with you.', emptyDescription: 'Choose a topic on the left, then connect to speak. You can also start by typing a message.',
+            studio: 'Conversation', live: 'Live conversation',
         },
         zh: {
             connect: '连接',
-            connecting: '连接中...',
+            connecting: '连接中',
             cancel: '取消',
             disconnect: '断开',
             mute: '静音',
             unmute: '取消静音',
-            placeholder: '输入你的消息...',
+            placeholder: '输入你的消息',
             send: '发送',
-            studio: '对话练习', ready: '准备好，就开口', live: '正在对话', emptyTitle: '想说的话，从这里开始。', emptyDescription: '选一个话题，连接后就可以开口。也可以先打字，慢慢找到表达的感觉。',
+            studio: '对话练习', live: '正在对话',
         },
         ja: {
             connect: '接続',
-            connecting: '接続中...',
+            connecting: '接続中',
             cancel: 'キャンセル',
             disconnect: '切断',
             mute: 'ミュート',
             unmute: 'ミュート解除',
-            placeholder: 'メッセージを入力...',
+            placeholder: 'メッセージを入力',
             send: '送信',
-            studio: '会話練習', ready: '準備ができたら始めよう', live: '会話中', emptyTitle: 'あなたの言葉で、話そう。', emptyDescription: '話題を選んで接続すると話せます。メッセージを入力して始めることもできます。',
+            studio: '会話練習', live: '会話中',
         },
     }[langCode];
     // Avoid hydration mismatches when layout changes between server and client
@@ -100,13 +102,13 @@ export function History({
 
     return (
         <div className="feature-chat flex flex-col h-full min-h-0 text-foreground">
-            <div className="feature-chat-heading"><span><AudioLines size={16} aria-hidden="true" />{t.studio}</span><span className="feature-chat-status">{isConnected ? t.live : isConnecting ? t.connecting : t.ready}</span></div>
+            <div className="feature-chat-heading"><span><AudioLines size={16} aria-hidden="true" />{t.studio}</span><span className="feature-chat-status">{isConnected ? t.live : isConnecting ? t.connecting : pageCopy.practiceReady}</span></div>
             <div
                 className="overflow-y-auto custom-scroll px-5 flex-1 text-card-foreground space-y-4 min-h-0 pt-3 pb-8"
                 id="chatHistory"
                 ref={containerRef}
             >
-                {visibleHistory.length === 0 && <div className="feature-chat-empty"><AudioLines aria-hidden="true" /><h2>{t.emptyTitle}</h2><p>{t.emptyDescription}</p></div>}
+                {visibleHistory.length === 0 && <div className="feature-chat-empty"><AudioLines aria-hidden="true" /><h2>{pageCopy.practiceEmptyTitle}</h2><p>{pageCopy.practiceEmptyDescription}</p></div>}
                 {visibleHistory.map((item) => {
 
                     if (item.type === 'correction') {

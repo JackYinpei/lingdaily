@@ -9,26 +9,26 @@ const STEPS_ZH = [
   {
     target: '[data-tour="mode-toggle"]',
     title: "切换模式",
-    description: '选「新闻」讨论新闻，或选「场景」做角色扮演。',
+    description: "选新闻聊观点\n或选场景练对话",
     position: "bottom",
     showSkipMode: true,
   },
   {
     target: '[data-tour="category-bar"]',
     title: "选择分类",
-    description: "左右滑动分类，选择要练习的话题。",
+    description: "左右滑动分类\n选一个想聊的话题",
     position: "bottom",
   },
   {
     target: '[data-tour="news-card"]',
     title: "选择内容",
-    description: "点选一张新闻或场景卡片，作为这次对话的话题。",
+    description: "点选新闻或场景卡片\n作为这次对话的话题",
     position: "bottom",
   },
   {
     target: '[data-tour="connect-btn"]',
     title: "开始对话",
-    description: "点击连接按钮，允许使用麦克风后，就能开始语音对话。",
+    description: "点击连接按钮\n允许使用麦克风后就能开始",
     position: "top",
   },
 ];
@@ -37,26 +37,26 @@ const STEPS_EN = [
   {
     target: '[data-tour="mode-toggle"]',
     title: "Switch Mode",
-    description: 'Choose News to discuss a story or Scenarios for role-play.',
+    description: "Choose News to discuss a story\nor Scenarios to try a role play",
     position: "bottom",
     showSkipMode: true,
   },
   {
     target: '[data-tour="category-bar"]',
     title: "Browse Categories",
-    description: "Swipe through the categories to choose a topic.",
+    description: "Swipe through the categories\nand choose a topic",
     position: "bottom",
   },
   {
     target: '[data-tour="news-card"]',
     title: "Pick a Topic",
-    description: "Select a news or scenario card as the topic for this conversation.",
+    description: "Select a news story or scenario\nfor this conversation",
     position: "bottom",
   },
   {
     target: '[data-tour="connect-btn"]',
     title: "Start Talking",
-    description: "Tap Connect and allow microphone access to start a voice conversation.",
+    description: "Select Connect\nand allow microphone access to speak",
     position: "top",
   },
 ];
@@ -65,26 +65,26 @@ const STEPS_JA = [
   {
     target: '[data-tour="mode-toggle"]',
     title: "モード切替",
-    description: "「ニュース」で記事について話すか、「シナリオ」でロールプレイを選べます。",
+    description: "ニュースについて話す\nシナリオで会話を練習する",
     position: "bottom",
     showSkipMode: true,
   },
   {
     target: '[data-tour="category-bar"]',
     title: "カテゴリを選ぶ",
-    description: "カテゴリを左右にスワイプして話題を選んでください。",
+    description: "カテゴリを左右にスワイプして\n話題を選んでください",
     position: "bottom",
   },
   {
     target: '[data-tour="news-card"]',
     title: "トピックを選ぶ",
-    description: "ニュースやシナリオのカードを選ぶと、今回の会話の話題になります。",
+    description: "ニュースやシナリオのカードを選んで\n今回の話題にします",
     position: "bottom",
   },
   {
     target: '[data-tour="connect-btn"]',
     title: "会話を始める",
-    description: "接続ボタンをタップし、マイクを許可すると音声で会話できます。",
+    description: "接続ボタンをタップして\nマイクを許可すると話せます",
     position: "top",
   },
 ];
@@ -306,7 +306,7 @@ export default function OnboardingGuide({ lang = "zh", onSkipToNews }) {
         </div>
 
         <h3 className="text-base font-semibold text-card-foreground mb-1">{currentStep.title}</h3>
-        <p className="text-sm text-muted-foreground leading-relaxed mb-4">{currentStep.description}</p>
+        <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line mb-4">{currentStep.description}</p>
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <button

@@ -10,7 +10,7 @@ import ScenarioFeed from "@/app/components/ScenarioFeed";
 import { ModeToggle } from "@/app/components/ModeToggle";
 import { History } from "@/app/components/History";
 
-import { MessagesSquare, Newspaper, Users } from 'lucide-react';
+import { Newspaper, Users } from 'lucide-react';
 import FeatureShell, { FeatureHeading } from '@/app/components/FeatureShell';
 import { featureCopy } from '@/app/lib/featureCopy';
 import { useLanguage } from '@/app/contexts/LanguageContext';
@@ -998,7 +998,7 @@ export default function Home() {
     return (
         <FeatureShell active="talk" className={`feature-practice${selectedNews ? ' feature-has-topic' : ''}`}>
         <div className="contents">
-            <FeatureHeading number="01" eyebrow={pageCopy.practiceEyebrow} title={pageCopy.practiceTitle} description={pageCopy.practiceDescription} icon={MessagesSquare} />
+            <FeatureHeading page="talk" hidden />
 
             {/* Main Content */}
             <div

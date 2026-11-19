@@ -128,7 +128,7 @@ export default function HistoryClient() {
 
   return (
     <FeatureShell active="history">
-      <FeatureHeading number="02" eyebrow={t.historyEyebrow} title={t.historyTitle} description={t.historyDescription} icon={MessageCircle} />
+      <FeatureHeading page="history" />
       <div>
         <div className="feature-filters mb-6" aria-label={t.filters}>
           {FILTERS.map((filter) => (

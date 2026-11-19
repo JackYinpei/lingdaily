@@ -48,7 +48,7 @@ describe('selected Paper & Pine feature palette', () => {
       expect(contrast(palette[role], palette.background)).toBeGreaterThanOrEqual(4.5)
     }
     expect(contrast(palette['feature-support'], palette['feature-support-wash'])).toBeGreaterThanOrEqual(4.5)
-    expect(featureCss).toContain('.feature-heading-emphasis { color: var(--primary); font-weight: 500; }')
+    expect(featureCss).not.toContain('.feature-heading-emphasis')
     expect(featureCss).toContain('.feature-app .feature-connect-action { background: var(--feature-action); color: var(--feature-action-foreground); }')
     const history = readFileSync(new URL('../../app/components/History.js', import.meta.url), 'utf8')
     expect(history).toContain("? 'bg-destructive text-white hover:bg-destructive/90'")

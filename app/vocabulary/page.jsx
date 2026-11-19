@@ -125,7 +125,7 @@ export default function VocabularyPage() {
 
     return (
         <FeatureShell active="vocabulary">
-            <FeatureHeading number="03" eyebrow={pageCopy.vocabularyEyebrow} title={pageCopy.vocabularyTitle} description={pageCopy.vocabularyDescription} icon={BookOpen} />
+            <FeatureHeading page="vocabulary" />
             <div className="feature-toolbar">
                 <LanguageSelector kind="learning" label={t.language} />
                 <span className="feature-count">{t.total} {uniqueItems.length} {t.words}</span>

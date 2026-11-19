@@ -48,15 +48,17 @@ describe('editorial feature pages', () => {
     }
     expect(copy.confirmDelete('conversation')).not.toMatch(/[，。！？、,.!?;:：；…「」“”]/)
     expect(copy.practiceEmptyTitle.split('\n')).toHaveLength(2)
-    for (const key of ['practiceTitle', 'historyTitle', 'vocabularyTitle', 'progressTitle']) {
-      expect(copy[key].split('\n')).toHaveLength(2)
-      expect(copy[key]).not.toMatch(/[，。！？、,.!?;:：；]/)
+  })
+
+  it.each([['en', 'History'], ['zh-CN', '对话历史'], ['ja', '会話履歴']])('titles a feature page with its navigation label and no slogan in %s', async (code, label) => {
+    state.nativeCode = code
+    await render(FeatureHeading, { page: 'history' })
+    expect(container.querySelector('h1').textContent).toBe(label)
+    expect(container.querySelector('.feature-heading').textContent).toBe(label)
+    const copy = featureCopy[code === 'zh-CN' ? 'zh' : code]
+    for (const key of ['practiceTitle', 'historyTitle', 'vocabularyTitle', 'progressTitle', 'practiceDescription', 'historyDescription', 'vocabularyDescription', 'progressDescription']) {
+      expect(copy[key]).toBeUndefined()
     }
-    await render(FeatureHeading, { title: copy.practiceTitle, description: copy.practiceDescription })
-    const heading = container.querySelector('h1')
-    expect(heading.textContent).toBe(copy.practiceTitle)
-    expect(heading.querySelectorAll(':scope > span')).toHaveLength(2)
-    expect(heading.querySelector('.feature-heading-emphasis').textContent).toBe(copy.practiceTitle.split('\n')[1])
   })
 
   it.each([['en', 'History'], ['zh-CN', '对话历史'], ['ja', '会話履歴']])('shows icon navigation and current-page semantics for %s', async (code, label) => {
@@ -75,7 +77,7 @@ describe('editorial feature pages', () => {
     const fetchMock = vi.fn(async () => respond({ data: [{ id: 'conversation-1', title: 'At the café', sourceType: 'scenario', userTurnCount: 4, updatedAt: '2026-01-10T12:00:00Z' }] }))
     vi.stubGlobal('fetch', fetchMock)
     await render(HistoryClient)
-    expect(container.querySelector('h1').textContent).toBe(featureCopy.en.historyTitle)
+    expect(container.querySelector('h1').textContent).toBe('History')
     expect(container.querySelector('a[href="/talk?conversation=conversation-1"]').textContent).toContain('Continue conversation')
     const news = [...container.querySelectorAll('.feature-filters button')].find(button => button.textContent === 'News')
     await act(async () => news.click())
@@ -101,7 +103,7 @@ describe('editorial feature pages', () => {
     state.nativeCode = lang
     vi.stubGlobal('fetch', vi.fn(async (url) => respond({ data: url.includes('/items') ? [] : { totalConversations: 3, lastActiveDate: '2026-01-10', recent7Days: [{ date: '2026-01-10', userTurns: 8 }] } })))
     await render(ProgressClient)
-    expect(container.querySelector('h1').textContent).toBe(featureCopy[lang].progressTitle)
+    expect(container.querySelector('h1').textContent).toBe({ en: 'Progress', zh: '学习进度', ja: '学習記録' }[lang])
     expect(container.textContent).toContain(featureCopy[lang].savedWords)
     expect(container.querySelector('[role="list"]').getAttribute('aria-label')).toBe(featureCopy[lang].recentLabel)
   })
@@ -112,8 +114,8 @@ describe('editorial feature pages', () => {
     await render(VocabularyPage)
     const action = container.querySelector('.feature-empty a')
     const copy = featureCopy[lang === 'zh-CN' ? 'zh' : lang]
-    expect(container.querySelector('h1').textContent).toBe(copy.vocabularyTitle)
-    expect(container.querySelector('.feature-description').textContent).toBe(copy.vocabularyDescription)
+    expect(container.querySelector('h1').textContent).toBe(copy.vocabulary)
+    expect(container.querySelector('.feature-description')).toBeNull()
     expect(action.textContent).toContain(label)
     expect(action.getAttribute('href')).toBe('/talk')
     expect(action.className).toContain('feature-action')

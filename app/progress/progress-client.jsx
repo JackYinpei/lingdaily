@@ -163,7 +163,7 @@ export default function ProgressClient() {
 
   return (
     <FeatureShell active="progress">
-      <FeatureHeading number="05" eyebrow={t.progressEyebrow} title={t.progressTitle} description={t.progressDescription} icon={TrendingUp} />
+      <FeatureHeading page="progress" />
       <p className="feature-count mb-6">{formatLastActive(progress.lastActiveDate, locale, t)}</p>
       <div>
         {error ? (

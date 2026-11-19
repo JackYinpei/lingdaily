@@ -34,7 +34,11 @@ export async function ensureAuthUser({ email, name, image }) {
     return data.id
   }
 
-  // User already exists (422) — look up by email
+  // 422 means the email is already registered. Any other status is a real Admin API
+  // failure; log it before the lookup so it is not mistaken for a duplicate user.
+  if (createRes.status !== 422) {
+    console.error('[auth] Supabase admin create user failed', { status: createRes.status })
+  }
   return findAuthUserIdByEmail(email)
 }
 

@@ -1,8 +1,8 @@
 import Link from 'next/link'
 
 export const metadata = {
-  title: 'LingDaily iOS 隐私政策',
-  description: 'LingDaily iOS 的账号、AI 对话、语音和云同步数据说明。',
+  title: 'LingDaily 隐私政策',
+  description: 'LingDaily 网页版与 iOS App 的账号、AI 对话、语音和云同步数据说明。',
   alternates: { canonical: '/privacy' },
 }
 
@@ -11,8 +11,14 @@ export default function PrivacyPage() {
     <main className="mx-auto max-w-3xl px-6 py-16 text-foreground">
       <Link href="/" className="text-primary underline">LingDaily</Link>
       <article className="prose prose-neutral mt-8 max-w-none dark:prose-invert">
-        <h1>LingDaily iOS 隐私政策</h1>
-        <p>更新于 2026 年 10 月 20 日。本政策说明 LingDaily 原生 iOS App 的数据处理。联系邮箱：<a href="mailto:yoasobi996@gmail.com">yoasobi996@gmail.com</a>。</p>
+        <h1>LingDaily 隐私政策</h1>
+        <p>网页版说明更新于 2026 年 11 月 19 日；iOS App 说明更新于 2026 年 10 月 20 日。本页分别说明网页版与原生 iOS App 的数据处理。联系邮箱：<a href="mailto:yoasobi996@gmail.com">yoasobi996@gmail.com</a>。</p>
+        <h2 id="web">网页版数据处理</h2>
+        <p>网页版使用邮箱密码登录，以及实际启用的 Google、Linux.do 第三方登录。账号认证使用 Supabase 和 NextAuth；第三方登录会提供账号标识、邮箱及可用的个人资料，用于认证和账号映射。浏览器使用会话 Cookie 保持登录，并在本地存储语言、主题和练习页面偏好。</p>
+        <p>使用 AI 对话、翻译或场景生成时，相关文字、场景和上下文会发送给 Google Gemini。连接实时语音前，浏览器会请求麦克风权限；连接期间音频会发送给 Gemini，模型返回音频及文字内容。服务可能使用配置的连接中转，数据处理可能跨境。请勿输入密码、身份凭据或其他敏感信息。</p>
+        <p>登录后的语言偏好、对话文字、收藏词汇及用户场景等账号数据保存在 Supabase，供后续查看和跨设备使用；学习进度根据练习记录计算。退出登录或清除浏览器存储不会删除云端账号数据。网页和 App 共用账号数据；如需访问或删除个人数据，请通过上方邮箱联系我们。</p>
+        <p>可在浏览器网站设置中撤回麦克风权限，断开语音连接以停止后续音频发送。已发给第三方的数据受其实际适用的<a href="https://ai.google.dev/gemini-api/terms">服务条款</a>和<a href="https://policies.google.com/privacy">隐私政策</a>约束，我们不承诺第三方零留存。以下 App 的 Keychain、系统听写和 App 内授权入口仅适用于 iOS，不代表网页版具有相同入口。</p>
+        <h2>iOS App 数据处理</h2>
         <h2>账号与云端记录</h2>
         <p>本 iOS App 的 AI 练习面向年满 18 周岁的成年人。首次允许 AI 数据使用前，需要确认已年满 18 周岁；未成年人请勿使用 AI 功能。</p>
         <p>使用 Apple 登录时，我们接收 Apple 提供的账号标识、已验证邮箱（可为隐藏邮箱）及你选择提供的姓名，用于认证和账号映射。会话凭据存入本设备 Keychain。账号服务和练习数据使用 Supabase。</p>

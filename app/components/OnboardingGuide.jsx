@@ -97,7 +97,7 @@ const UI = {
   ja: { next: "次へ", skip: "スキップ", done: "始めよう！", skipMode: "スキップ（ニュースモード）", stepOf: (c, t) => `${c} / ${t}` },
 };
 
-export default function OnboardingGuide({ lang = "zh" }) {
+export default function OnboardingGuide({ lang = "zh", onSkipToNews }) {
   const [step, setStep] = useState(0);
   const [visible, setVisible] = useState(false);
   const [rect, setRect] = useState(null);
@@ -318,7 +318,10 @@ export default function OnboardingGuide({ lang = "zh" }) {
           <div className="ml-auto flex min-w-0 flex-wrap justify-end gap-2">
             {currentStep.showSkipMode && (
               <button
-                onClick={next}
+                onClick={() => {
+                  onSkipToNews?.();
+                  finish();
+                }}
                 className="text-sm px-3 py-1.5 rounded-lg border border-border text-foreground hover:bg-accent transition-colors"
               >
                 {ui.skipMode}

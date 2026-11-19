@@ -1,6 +1,7 @@
 import "server-only"
 
 import { getSupabaseRestConfig, SUPABASE_CREDENTIALS, supabaseRestRequest } from "../server/supabaseRest"
+import { sanitizeHistoryCorrections } from "./corrections"
 
 // Sources the web app itself writes. Native iOS rehearsals ("practice") are
 // written only through /api/ios/sync and are read-only on the web.
@@ -43,6 +44,7 @@ export function isRevisionConflict(result) {
 }
 
 export function extractMessageText(message) {
+  if (message?.type === "correction") return ""
   if (!message || typeof message !== "object") return ""
   if (typeof message.content === "string") return message.content.trim()
   if (!Array.isArray(message.content)) return ""
@@ -86,7 +88,7 @@ function preferCompleteHistoryItem(existing, incoming) {
 export function mergeChatHistories(currentHistory, incomingHistory) {
   const merged = []
   const indexByKey = new Map()
-  for (const item of [...(currentHistory || []), ...(incomingHistory || [])]) {
+  for (const item of sanitizeHistoryCorrections([...(currentHistory || []), ...(incomingHistory || [])])) {
     const key = historyItemKey(item)
     const existingIndex = indexByKey.get(key)
     if (existingIndex === undefined) {
@@ -128,7 +130,7 @@ function normalizedTitle(row) {
 
 export function toChatHistoryDetail(row) {
   if (!row) return null
-  const history = Array.isArray(row.history) ? row.history : []
+  const history = sanitizeHistoryCorrections(row.history)
   const title = normalizedTitle(row)
   return {
     id: row.id,

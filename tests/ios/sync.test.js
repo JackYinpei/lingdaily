@@ -99,6 +99,25 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs())
 
 describe('iOS cloud sync into the shared tables', () => {
+  it('never sends web correction/unknown history items to the native decoder, including delta sync', async () => {
+    await call(POST, userA, { sessions: { upsert: [session()] } })
+    const native = db.tables.chat_history[0]
+    native.history.push({ type: 'correction', correction: { original: 'old', corrected: 'new' } }, { type: 'future-unknown' })
+    db.tables.chat_history.push({
+      id: randomUUID(), user_id: userA, source_type: 'news', news_key: 'web',
+      news: { session: { id: 'must-not-decode' } }, history: [{ type: 'correction' }, { type: 'future-unknown' }],
+    })
+    for (const [handler, changes] of [[GET, undefined], [POST, { knownSessions: {} }]]) {
+      const result = await call(handler, userA, changes, handler === GET ? 'GET' : 'POST')
+      expect(result.status).toBe(200)
+      expect(result.data.sessions).toHaveLength(1)
+      expect(result.data.sessions[0].session).toEqual(native.news.session)
+      expect(JSON.stringify(result.data.sessions)).not.toContain('correction')
+      expect(JSON.stringify(result.data.sessions)).not.toContain('future-unknown')
+      expect(JSON.stringify(result.data.sessions)).not.toContain('must-not-decode')
+    }
+  })
+
   it('stores rehearsals as practice chat history the web can read, and returns them losslessly', async () => {
     const { status, data } = await call(POST, userA, { sessions: { upsert: [session()] } })
     expect(status).toBe(200)

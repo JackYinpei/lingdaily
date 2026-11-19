@@ -41,8 +41,8 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | 位置 | 职责 |
 | --- | --- |
 | `app/page.js` | SEO 首页与产品入口 |
-| `app/components/HomePageClient.jsx` | 首页 UI：三语文案、Hero、功能卡；子组件在 `app/components/home/` |
-| `app/components/home/` | 首页专用组件：`AuroraBackground`（极光+颗粒背景）、`HeroPreview`（静态对话演示）、`StatsPanel`（数据卡预览） |
+| `app/components/HomePageClient.jsx` | 首页服务端 UI：场景介绍、能力展示和学习路径；子组件在 `app/components/home/` |
+| `app/components/home/` | 首页专用组件：`copy.js` 三语文案、`ScenePreview` 可切换示例、`HomeStart` 语言与开始入口、`HomeNav` 响应式导航；`home.css` 布局与动效 |
 | `app/globals.css` | 主题单一来源：shadcn CSS 变量 + 品牌配色 + `.bg-aurora`/`.grain-overlay` 工具类 |
 | `app/talk/page.jsx` | 主对话页：新闻/场景、Live 连接、文本流、历史同步 |
 | `app/lib/GeminiLiveService.js` | WebSocket、麦克风 PCM、模型音频播放、打断、Live tool call |
@@ -80,9 +80,9 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
   全项目自动生效——不要在组件里写死颜色。
 - `ThemeContext` + `layout.js` 内联无闪烁脚本负责 system/dark/light 三态切换；
   `ThemeToggle` 循环这三态。
-- 首页背景的彩虹极光和胶片颗粒是 `.bg-aurora` / `.grain-overlay` 两个工具类，引用品牌变量，
-  故随主题切换。Hero 里的对话演示（`HeroPreview`）和数据卡（`StatsPanel`）是**静态展示**，
-  不接后端；真实能力在 `/talk` 和 `/progress`。
+- 首页使用 `.home-editorial` 范围内的纸墨配色（`--home-*`），仍统一定义在 `globals.css` 并支持深浅主题，不影响练习页品牌色。
+- `ScenePreview` 是明确标注的静态英语示例，可切换场景，不录音、不调用模型或后端。真实能力在 `/talk`、`/vocabulary` 和 `/progress`。
+- 首页的语言选择在 `HomeStart`，桌面与手机共用；仅明确点击开始后保存偏好，未登录时保留 `/talk` 登录回跳。
 
 ### 登录与账号
 
@@ -151,8 +151,11 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 - `record_unfamiliar_learning_items`：抽取用户不会的学习项，异步写 `/api/learning/items`。
 - `record_language_correction`：用户表达有可改进处时给一条地道改写
   （`original/corrected/explanation/category`）。通过 `config.onCorrection` 回调推给
-  UI，在对话流里渲染为 `CorrectionCard`；**不落库**——correction 项在持久化前按
-  `type === 'correction'` 过滤，不写入 `chat_history`。
+  UI，在对话流里渲染为 `CorrectionCard`；以 `type === 'correction'` 写入
+  `chat_history.history`，恢复时仍显示为纠错卡。客户端与服务端校验字段：original/corrected
+  各最多 2000 字符，explanation 最多 4000 字符，category 为 grammar/vocabulary/phrasing/other。
+  纠错不是对话轮次，不得进入 Live prompt/上下文重播、进度计数、历史摘要或真实用户消息判定。
+  iOS 同步只读取 source_type=practice 的 news.session，不读取网页 history 中的纠错项。
 
 ### 对话历史、生词和进度
 
@@ -295,7 +298,7 @@ RLS 只允许 authenticated 读、插入和更新自己的行；不提供用户�
 | `news_key` | 用户内的主题 identity；场景必须是 `scenario:<uuid>` |
 | `news_title` | 列表标题 |
 | `news` | JSONB 主题快照，用于恢复对话 |
-| `history` | JSONB array，消息和 system context |
+| `history` | JSONB array，消息、system context 和经过校验的 correction 卡 |
 | `summary` | 可选摘要 |
 | `source_type` | `news`、`scenario` 或 `practice`（iOS 原生练习，只由 `/api/ios/sync` 写入，网页只读、不能续聊） |
 | `revision` | 从 1 开始的乐观并发版本 |

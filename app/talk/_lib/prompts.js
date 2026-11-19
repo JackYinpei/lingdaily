@@ -156,6 +156,10 @@ ${openingContent.zh}
 保持鼓励和耐心，同时维持清晰的对话主导权以获得最佳学习效果。`;
 }
 
+export function buildLiveInstructions(nativeLabel, targetLabel, isScenario = false, isResuming = false) {
+    return buildInstructions('en', nativeLabel, targetLabel, isScenario, isResuming);
+}
+
 export const buildTopicContext = (news, languagePair) => {
     return news?._isScenario
         ? buildScenarioPrompt(news, languagePair)
@@ -186,7 +190,7 @@ export const createNewsContextMessage = (news, languagePair) => {
 
 export const buildResumeTranscript = (historyItems) => {
     const turns = (Array.isArray(historyItems) ? historyItems : [])
-        .filter((item) => item?.role === 'user' || item?.role === 'assistant')
+        .filter((item) => item?.type !== 'correction' && (item?.role === 'user' || item?.role === 'assistant'))
         .map((item) => ({ role: item.role, text: extractMessageText(item) }))
         .filter((item) => item.text)
         .slice(-24)

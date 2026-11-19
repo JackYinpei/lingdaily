@@ -16,17 +16,17 @@ import {
 } from "@/app/components/ui/card"
 
 function getSafeCallbackUrl() {
-  if (typeof window === "undefined") return "/"
+  if (typeof window === "undefined") return "/talk"
 
   const requested = new URLSearchParams(window.location.search).get("callbackUrl")
-  if (!requested?.startsWith("/") || requested.startsWith("//")) return "/"
+  if (!requested?.startsWith("/") || requested.startsWith("//")) return "/talk"
 
   try {
     const destination = new URL(requested, window.location.origin)
-    if (destination.origin !== window.location.origin) return "/"
+    if (destination.origin !== window.location.origin) return "/talk"
     return `${destination.pathname}${destination.search}${destination.hash}`
   } catch {
-    return "/"
+    return "/talk"
   }
 }
 

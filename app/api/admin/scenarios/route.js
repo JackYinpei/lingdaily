@@ -1,15 +1,18 @@
 import { checkAdmin } from '@/app/lib/adminAuth'
+import { getLanguage } from '@/app/lib/languages'
+import {
+  CATEGORY_SELECT,
+  SCENARIO_DIFFICULTIES,
+  UUID_PATTERN,
+  toScenarioCategories,
+} from '@/app/lib/scenarios'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const supabaseSchema = process.env.SUPABASE_SCHEMA || 'public'
 const tableUrl = supabaseUrl ? `${supabaseUrl}/rest/v1/scenarios` : null
 
-const DIFFICULTIES = new Set(['beginner', 'intermediate', 'advanced'])
-const LEARNING_LANGUAGE_CODES = new Set(['en', 'ja', 'es', 'fr', 'de', 'ko', 'pt', 'it'])
-const NATIVE_LANGUAGE_CODES = new Set(['zh-CN', ...LEARNING_LANGUAGE_CODES])
 const SLUG_PATTERN = /^[a-z0-9]+(?:[_-][a-z0-9]+)*$/
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const WRITABLE_FIELDS = new Set([
   'category_slug', 'category_name_zh', 'category_name_en', 'category_name_ja',
   'category_icon', 'category_sort', 'title_zh', 'title_en', 'title_ja',
@@ -76,16 +79,18 @@ function buildScenarioRow(body, { partial = false } = {}) {
     if (typeof row.system_prompt !== 'string' || !row.system_prompt.trim()) throw new Error('system_prompt is required')
     row.system_prompt = row.system_prompt.trim()
   }
-  if (Object.prototype.hasOwnProperty.call(row, 'difficulty') && !DIFFICULTIES.has(row.difficulty)) {
+  if (Object.prototype.hasOwnProperty.call(row, 'difficulty') && !SCENARIO_DIFFICULTIES.includes(row.difficulty)) {
     throw new Error('Invalid difficulty')
   }
-  if (Object.prototype.hasOwnProperty.call(row, 'target_language_code')
-      && !LEARNING_LANGUAGE_CODES.has(row.target_language_code)) {
-    throw new Error('Invalid target_language_code')
+  if (Object.prototype.hasOwnProperty.call(row, 'target_language_code')) {
+    const language = getLanguage(row.target_language_code, { allowChinese: false })
+    if (!language) throw new Error('Invalid target_language_code')
+    row.target_language_code = language.code
   }
-  if (Object.prototype.hasOwnProperty.call(row, 'native_language_code')
-      && !NATIVE_LANGUAGE_CODES.has(row.native_language_code)) {
-    throw new Error('Invalid native_language_code')
+  if (Object.prototype.hasOwnProperty.call(row, 'native_language_code')) {
+    const language = getLanguage(row.native_language_code)
+    if (!language) throw new Error('Invalid native_language_code')
+    row.native_language_code = language.code
   }
   if (row.target_language_code && row.target_language_code === row.native_language_code) {
     throw new Error('Target and native languages must be different')
@@ -121,25 +126,12 @@ export async function GET(req) {
     })
 
     if (searchParams.get('categories') === 'true') {
-      query.set('select', 'category_slug,category_name_zh,category_name_en,category_name_ja,category_icon,category_sort')
+      query.set('select', CATEGORY_SELECT)
       const response = await fetch(`${tableUrl}?${query}`, { headers: supabaseHeaders(), cache: 'no-store' })
       const rows = await readResponse(response, [])
       if (!response.ok) return jsonResponse({ error: rows?.message || 'Failed to fetch categories' }, response.status)
 
-      const seen = new Set()
-      const categories = rows.filter((row) => {
-        if (!row.category_slug || seen.has(row.category_slug)) return false
-        seen.add(row.category_slug)
-        return true
-      }).map((row) => ({
-        id: row.category_slug,
-        slug: row.category_slug,
-        name_zh: row.category_name_zh,
-        name_en: row.category_name_en,
-        name_ja: row.category_name_ja,
-        icon: row.category_icon,
-        sort_order: row.category_sort,
-      }))
+      const categories = toScenarioCategories(rows)
       return jsonResponse({ ok: true, data: categories })
     }
 

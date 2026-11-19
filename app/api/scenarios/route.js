@@ -4,12 +4,17 @@ import {
   DEFAULT_NATIVE_LANGUAGE,
   getLanguage,
 } from "@/app/lib/languages";
+import {
+  CATEGORY_SELECT,
+  SCENARIO_DIFFICULTIES,
+  UUID_PATTERN,
+  toScenarioCategories,
+} from "@/app/lib/scenarios";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseSchema = process.env.SUPABASE_SCHEMA || "public";
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -72,7 +77,7 @@ export async function GET(req) {
       const query = new URLSearchParams({
         user_id: "is.null",
         is_active: "eq.true",
-        select: "category_slug,category_name_zh,category_name_en,category_name_ja,category_icon,category_sort",
+        select: CATEGORY_SELECT,
         order: "category_sort.asc,category_slug.asc",
       });
       const res = await fetch(`${supabaseUrl}/rest/v1/scenarios?${query}`, {
@@ -85,23 +90,7 @@ export async function GET(req) {
         return jsonResponse({ error: "Failed to fetch categories" }, 502);
       }
 
-      // Deduplicate by category_slug and normalize field names for the frontend
-      const seen = new Set();
-      const categories = rows
-        .filter((r) => {
-          if (seen.has(r.category_slug)) return false;
-          seen.add(r.category_slug);
-          return true;
-        })
-        .map((r) => ({
-          id: r.category_slug,          // use slug as stable id
-          slug: r.category_slug,
-          name_zh: r.category_name_zh,
-          name_en: r.category_name_en,
-          name_ja: r.category_name_ja,
-          icon: r.category_icon,
-          sort_order: r.category_sort,
-        }));
+      const categories = toScenarioCategories(rows);
       return jsonResponse({ ok: true, data: categories });
     }
 
@@ -285,7 +274,7 @@ export async function POST(req) {
       description_target: descriptionTarget,
       target_language_code: learningLanguage.code,
       native_language_code: nativeLanguage.code,
-      difficulty: ["beginner", "intermediate", "advanced"].includes(body.difficulty)
+      difficulty: SCENARIO_DIFFICULTIES.includes(body.difficulty)
         ? body.difficulty
         : "intermediate",
       system_prompt: systemPrompt,

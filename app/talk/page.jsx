@@ -1100,11 +1100,6 @@ export default function Home() {
 
                     {/* Chat Interface - Full width on mobile, 70% on desktop */}
                     <div className="flex-1 lg:w-[70%] flex flex-col min-h-0 lg:h-[calc(100vh-140px)]">
-                        {isConnecting && connectionPhase === 'microphone' && (
-                            <div role="status" className="bg-muted border border-border text-foreground p-2 rounded mb-2 text-sm">
-                                {microphoneStatus}
-                            </div>
-                        )}
                         {error && (
                             <div className="bg-red-50 border border-red-200 text-red-600 p-2 rounded mb-2 text-sm">
                                 {error}
@@ -1113,6 +1108,11 @@ export default function Home() {
                         {saveError && (
                             <div role="status" className="bg-destructive/10 border border-destructive/30 text-destructive p-2 rounded mb-2 text-sm">
                                 {uiText.saveFailed}
+                            </div>
+                        )}
+                        {isConnecting && connectionPhase === 'microphone' && (
+                            <div role="status" className="bg-muted border border-border text-foreground p-2 rounded mb-2 text-sm">
+                                {microphoneStatus}
                             </div>
                         )}
                         <History

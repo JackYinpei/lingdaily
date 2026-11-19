@@ -1,10 +1,10 @@
 'use client';
+import { submitTextDraft } from '@/app/talk/_lib/textSubmission';
 import { useEffect, useState, useRef } from 'react';
 import { useLanguage } from '@/app/contexts/LanguageContext';
 
 import { TextMessage } from './TextMessage';
 import { CorrectionCard } from './CorrectionCard';
-import { submitTextDraft } from '@/app/talk/_lib/textSubmission';
 
 export function History({
     isConnected,
@@ -199,7 +199,7 @@ export function History({
 
                 <button
                     onClick={submitMessage}
-                    disabled={!inputMessage.trim()}
+                    disabled={!inputMessage.trim() || isConnecting}
                     className="px-4 py-2 rounded-lg font-medium transition-colors flex-shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {t.send}

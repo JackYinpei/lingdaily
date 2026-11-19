@@ -150,12 +150,13 @@ actor LiveWebSocketClient {
         do { try enqueue(LiveCodec.audio(pcm), generation: current, audio: true, frames: frames) }
         catch { await fail(current, stage: "uploadEncoding", error: error) }
     }
-    func endInput(generation current: UInt64) {
+    func endInput(generation current: UInt64) async {
         guard ready, current == generation else { return }
         inputGate.close()
         // Drop already queued microphone frames; output and control are retained.
         outgoing.clearAudio()
-        if let end = try? LiveCodec.audioEnd() { try? enqueue(end, generation: current, priority: true) }
+        do { try enqueue(LiveCodec.audioEnd(), generation: current, priority: true) }
+        catch { await fail(current, stage: "send", error: error) }
     }
     func resumeInput(generation current: UInt64) {
         guard ready, current == generation, !inputGate.isOpen else { return }

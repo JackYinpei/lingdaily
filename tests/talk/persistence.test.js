@@ -3,10 +3,10 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const state = vi.hoisted(() => ({ props: null, service: null, config: null }))
+const state = vi.hoisted(() => ({ props: null, service: null, config: null, feed: null }))
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: { user: { id: 'account' } }, status: 'authenticated' }) }))
 vi.mock('@/app/contexts/LanguageContext', () => ({ useLanguage: () => ({ learningLanguage: { code: 'en', label: 'English' }, nativeLanguage: { code: 'en', label: 'English' }, loading: false }) }))
-vi.mock('@/app/components/NewsFeed', () => ({ default: () => null }))
+vi.mock('@/app/components/NewsFeed', () => ({ default: props => { state.feed = props; return null } }))
 vi.mock('@/app/components/ScenarioFeed', () => ({ default: () => null }))
 vi.mock('@/app/components/ModeToggle', () => ({ ModeToggle: () => null }))
 vi.mock('@/app/components/OnboardingGuide', () => ({ default: () => null }))
@@ -75,6 +75,38 @@ async function mountAndConnect(strict = false) {
 }
 
 describe('talk persistence lifecycle', () => {
+  it('sends former-topic snapshots queued behind an in-flight save even after switching topics and unmounting', async () => {
+    await mountAndConnect(true)
+    const originalFetch = fetchMock.getMockImplementation()
+    let finishFirst, firstResponse
+    fetchMock.mockImplementation(async (url, options) => {
+      if (String(url).includes('?newsKey=')) return Response.json({ data: [] })
+      const response = await originalFetch(url, options)
+      if (options?.method === 'POST' && !options.keepalive && !finishFirst) {
+        firstResponse = response
+        return new Promise(resolve => { finishFirst = resolve })
+      }
+      return response
+    })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await act(async () => state.config.onMessage('First reply', true, 'model'))
+    await act(async () => vi.advanceTimersByTimeAsync(800))
+    expect(posts).toHaveLength(1)
+    await act(async () => state.config.onMessage('Latest former-topic reply', true, 'model'))
+    await act(async () => vi.advanceTimersByTimeAsync(800))
+    expect(posts).toHaveLength(1)
+    await act(async () => state.feed.onArticleSelect({ title: 'Other topic' }))
+    await act(async () => state.config.onMessage('Other topic user', true, 'user'))
+    await act(async () => root.unmount())
+    expect(posts.at(-1)).toMatchObject({ newsKey: 'Othertopic', keepalive: true })
+    await act(async () => finishFirst(firstResponse))
+    const formerTopicSaves = posts.filter(post => post.newsKey === 'Topic')
+    expect(formerTopicSaves.some(post => post.history.some(item => item.content?.some(part => part.text === 'Latest former-topic reply')))).toBe(true)
+    expect(formerTopicSaves.every(post => !JSON.stringify(post.history).includes('Other topic user'))).toBe(true)
+    expect(posts.filter(post => post.newsKey === 'Othertopic').every(post => !JSON.stringify(post.history).includes('Latest former-topic reply'))).toBe(true)
+    expect(error).not.toHaveBeenCalled()
+  })
+
   it('uses server merging on an ordinary retry racing a newer revision without compacting news', async () => {
     const fullNews = { title: 'Topic', content: 'Full article detail. '.repeat(500), extra: { preserved: true } }
     const originalFetch = fetchMock.getMockImplementation()

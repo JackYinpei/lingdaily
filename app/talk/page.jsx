@@ -235,7 +235,6 @@ export default function Home() {
             identityGeneration === identityGenerationRef.current
             && userId === (userSession?.user?.id || null)
             && persistEpoch === (persistEpochsRef.current.get(getNewsKey(news)) || 0)
-            && (pageMountedRef.current || keepalive)
         );
         if (!news || !hasUserMessage(conversationHistory) || !userId || !isCurrentSave()) return 'skipped';
 

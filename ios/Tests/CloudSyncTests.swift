@@ -179,4 +179,50 @@ final class CloudSyncTests: XCTestCase {
         XCTAssertEqual(ledger.synced.sessions, [SyncLedger.sessionKey(kept.id)])
         XCTAssertEqual(ledger.pendingCount, 0)
     }
+
+    func testReadoptAfterLostLedgerWriteResendsEverythingAndKeepsPendingDeletes() throws {
+        var archive = PracticeArchive()
+        archive.upsert(session())
+        archive.expressions = [expression("on track")]
+        var ledger = SyncLedger(ownerUserID: "user-a")
+        let kept = session(answer: "Kept elsewhere.")
+        ledger.synced.sessions = [SyncLedger.sessionKey(archive.sessions[0].id)]
+        ledger.sessionDeleted(kept.id)
+        ledger.expressionDeleted(SavedExpression.key("on track"))
+        ledger.readopt(owner: "user-a", archive: archive)
+        XCTAssertEqual(ledger.ownerUserID, "user-a")
+        XCTAssertEqual(ledger.dirty.sessions, [SyncLedger.sessionKey(archive.sessions[0].id)])
+        XCTAssertEqual(ledger.dirty.expressions, [SavedExpression.key("on track")])
+        XCTAssertEqual(ledger.deleted.sessions, [SyncLedger.sessionKey(kept.id)])
+        XCTAssertTrue(ledger.deleted.expressions.isEmpty)
+        XCTAssertTrue(ledger.synced.sessions.isEmpty)
+    }
+
+    func testLedgerFileMarksAFailedWriteStaleUntilACurrentLedgerIsSaved() throws {
+        let name = "CloudSyncTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // A regular file where the ledger's folder should be makes every write fail.
+        let blocker = directory.appendingPathComponent("blocked")
+        try Data().write(to: blocker)
+        var ledger = SyncLedger(ownerUserID: "user-a")
+        ledger.expressionChanged("on track")
+
+        let broken = SyncLedgerFile(url: blocker.appendingPathComponent("sync-ledger.json"), defaults: defaults)
+        XCTAssertFalse(broken.isStale)
+        XCTAssertThrowsError(try broken.save(ledger))
+        XCTAssertTrue(broken.isStale)
+        XCTAssertEqual(broken.load(), SyncLedger())
+
+        let file = SyncLedgerFile(url: directory.appendingPathComponent("nested/sync-ledger.json"), defaults: defaults)
+        try file.save(ledger, current: false)
+        XCTAssertTrue(file.isStale)
+        XCTAssertEqual(file.load(), ledger)
+        try file.save(ledger)
+        XCTAssertFalse(file.isStale)
+        XCTAssertEqual(file.load(), ledger)
+    }
 }

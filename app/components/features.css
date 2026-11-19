@@ -121,6 +121,7 @@
 .feature-practice .feature-heading h1 { font-size: 30px; }
 .feature-practice .feature-content { padding-bottom: var(--feature-space-6); }
 .feature-practice-layout { display: flex; flex: 1; min-height: 0; gap: var(--feature-space-6); }
+.feature-topic-list { position: relative; }
 .feature-topic-title { display: flex; align-items: center; gap: var(--feature-space-2); font-size: 14px; font-weight: 500; }
 .feature-app .feature-topic-card { border-radius: 4px; box-shadow: none; border-color: var(--border); }
 .feature-app .feature-topic-card:hover { border-color: var(--primary); box-shadow: none; }

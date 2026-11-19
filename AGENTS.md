@@ -41,8 +41,8 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | 位置 | 职责 |
 | --- | --- |
 | `app/page.js` | SEO 首页与产品入口 |
-| `app/components/HomePageClient.jsx` | 首页 UI：三语文案、Hero、功能卡；子组件在 `app/components/home/` |
-| `app/components/home/` | 首页专用组件：`AuroraBackground`（极光+颗粒背景）、`HeroPreview`（静态对话演示）、`StatsPanel`（数据卡预览） |
+| `app/components/HomePageClient.jsx` | 首页服务端 UI：场景介绍、能力展示和学习路径；子组件在 `app/components/home/` |
+| `app/components/home/` | 首页专用组件：`copy.js` 三语文案、`ScenePreview` 可切换示例、`HomeStart` 语言与开始入口、`HomeNav` 响应式导航 |
 | `app/globals.css` | 主题单一来源：shadcn CSS 变量 + 品牌配色 + `.bg-aurora`/`.grain-overlay` 工具类 |
 | `app/talk/page.jsx` | 主对话页：新闻/场景、Live 连接、文本流、历史同步 |
 | `app/lib/GeminiLiveService.js` | WebSocket、麦克风 PCM、模型音频播放、打断、Live tool call |
@@ -80,9 +80,9 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
   全项目自动生效——不要在组件里写死颜色。
 - `ThemeContext` + `layout.js` 内联无闪烁脚本负责 system/dark/light 三态切换；
   `ThemeToggle` 循环这三态。
-- 首页背景的彩虹极光和胶片颗粒是 `.bg-aurora` / `.grain-overlay` 两个工具类，引用品牌变量，
-  故随主题切换。Hero 里的对话演示（`HeroPreview`）和数据卡（`StatsPanel`）是**静态展示**，
-  不接后端；真实能力在 `/talk` 和 `/progress`。
+- 首页使用 `.home-editorial` 范围内的纸墨配色（`--home-*`），仍统一定义在 `globals.css` 并支持深浅主题，不影响练习页品牌色。
+- `ScenePreview` 是明确标注的静态英语示例，可切换场景，不录音、不调用模型或后端。真实能力在 `/talk`、`/vocabulary` 和 `/progress`。
+- 首页的语言选择在 `HomeStart`，桌面与手机共用；仅明确点击开始后保存偏好，未登录时保留 `/talk` 登录回跳。
 
 ### 登录与账号
 

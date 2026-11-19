@@ -24,12 +24,12 @@ function detectPreferredLocale(acceptLanguageHeader = "") {
 }
 
 export const metadata = {
-  title: 'LingDaily - AI English Learning with Daily News Podcasts',
-  description: 'Master English with LingDaily. Chat with AI about current news, listen to daily AI-generated podcasts, and build your vocabulary. Real-time conversations and immersive audio learning.',
-  keywords: 'English learning, AI tutor, daily news podcasts, English conversation, vocabulary building, speaking practice, LingDaily',
+  title: 'LingDaily — Practice Languages Through Real Conversations',
+  description: 'Practice everyday conversations, role-play real situations, and discuss the news with AI in 8 learning languages. Listen to Chinese–English news podcasts and keep the vocabulary you discover.',
+  keywords: 'language practice, AI conversation, role-play, bilingual news podcasts, vocabulary, speaking practice, LingDaily',
   openGraph: {
-    title: 'LingDaily - Learn English with AI & News Podcasts',
-    description: 'Join LingDaily to practice English through real-time AI conversations and daily news podcasts customized for learners.',
+    title: 'LingDaily — A Little More Conversation',
+    description: 'Real-life speaking practice, Chinese–English news podcasts, and words worth keeping. Make language part of your everyday.',
   }
 };
 
@@ -59,7 +59,7 @@ export default async function Home() {
     "@context": "https://schema.org",
     "@type": "WebApplication",
     "name": "LingDaily",
-    "description": "Chat with AI to learn English through current news conversations and daily AI-generated podcasts. AI-powered English learning platform for vocabulary building, listening, and speaking practice.",
+    "description": "Practice languages through AI voice conversations, news discussions, and role-play scenarios. Listen to Chinese–English news podcasts and collect useful vocabulary.",
     "url": siteUrl,
     "applicationCategory": "EducationalApplication",
     "operatingSystem": "Web",
@@ -80,7 +80,7 @@ export default async function Home() {
     "potentialAction": {
       "@type": "CommunicateAction",
       "target": `${siteUrl}/talk`,
-      "name": "Start an English practice conversation"
+      "name": "Start a language practice conversation"
     }
   };
 
@@ -88,8 +88,8 @@ export default async function Home() {
     <>
       <noscript>
         <section className="mx-auto my-6 max-w-3xl rounded-2xl border border-border bg-card/60 p-4 text-sm leading-relaxed text-foreground">
-          <strong>LingDaily works without JavaScript.</strong> Read curated news summaries and start a guided English conversation at{" "}
-          <Link href="/talk">lingdaily.yasobi.xyz/talk</Link>.
+          <strong>Enable JavaScript for interactive language practice.</strong> You can also browse our{" "}
+          <Link href="/podcasts">bilingual news podcasts</Link>.
         </section>
       </noscript>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />

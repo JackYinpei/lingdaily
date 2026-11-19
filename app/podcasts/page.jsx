@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 
 export const metadata = {
   title: '成杨英语日刊 | LingDaily Podcasts',
-  description: '每天十分钟，用中英双语了解国际、科技与商业热点。',
+  description: 'LL 和 DD 的中英双语新闻播客，关注国际、科技与商业。',
 }
 
 export default async function PodcastsPage() {
@@ -24,24 +24,24 @@ export default async function PodcastsPage() {
 
   return (
     <FeatureShell active="podcasts">
-      <FeatureHeading number="04" eyebrow="The daily listening room · 每日听读" title="成杨英语日刊" description="每天十分钟，LL 和 DD 用自然英文和中文拆解全球热点。" />
+      <FeatureHeading number="04" eyebrow="每日播客" title="成杨英语日刊" description="LL 和 DD 的中英双语新闻播客。" />
       <section className="feature-podcast-intro" aria-label="节目介绍">
         <div className="feature-podcast-art" aria-hidden="true"><AudioLines strokeWidth={1.2} size={28} /><strong>LL / DD</strong><span>LINGDAILY RADIO</span></div>
         <div className="self-center">
-          <p className="feature-eyebrow mb-3"><Headphones size={14} aria-hidden="true" /> NEWS, IN TWO LANGUAGES</p>
-          <h2 className="text-xl mb-3 font-medium">听见世界，也听懂英语。</h2>
-          <p className="text-sm leading-7 text-muted-foreground max-w-xl">国际、科技与商业热点，中英双语交替。听一段，读一段，把新闻里的表达带进自己的对话。</p>
+          <p className="feature-eyebrow mb-3"><Headphones size={14} aria-hidden="true" /> 中英双语</p>
+          <h2 className="text-xl mb-3 font-medium">国际、科技与商业新闻</h2>
+          <p className="text-sm leading-7 text-muted-foreground max-w-xl">可以直接收听，也可以点开节目查看双语摘要和词汇表。</p>
         </div>
       </section>
       <div>
         <div className="feature-toolbar">
-          <div><h2 className="feature-eyebrow">EPISODE ARCHIVE · 往期节目</h2><span className="feature-count">{episodes.length} episodes</span></div>
-          <a href="/podcasts/feed.xml" className="feature-text-link"><Rss size={15} aria-hidden="true" /> RSS Feed</a>
+          <div><h2 className="feature-eyebrow">往期节目</h2><span className="feature-count">共 {episodes.length} 期</span></div>
+          <a href="/podcasts/feed.xml" className="feature-text-link"><Rss size={15} aria-hidden="true" /> 订阅 RSS</a>
         </div>
         {unavailable ? (
           <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-5 text-sm">播客服务暂时不可用，请稍后再试。</div>
         ) : episodes.length === 0 ? (
-          <div className="feature-empty"><Headphones aria-hidden="true" /><h2>第一期节目正在准备中。</h2><p>下次回来，听听今天的世界。</p></div>
+          <div className="feature-empty"><Headphones aria-hidden="true" /><h2>暂无节目</h2><p>节目发布后会显示在这里。</p></div>
         ) : (
           <div>
             {episodes.map((episode) => {

@@ -9,26 +9,26 @@ const STEPS_ZH = [
   {
     target: '[data-tour="mode-toggle"]',
     title: "切换模式",
-    description: '点击切换到「场景」模式，体验角色扮演练习；或者跳过，使用默认的新闻模式。',
+    description: '选「新闻」讨论新闻，或选「场景」做角色扮演。',
     position: "bottom",
     showSkipMode: true,
   },
   {
     target: '[data-tour="category-bar"]',
     title: "选择分类",
-    description: "左右滑动浏览不同的新闻分类，选择你感兴趣的话题。",
+    description: "左右滑动分类，选择要练习的话题。",
     position: "bottom",
   },
   {
     target: '[data-tour="news-card"]',
     title: "选择内容",
-    description: "点击一张卡片，选择你想要讨论的新闻或场景。",
+    description: "点选一张新闻或场景卡片，作为这次对话的话题。",
     position: "bottom",
   },
   {
     target: '[data-tour="connect-btn"]',
     title: "开始对话",
-    description: "点击连接按钮，开始和 AI 进行英语对话练习！",
+    description: "点击连接按钮，允许使用麦克风后，就能开始语音对话。",
     position: "top",
   },
 ];
@@ -37,26 +37,26 @@ const STEPS_EN = [
   {
     target: '[data-tour="mode-toggle"]',
     title: "Switch Mode",
-    description: 'Tap to switch to "Scenarios" for role-play practice, or skip to stay in News mode.',
+    description: 'Choose News to discuss a story or Scenarios for role-play.',
     position: "bottom",
     showSkipMode: true,
   },
   {
     target: '[data-tour="category-bar"]',
     title: "Browse Categories",
-    description: "Swipe left and right to explore different news categories.",
+    description: "Swipe through the categories to choose a topic.",
     position: "bottom",
   },
   {
     target: '[data-tour="news-card"]',
     title: "Pick a Topic",
-    description: "Tap a card to select the news or scenario you want to discuss.",
+    description: "Select a news or scenario card as the topic for this conversation.",
     position: "bottom",
   },
   {
     target: '[data-tour="connect-btn"]',
     title: "Start Talking",
-    description: "Tap Connect to start your English conversation with AI!",
+    description: "Tap Connect and allow microphone access to start a voice conversation.",
     position: "top",
   },
 ];
@@ -65,26 +65,26 @@ const STEPS_JA = [
   {
     target: '[data-tour="mode-toggle"]',
     title: "モード切替",
-    description: "「シナリオ」モードに切り替えてロールプレイ練習、またはスキップしてニュースモードで続行。",
+    description: "「ニュース」で記事について話すか、「シナリオ」でロールプレイを選べます。",
     position: "bottom",
     showSkipMode: true,
   },
   {
     target: '[data-tour="category-bar"]',
     title: "カテゴリを選ぶ",
-    description: "左右にスワイプしてニュースカテゴリを選択しましょう。",
+    description: "カテゴリを左右にスワイプして話題を選んでください。",
     position: "bottom",
   },
   {
     target: '[data-tour="news-card"]',
     title: "トピックを選ぶ",
-    description: "カードをタップして、話したいニュースやシナリオを選びましょう。",
+    description: "ニュースやシナリオのカードを選ぶと、今回の会話の話題になります。",
     position: "bottom",
   },
   {
     target: '[data-tour="connect-btn"]',
     title: "会話を始める",
-    description: "接続ボタンをタップして、AIとの英会話を始めましょう！",
+    description: "接続ボタンをタップし、マイクを許可すると音声で会話できます。",
     position: "top",
   },
 ];
@@ -92,9 +92,9 @@ const STEPS_JA = [
 const STEPS_MAP = { zh: STEPS_ZH, en: STEPS_EN, ja: STEPS_JA };
 
 const UI = {
-  zh: { next: "下一步", skip: "跳过", done: "开始吧！", skipMode: "跳过（使用新闻模式）", stepOf: (c, t) => `${c} / ${t}` },
-  en: { next: "Next", skip: "Skip", done: "Let's go!", skipMode: "Skip (use News mode)", stepOf: (c, t) => `${c} / ${t}` },
-  ja: { next: "次へ", skip: "スキップ", done: "始めよう！", skipMode: "スキップ（ニュースモード）", stepOf: (c, t) => `${c} / ${t}` },
+  zh: { next: "下一步", skip: "跳过", done: "知道了", skipMode: "跳过（使用新闻模式）", stepOf: (c, t) => `${c} / ${t}` },
+  en: { next: "Next", skip: "Skip", done: "Done", skipMode: "Skip (use News mode)", stepOf: (c, t) => `${c} / ${t}` },
+  ja: { next: "次へ", skip: "スキップ", done: "閉じる", skipMode: "スキップ（ニュースモード）", stepOf: (c, t) => `${c} / ${t}` },
 };
 
 export default function OnboardingGuide({ lang = "zh", onSkipToNews }) {

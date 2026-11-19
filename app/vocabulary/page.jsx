@@ -6,13 +6,14 @@ import { useSession } from 'next-auth/react'
 import { useLanguage } from '@/app/contexts/LanguageContext'
 import LanguageSelector from '@/app/components/LanguageSelector'
 import { ArrowRight, BookOpen, Bookmark, Layers, LetterText, MessageSquare, Shapes } from 'lucide-react'
-import FeatureShell, { FeatureHeading } from '@/app/components/FeatureShell'
+import FeatureShell, { FeatureHeading, useFeatureLocale } from '@/app/components/FeatureShell'
+import { featureCopy } from '@/app/lib/featureCopy'
 
 const TYPE_ICONS = { all: Layers, word: LetterText, phrase: MessageSquare, grammar: Shapes, other: Bookmark }
 
 export default function VocabularyPage() {
     const { data: session, status } = useSession()
-    const { learningLanguage, nativeLanguage } = useLanguage()
+    const { learningLanguage } = useLanguage()
 
     const [records, setRecords] = useState([])
     const [loading, setLoading] = useState(true)
@@ -100,10 +101,13 @@ export default function VocabularyPage() {
 
     const filtered = filter === 'all' ? uniqueItems : uniqueItems.filter(i => i.type === filter)
 
-    const uiLang = (nativeLanguage?.code || 'zh').toLowerCase().startsWith('zh') ? 'zh' : 'en'
-    const t = uiLang === 'zh'
-        ? { title: '生词本', back: '返回', total: '共', words: '个词', loadMore: '加载更多', noWords: '暂无生词', noWordsDesc: '开始和 AI 对话，系统会自动保存你不熟悉的学习项', all: '全部', context: '语境', from: '来自', meaning: '释义', original: '原文', language: '学习语言', signIn: '登录后查看生词本', signInAction: '去登录', loading: '加载中…', typeLabels: { word: '单词', phrase: '短语', grammar: '语法', other: '其他' } }
-        : { title: 'Vocabulary', back: 'Back', total: 'Total', words: 'items', loadMore: 'Load more', noWords: 'No learning items yet', noWordsDesc: 'Start chatting with AI and unfamiliar learning items will be saved automatically', all: 'All', context: 'Context', from: 'From', meaning: 'Meaning', original: 'Original', language: 'Learning language', signIn: 'Sign in to view your vocabulary', signInAction: 'Sign in', loading: 'Loading…', typeLabels: { word: 'Word', phrase: 'Phrase', grammar: 'Grammar', other: 'Other' } }
+    const uiLang = useFeatureLocale()
+    const pageCopy = featureCopy[uiLang]
+    const t = {
+        zh: { total: '共', words: '条', loadMore: '加载更多', noWords: '还没有保存的词条', noWordsDesc: '练习中保存的单词、短语和语法会显示在这里。', noFilteredItems: '这个分类还没有内容', noFilteredItemsDesc: '试试其他分类，或开始一次练习。', all: '全部', context: '语境', from: '来自', meaning: '释义', original: '原文', language: '学习语言', signIn: '登录后查看生词本', signInAction: '去登录', loading: '加载中…', typeLabels: { word: '单词', phrase: '短语', grammar: '语法', other: '其他' } },
+        en: { total: 'Total', words: 'items', loadMore: 'Load more', noWords: 'No saved items yet', noWordsDesc: 'Words, phrases and grammar saved during practice appear here.', noFilteredItems: 'No items in this category', noFilteredItemsDesc: 'Try another category or start practicing.', all: 'All', context: 'Context', from: 'From', meaning: 'Meaning', original: 'Original', language: 'Learning language', signIn: 'Sign in to view your vocabulary', signInAction: 'Sign in', loading: 'Loading…', typeLabels: { word: 'Word', phrase: 'Phrase', grammar: 'Grammar', other: 'Other' } },
+        ja: { total: '合計', words: '件', loadMore: 'もっと見る', noWords: '保存した項目はまだありません', noWordsDesc: '練習中に保存した単語・フレーズ・文法が表示されます。', noFilteredItems: 'この種類の項目はまだありません', noFilteredItemsDesc: 'ほかの種類を選ぶか、練習を始めてください。', all: 'すべて', context: '文脈', from: '発言', meaning: '意味', original: '原文', language: '学習言語', signIn: 'ログインすると単語帳を確認できます', signInAction: 'ログイン', loading: '読み込み中…', typeLabels: { word: '単語', phrase: 'フレーズ', grammar: '文法', other: 'その他' } },
+    }[uiLang]
 
     if (status === 'unauthenticated') {
         return (
@@ -121,7 +125,7 @@ export default function VocabularyPage() {
 
     return (
         <FeatureShell active="vocabulary">
-            <FeatureHeading number="03" eyebrow={uiLang === 'zh' ? '你的语言收藏' : 'Your language collection'} title={uiLang === 'zh' ? '把遇见的词，变成自己的。' : 'Words worth keeping.'} description={uiLang === 'zh' ? '从真实对话中留下的单词、短语与表达，带着语境，再读一遍。' : 'Words, phrases and expressions from real conversations. Keep the context. Make them your own.'} icon={BookOpen} />
+            <FeatureHeading number="03" eyebrow={pageCopy.vocabularyEyebrow} title={pageCopy.vocabulary} description={pageCopy.vocabularyDescription} icon={BookOpen} />
             <div className="feature-toolbar">
                 <LanguageSelector kind="learning" label={t.language} />
                 <span className="feature-count">{t.total} {uniqueItems.length} {t.words}</span>
@@ -158,10 +162,10 @@ export default function VocabularyPage() {
                 ) : filtered.length === 0 ? (
                     <div className="feature-empty">
                         <BookOpen aria-hidden="true" />
-                        <h2>{t.noWords}</h2>
-                        <p className="text-muted-foreground text-sm max-w-xs">{t.noWordsDesc}</p>
+                        <h2>{uniqueItems.length ? t.noFilteredItems : t.noWords}</h2>
+                        <p className="text-muted-foreground text-sm max-w-xs">{uniqueItems.length ? t.noFilteredItemsDesc : t.noWordsDesc}</p>
                         <Link href="/talk" className="feature-action mt-6">
-                            {uiLang === 'zh' ? '去对话' : 'Start chatting'}
+                            {pageCopy.start}
                             <ArrowRight size={16} aria-hidden="true" />
                         </Link>
                         {hasMore && (

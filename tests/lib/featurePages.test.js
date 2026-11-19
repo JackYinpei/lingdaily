@@ -88,15 +88,28 @@ describe('editorial feature pages', () => {
     expect(container.querySelector('[role="list"]').getAttribute('aria-label')).toBe(featureCopy[lang].recentLabel)
   })
 
-  it('uses a normal practice action, not error styling, for empty vocabulary', async () => {
+  it.each([['en', 'Start practicing'], ['zh-CN', '开始练习'], ['ja', '練習を始める']])('uses localized functional copy and a neutral empty-vocabulary action in %s', async (lang, label) => {
+    state.nativeCode = lang
     vi.stubGlobal('fetch', vi.fn(async () => respond({ data: [] })))
     await render(VocabularyPage)
     const action = container.querySelector('.feature-empty a')
-    expect(action.textContent).toContain('Start chatting')
+    const copy = featureCopy[lang === 'zh-CN' ? 'zh' : lang]
+    expect(container.querySelector('h1').textContent).toBe(copy.vocabulary)
+    expect(container.querySelector('.feature-description').textContent).toBe(copy.vocabularyDescription)
+    expect(action.textContent).toContain(label)
     expect(action.getAttribute('href')).toBe('/talk')
     expect(action.className).toContain('feature-action')
     expect(action.className).not.toMatch(/red|destructive/)
     expect(container.querySelector('.feature-filters')).toBeNull()
+  })
+
+  it('distinguishes an empty vocabulary filter from having no saved items', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => respond({ data: [{ id: 'vocab-1', items: [{ text: 'resilient', type: 'word' }] }] })))
+    await render(VocabularyPage)
+    const grammar = [...container.querySelectorAll('.feature-filters button')].find(button => button.textContent.startsWith('Grammar'))
+    await act(async () => grammar.click())
+    expect(container.querySelector('.feature-empty h2').textContent).toBe('No items in this category')
+    expect(container.querySelector('.feature-empty').textContent).not.toContain('No saved items yet')
   })
 
   it('consolidates the weekly summary into one chart while keeping all-time metrics', async () => {

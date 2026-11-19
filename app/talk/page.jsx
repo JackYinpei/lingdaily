@@ -12,6 +12,7 @@ import { History } from "@/app/components/History";
 
 import { MessagesSquare, Newspaper, Users } from 'lucide-react';
 import FeatureShell, { FeatureHeading } from '@/app/components/FeatureShell';
+import { featureCopy } from '@/app/lib/featureCopy';
 import { useLanguage } from '@/app/contexts/LanguageContext';
 import { GeminiLiveServiceImpl } from '@/app/lib/GeminiLiveService';
 import OnboardingGuide from '@/app/components/OnboardingGuide';
@@ -69,6 +70,7 @@ export default function Home() {
         if (code.startsWith('ja')) return 'ja';
         return 'en';
     }, [nativeLanguage?.code]);
+    const pageCopy = featureCopy[uiLangCode];
 
     // Gemini Service Ref
     const serviceRef = useRef(null);
@@ -996,7 +998,7 @@ export default function Home() {
     return (
         <FeatureShell active="talk" className={`feature-practice${selectedNews ? ' feature-has-topic' : ''}`}>
         <div className="contents">
-            <FeatureHeading number="01" eyebrow={uiLangCode === 'zh' ? '你的口语练习室' : uiLangCode === 'ja' ? 'あなたの会話練習室' : 'Your conversation studio'} title={uiLangCode === 'zh' ? '从一个话题，聊开去。' : uiLangCode === 'ja' ? 'ひとつの話題から、話そう。' : 'One topic. A world to say.'} description={uiLangCode === 'zh' ? '选一条新闻，或走进一个场景。用自己的话，练习真实的表达。' : uiLangCode === 'ja' ? 'ニュースやシナリオを選び、自分の言葉で話してみましょう。' : 'Choose a story or step into a scenario. Practice expressing what you really mean.'} icon={MessagesSquare} />
+            <FeatureHeading number="01" eyebrow={pageCopy.practiceEyebrow} title={pageCopy.practiceTitle} description={pageCopy.practiceDescription} icon={MessagesSquare} />
 
             {/* Main Content */}
             <div
@@ -1009,7 +1011,7 @@ export default function Home() {
                         <div className="flex items-center justify-between mb-1">
                             <h2 className="feature-topic-title">
                                 {mode === 'news' ? <Newspaper size={16} aria-hidden="true" /> : <Users size={16} aria-hidden="true" />}
-                                {mode === 'news' ? 'Latest News' : (uiLangCode === 'zh' ? '场景练习' : uiLangCode === 'ja' ? 'シナリオ' : 'Scenarios')}
+                                {mode === 'news' ? pageCopy.news : pageCopy.scenarioPractice}
                             </h2>
                             <ModeToggle mode={mode} onToggle={handleModeToggle} lang={uiLangCode} />
                         </div>
@@ -1043,7 +1045,7 @@ export default function Home() {
                         <div className="flex items-center justify-between mb-4">
                             <h2 className="feature-topic-title">
                                 {mode === 'news' ? <Newspaper size={16} aria-hidden="true" /> : <Users size={16} aria-hidden="true" />}
-                                {mode === 'news' ? 'Latest News' : (uiLangCode === 'zh' ? '场景练习' : uiLangCode === 'ja' ? 'シナリオ' : 'Scenarios')}
+                                {mode === 'news' ? pageCopy.news : pageCopy.scenarioPractice}
                             </h2>
                             <ModeToggle mode={mode} onToggle={handleModeToggle} lang={uiLangCode} />
                         </div>

@@ -50,6 +50,7 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | `app/progress/progress-client.jsx` | 学习看板：今日进度环、词汇掌握、本周量表（复用 progress + items API） |
 | `app/api/` | 认证、新闻、翻译、历史、学习项、场景和播客 API |
 | `app/lib/history/` | PostgREST 请求、历史合并、复合游标和 DTO |
+| `app/lib/news/` | 纯函数：Kagi RSS → 新闻卡片 article（`parseKagiRss`、`cleanKagiDescription`），由 `NewsFeed` 调用 |
 | `app/lib/podcast/` | 新闻抓取、脚本验证、TTS、COS、DB repository、shownotes/RSS |
 | `app/lib/languages.js` | 唯一语言目录、归一化与语言对规则 |
 | `app/auth.js` | NextAuth providers、Supabase 密码登录、OAuth 用户映射 |

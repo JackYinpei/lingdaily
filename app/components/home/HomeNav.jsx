@@ -67,9 +67,9 @@ export default function HomeNav({ t, signedIn, signOutAction }) {
             <span aria-hidden="true">↗</span>
           </Link>
         )}
-        <a className="home-mobile-start" href="#start">
+        <Link className="home-mobile-start" href="#start">
           {signedIn ? t.continue : t.start}
-        </a>
+        </Link>
       </nav>
     </div>
   )

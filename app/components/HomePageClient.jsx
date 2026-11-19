@@ -25,9 +25,9 @@ export default function HomePageClient({
     signedIn ? path : `/sign-in?callbackUrl=${encodeURIComponent(path)}`
   return (
     <div className="home-editorial" lang={lang === 'zh' ? 'zh-CN' : lang}>
-      <a className="home-skip" href="#content">
+      <Link className="home-skip" href="#content">
         {t.skip}
-      </a>
+      </Link>
       <header className="home-header">
         <div className="home-container home-header-inner">
           <Link href="/" className="home-wordmark" aria-label="LingDaily home">
@@ -56,10 +56,10 @@ export default function HomePageClient({
             </h1>
             <p className="home-intro">{t.intro}</p>
             <div className="home-hero-actions">
-              <a href="#start" className="home-button">
+              <Link href="#start" className="home-button">
                 {signedIn ? t.continue : t.start}
                 <ArrowRight size={18} aria-hidden="true" />
-              </a>
+              </Link>
               <Link href="/podcasts" className="home-text-link">
                 <Headphones size={18} aria-hidden="true" />
                 {t.listen}
@@ -74,10 +74,10 @@ export default function HomePageClient({
           <div className="home-enter home-enter-later">
             <ScenePreview t={t.preview} />
           </div>
-          <a href="#features" className="home-discover">
+          <Link href="#features" className="home-discover">
             <ArrowDown size={15} aria-hidden="true" />
             {t.discover}
-          </a>
+          </Link>
         </section>
         <section className="home-method-strip" aria-label={t.methodLabel}>
           <div className="home-container home-method-inner">

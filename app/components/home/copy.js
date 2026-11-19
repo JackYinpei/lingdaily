@@ -2,8 +2,8 @@ export const HOME_COPY = {
   zh: {
     skip: '跳到正文',
     eyebrow: 'AI 口语练习',
-    headline: '找个话题，',
-    headlineAccent: '练练口语。',
+    headline: '找个话题',
+    headlineAccent: '练练口语',
     intro:
       '和 AI 用语音练习餐厅点单、工作面试，或聊聊今天的新闻。',
     start: '开始练习',
@@ -13,7 +13,7 @@ export const HOME_COPY = {
     languages: '英语、日语、西班牙语等 8 种学习语言',
     discover: '了解功能',
     methodLabel: '学习方式',
-    methodIntro: '听新闻，或者练口语。',
+    methodIntro: '听新闻\n也练口语',
     methods: ['听新闻播客', '和 AI 对话', '回看生词'],
     nav: {
       features: '功能介绍',
@@ -74,10 +74,10 @@ export const HOME_COPY = {
       ],
     },
     featuresEyebrow: 'FEATURES / 功能',
-    featuresTitle: '口语练习、播客和生词本',
+    featuresTitle: '口语练习\n播客和生词本',
     featuresIntro: '想练口语就选个话题；不方便说话时，可以听播客，也可以翻翻之前的对话和生词。',
     talk: {
-      title: '口语练习',
+      title: '练的就是\n会发生的事',
       desc: '选新闻或角色扮演场景，和 AI 用语音对话。对话里可以查看用词和语法建议。',
       prompts: [
         '在餐厅点餐',
@@ -87,12 +87,12 @@ export const HOME_COPY = {
       link: '开始练习',
     },
     podcast: {
-      title: '每日播客',
+      title: '耳朵先迎接\n新一天',
       desc: 'LL 和 DD 用中文、英文聊新闻。每期附有文稿，可以边听边看，不用登录。',
       link: '听播客',
     },
     keep: {
-      title: '生词本',
+      title: '别让好表达\n聊完就忘',
       desc: '对话里保存的单词、短语和语法都在生词本里。还可以回看对话历史，查看练习进度。',
       meaning: '彼此理解一致；达成共识',
       link: '打开生词本',
@@ -121,7 +121,7 @@ export const HOME_COPY = {
     native: '我的母语',
     learning: '我想练习',
     starting: '正在进入…',
-    footer: 'AI 口语练习 · 中英新闻播客',
+    footer: '让语言成为生活的一部分',
     footerNav: '页脚导航',
     support: '帮助与联系',
     privacy: '隐私政策',
@@ -129,8 +129,8 @@ export const HOME_COPY = {
   en: {
     skip: 'Skip to content',
     eyebrow: 'AI SPEAKING PRACTICE',
-    headline: 'Pick a topic.',
-    headlineAccent: 'Practice speaking.',
+    headline: 'Pick a topic',
+    headlineAccent: 'Practice speaking',
     intro:
       'Order a meal, try a job interview, or discuss the news. Talk with AI by voice. If you can’t speak right now, listen to a news podcast instead.',
     start: 'Start practicing',
@@ -140,7 +140,7 @@ export const HOME_COPY = {
     languages: '8 languages to practice, from English to Japanese to Spanish',
     discover: 'See the features',
     methodLabel: 'How we practice',
-    methodIntro: 'Listen to the news or practice speaking.',
+    methodIntro: 'Listen to the news\nor practice speaking',
     methods: ['News podcasts', 'AI conversations', 'Vocabulary review'],
     nav: {
       features: 'Features',
@@ -201,11 +201,11 @@ export const HOME_COPY = {
       ],
     },
     featuresEyebrow: 'FEATURES',
-    featuresTitle: 'Speaking practice, podcasts and vocabulary',
+    featuresTitle: 'Speaking practice\nPodcasts and vocabulary',
     featuresIntro:
       'Choose a topic when you want to speak. When you can’t talk, listen to a podcast or look through past conversations and saved words.',
     talk: {
-      title: 'Speaking practice',
+      title: 'Practice for\nwhat comes next',
       desc: 'Choose news or a role-play scenario and talk with AI by voice. Check the conversation for word choice and grammar suggestions.',
       prompts: [
         'Order at a restaurant',
@@ -215,19 +215,19 @@ export const HOME_COPY = {
       link: 'Start practicing',
     },
     podcast: {
-      title: 'Daily podcast',
+      title: 'Start the day\nwith a listen',
       desc: 'LL and DD discuss the news in Chinese and English. Each episode includes a transcript. No sign-in needed.',
       link: 'Listen to a podcast',
     },
     keep: {
-      title: 'Vocabulary',
+      title: 'Keep a good phrase\nfor next time',
       desc: 'Review words, phrases and grammar saved during practice. You can also revisit past conversations in History and check practice activity in Progress.',
       meaning: 'To share the same understanding',
       link: 'Open vocabulary',
     },
     example: 'EXAMPLE EXPRESSION',
     howEyebrow: 'GETTING STARTED',
-    howTitle: 'First time here?',
+    howTitle: 'First time here',
     howNote:
       'Voice practice needs sign-in and microphone access.\nPodcasts don’t require an account.',
     steps: [
@@ -250,7 +250,7 @@ export const HOME_COPY = {
     native: 'I speak',
     learning: 'I’m practicing',
     starting: 'Opening…',
-    footer: 'AI speaking practice · Chinese–English news podcasts',
+    footer: 'Make language part of your everyday',
     footerNav: 'Footer navigation',
     support: 'Help & contact',
     privacy: 'Privacy',
@@ -258,8 +258,8 @@ export const HOME_COPY = {
   ja: {
     skip: '本文へ移動',
     eyebrow: 'AIと会話練習',
-    headline: '話題を選んで、',
-    headlineAccent: '会話の練習。',
+    headline: '話題を選んで',
+    headlineAccent: '会話の練習',
     intro:
       'レストランの注文や面接をAIと音声で練習。今日のニュースを選んで話すこともできます。',
     start: '練習を始める',
@@ -269,7 +269,7 @@ export const HOME_COPY = {
     languages: '英語・日本語など8言語に対応',
     discover: '機能を見る',
     methodLabel: '学習の流れ',
-    methodIntro: '聴く練習、話す練習。',
+    methodIntro: '聴く練習\n話す練習',
     methods: ['ニュースを聴く', 'AIと話す', '単語を見返す'],
     nav: {
       features: 'できること',
@@ -334,7 +334,7 @@ export const HOME_COPY = {
     featuresIntro:
       '声を出せないときは、ポッドキャストを聴いたり、過去の会話や単語を見返したりできます。',
     talk: {
-      title: '会話練習',
+      title: 'これから使う言葉を\nここで練習',
       desc: 'ニュースやロールプレイを選んでAIと音声で話せます。単語や文法のアドバイスも確認できます。',
       prompts: [
         'レストランで注文する',
@@ -344,12 +344,12 @@ export const HOME_COPY = {
       link: '練習を始める',
     },
     podcast: {
-      title: '毎日のポッドキャスト',
+      title: '新しい一日を\n耳から始める',
       desc: 'LLとDDが中国語と英語でニュースを紹介します。各回に原稿が付き、聴きながら読めます。ログインは不要です。',
       link: 'ポッドキャストを聴く',
     },
     keep: {
-      title: '単語帳',
+      title: 'いい表現は\n次の会話にも',
       desc: '会話中に保存した単語・フレーズ・文法を調べられます。過去の会話は履歴で、練習状況は学習の記録で確認できます。',
       meaning: '共通の理解を持つこと',
       link: '単語帳を開く',
@@ -378,7 +378,7 @@ export const HOME_COPY = {
     native: '母語',
     learning: '練習する言語',
     starting: '移動中…',
-    footer: 'AI会話練習・ニュースポッドキャスト',
+    footer: '言葉を毎日の暮らしに',
     footerNav: 'フッターナビゲーション',
     support: 'ヘルプ・お問い合わせ',
     privacy: 'プライバシー',

@@ -21,6 +21,7 @@ vi.mock('@/app/lib/GeminiLiveService', () => ({
       this.disconnect = vi.fn()
       this.connect = vi.fn(async () => { config.onConnectionUpdate(true); return true })
       this.sendContextMessage = vi.fn(async () => {})
+      this.sendText = vi.fn(async text => { config.onMessage(text, true, 'user'); return true })
     }
   },
 }))
@@ -66,14 +67,78 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-async function mountAndConnect() {
-  await act(async () => root.render(React.createElement(Talk)))
+async function mountAndConnect(strict = false) {
+  await act(async () => root.render(strict ? React.createElement(React.StrictMode, null, React.createElement(Talk)) : React.createElement(Talk)))
   expect(state.props.isConnecting).toBe(false)
   await act(async () => state.props.connect())
   expect(state.config).not.toBeNull()
 }
 
 describe('talk persistence lifecycle', () => {
+  it.each(['Second message', 'First message'])('keeps two accepted text sends unique through StrictMode save, unload merge and resume (%s)', async secondText => {
+    responseHistory = []
+    await mountAndConnect(true)
+    await act(async () => { expect(await state.props.sendTextMessage('First message')).toBe(true) })
+    await act(async () => state.config.onMessage('First reply', true, 'model'))
+    await act(async () => vi.advanceTimersByTimeAsync(800))
+    await act(async () => { expect(await state.props.sendTextMessage(secondText)).toBe(true) })
+    const visibleUsers = state.props.history.filter(item => item.role === 'user')
+    expect(visibleUsers.map(item => item.content[0].text)).toEqual(['First message', secondText])
+    expect(new Set(visibleUsers.map(item => item.itemId)).size).toBe(2)
+    await act(async () => window.dispatchEvent(new Event('pagehide')))
+    responseHistory = posts.at(-1).history
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await mountAndConnect(true)
+    expect(state.props.history.filter(item => item.role === 'user')).toEqual(visibleUsers)
+  })
+
+  it.each(['success', 'conflict', 'network failure'])('supersedes queued saves and late ordinary %s after an immediate keepalive flush', async result => {
+    await mountAndConnect(true)
+    const originalFetch = fetchMock.getMockImplementation()
+    let finishOrdinary, failOrdinary, ordinaryResponse
+    let keepaliveAttempts = 0
+    fetchMock.mockImplementation(async (url, options) => {
+      const response = await originalFetch(url, options)
+      if (options?.method !== 'POST') return response
+      if (!options.keepalive && !finishOrdinary) {
+        ordinaryResponse = response
+        return new Promise((resolve, reject) => { finishOrdinary = resolve; failOrdinary = reject })
+      }
+      if (options.keepalive && ++keepaliveAttempts === 1) {
+        return Response.json({ current: { id: 'saved', revision: 2, history: posts[0].history } }, { status: 409 })
+      }
+      return response
+    })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await act(async () => state.config.onMessage('First reply', true, 'model'))
+    await act(async () => vi.advanceTimersByTimeAsync(800))
+    expect(posts).toHaveLength(1)
+    await act(async () => state.props.sendTextMessage('Next user message'))
+    await act(async () => vi.advanceTimersByTimeAsync(800))
+    expect(posts).toHaveLength(1)
+    await act(async () => {
+      state.config.onMessage('Final reply', true, 'model')
+      state.config.onCorrection(correction)
+      window.dispatchEvent(new Event('pagehide'))
+    })
+    expect(posts.map(post => post.keepalive)).toEqual([false, true, true])
+    expect(posts[2].revision).toBe(2)
+    expect(posts[2].history.some(item => item.type === 'correction')).toBe(true)
+    await act(async () => {
+      if (result === 'success') finishOrdinary(ordinaryResponse)
+      else if (result === 'conflict') finishOrdinary(Response.json({ error: 'This conversation was updated in another session', current: { id: 'saved', revision: 4, history: posts[2].history } }, { status: 409 }))
+      else failOrdinary(new Error('network failure'))
+    })
+    expect(posts).toHaveLength(3)
+    expect(error).not.toHaveBeenCalled()
+    expect(state.props.history.filter(item => item.role === 'user')).toHaveLength(2)
+    await act(async () => state.props.sendTextMessage('After returning to the page'))
+    await act(async () => vi.advanceTimersByTimeAsync(800))
+    expect(posts).toHaveLength(4)
+    expect(posts[3].history.at(-1).content[0].text).toBe('After returning to the page')
+  })
+
   it('debounces partial assistant transcripts even without turnComplete', async () => {
     await mountAndConnect()
     await act(async () => state.config.onMessage('A partial', false, 'model'))

@@ -92,6 +92,7 @@ export default function Home() {
     const persistTimeoutRef = useRef(null)
     const pendingPersistRef = useRef(null)
     const persistQueueRef = useRef(Promise.resolve())
+    const persistEpochsRef = useRef(new Map())
     const flushPendingRef = useRef(() => Promise.resolve())
     const skipNextNewsLoadRef = useRef(false)
     const topicHistoryLoadingRef = useRef(false)
@@ -220,13 +221,15 @@ export default function Home() {
             mergeOnServer = false,
             userId = userSession?.user?.id || null,
             identityGeneration = identityGenerationRef.current,
+            persistEpoch = persistEpochsRef.current.get(getNewsKey(news)) || 0,
         } = {},
     ) => {
-        const isCurrentIdentity = () => (
+        const isCurrentSave = () => (
             identityGeneration === identityGenerationRef.current
             && userId === (userSession?.user?.id || null)
+            && persistEpoch === (persistEpochsRef.current.get(getNewsKey(news)) || 0)
         );
-        if (!news || !hasUserMessage(conversationHistory) || !userId || !isCurrentIdentity()) return 'skipped';
+        if (!news || !hasUserMessage(conversationHistory) || !userId || !isCurrentSave()) return 'skipped';
 
         const persistableHistory = sanitizeHistoryCorrections(conversationHistory);
 
@@ -237,7 +240,7 @@ export default function Home() {
         let expectedRevision = conversationMetaRef.current.get(newsKey)?.revision ?? 0;
 
         for (let attempt = 0; attempt < 2; attempt += 1) {
-            if (!isCurrentIdentity()) return 'skipped';
+            if (!isCurrentSave()) return 'skipped';
             const payload = {
                 newsKey,
                 newsTitle: news.originalTitle || news.title || news.id || 'Untitled',
@@ -257,7 +260,7 @@ export default function Home() {
                     keepalive,
                 });
                 const json = await res.json().catch(() => ({}));
-                if (!isCurrentIdentity()) return 'skipped';
+                if (!isCurrentSave()) return 'skipped';
 
                 if (res.status === 409) {
                     const current = [json.current, json.conflict, json.data]
@@ -315,8 +318,9 @@ export default function Home() {
                 }
                 return 'saved';
             } catch (persistError) {
+                if (!isCurrentSave()) return 'skipped';
                 console.error('Error saving chat history:', persistError);
-                if (isCurrentIdentity()) setSaveError(true);
+                setSaveError(true);
                 return 'failed';
             }
         }
@@ -324,11 +328,13 @@ export default function Home() {
     }, [userSession?.user?.id]);
 
     const enqueueConversationPersist = useCallback((snapshot) => {
+        const persistEpoch = persistEpochsRef.current.get(getNewsKey(snapshot.news)) || 0;
         persistQueueRef.current = persistQueueRef.current
             .catch(() => undefined)
             .then(() => persistConversation(snapshot.news, snapshot.history, {
                 userId: snapshot.userId,
                 identityGeneration: snapshot.identityGeneration,
+                persistEpoch,
             }));
         return persistQueueRef.current;
     }, [persistConversation]);
@@ -356,13 +362,18 @@ export default function Home() {
         pendingPersistRef.current = null;
         if (!snapshot) return Promise.resolve();
         if (keepalive) {
+            const newsKey = getNewsKey(snapshot.news);
+            const persistEpoch = (persistEpochsRef.current.get(newsKey) || 0) + 1;
+            persistEpochsRef.current.set(newsKey, persistEpoch);
             // Starting the fetch directly is important during pagehide; a
-            // queued Promise may never run once the page is discarded.
+            // queued Promise may never run once the page is discarded. This
+            // snapshot supersedes queued saves and retries for this topic.
             return persistConversation(snapshot.news, snapshot.history, {
                 keepalive: true,
                 mergeOnServer,
                 userId: snapshot.userId,
                 identityGeneration: snapshot.identityGeneration,
+                persistEpoch,
             });
         }
         return enqueueConversationPersist(snapshot);
@@ -386,10 +397,6 @@ export default function Home() {
             flushPendingConversation();
         }, 800);
     }, [flushPendingConversation, userSession?.user?.id]);
-
-    useEffect(() => {
-        historyRef.current = history;
-    }, [history]);
 
     useEffect(() => {
         const flushForUnload = () => {
@@ -440,6 +447,7 @@ export default function Home() {
         topicGenerationRef.current += 1;
         conversationMetaRef.current.clear();
         conversationBaselineRef.current.clear();
+        persistEpochsRef.current.clear();
         setSaveError(false);
         selectedNewsRef.current = null;
         historyRef.current = [];
@@ -669,72 +677,63 @@ export default function Home() {
     const handleGeminiMessage = useCallback((text, isFinal, role) => {
         if (topicHistoryLoadingRef.current) return;
         lastUnloadFingerprintRef.current = null;
-        setHistory(prev => {
-            const prevHistory = [...prev];
-            const lastMsgIndex = prevHistory.findLastIndex(item => item?.type !== 'correction');
-            const lastMsg = prevHistory[lastMsgIndex];
-
-            // Update existing message (streaming)
-            if (lastMsg && lastMsg.role === (role === 'model' ? 'assistant' : 'user') && !lastMsg.metadata?.isFinal) {
-                const updatedMsg = {
-                    ...lastMsg,
-                    content: [{
-                        type: role === 'model' ? 'output_text' : 'input_text',
-                        text: lastMsg.content[0].text + (text || "") // Append or keep same if empty
-                    }],
-                    metadata: {
-                        ...lastMsg.metadata,
-                        isFinal: isFinal
-                    }
-                };
-
-                const newHistory = prevHistory.map((item, index) => index === lastMsgIndex ? updatedMsg : item);
-
-                if ((isFinal || role === 'model') && selectedNewsRef.current) {
-                    scheduleConversationPersist(selectedNewsRef.current, newHistory);
-                }
-
-                historyRef.current = newHistory;
-                return newHistory;
+        const prevHistory = historyRef.current;
+        const commitHistory = (next) => {
+            historyRef.current = next;
+            setHistory(next);
+            if ((isFinal || role === 'model') && selectedNewsRef.current) {
+                scheduleConversationPersist(selectedNewsRef.current, next);
             }
+        };
+        const lastMsgIndex = prevHistory.findLastIndex(item => item?.type !== 'correction');
+        const lastMsg = prevHistory[lastMsgIndex];
 
-            // Create new message
-            if (text) {
-                const newMsg = {
-                    itemId: uuidv4(),
-                    type: 'message',
-                    role: role === 'model' ? 'assistant' : 'user',
-                    content: [{
-                        type: role === 'model' ? 'output_text' : 'input_text',
-                        text: text
-                    }],
-                    metadata: {
-                        isFinal: isFinal,
-                        createdAt: new Date().toISOString()
-                    }
-                };
-
-                const newHistory = [...prevHistory, newMsg];
-                if ((isFinal || role === 'model') && selectedNewsRef.current) {
-                    scheduleConversationPersist(selectedNewsRef.current, newHistory);
+        // Update existing message (streaming)
+        if (lastMsg && lastMsg.role === (role === 'model' ? 'assistant' : 'user') && !lastMsg.metadata?.isFinal) {
+            const updatedMsg = {
+                ...lastMsg,
+                content: [{
+                    type: role === 'model' ? 'output_text' : 'input_text',
+                    text: lastMsg.content[0].text + (text || "") // Append or keep same if empty
+                }],
+                metadata: {
+                    ...lastMsg.metadata,
+                    isFinal: isFinal
                 }
-                historyRef.current = newHistory;
-                return newHistory;
-            }
+            };
 
-            // Finalize command for empty text
-            if (!text && isFinal && lastMsg && !lastMsg.metadata?.isFinal) {
-                const finalizedMsg = { ...lastMsg, metadata: { ...lastMsg.metadata, isFinal: true } };
-                const newHistory = prevHistory.map((item, index) => index === lastMsgIndex ? finalizedMsg : item);
-                if (selectedNewsRef.current) {
-                    scheduleConversationPersist(selectedNewsRef.current, newHistory);
+            const newHistory = prevHistory.map((item, index) => index === lastMsgIndex ? updatedMsg : item);
+            commitHistory(newHistory);
+            return;
+        }
+
+        // Create new message
+        if (text) {
+            const newMsg = {
+                itemId: uuidv4(),
+                type: 'message',
+                role: role === 'model' ? 'assistant' : 'user',
+                content: [{
+                    type: role === 'model' ? 'output_text' : 'input_text',
+                    text: text
+                }],
+                metadata: {
+                    isFinal: isFinal,
+                    createdAt: new Date().toISOString()
                 }
-                historyRef.current = newHistory;
-                return newHistory;
-            }
+            };
 
-            return prevHistory;
-        });
+            const newHistory = [...prevHistory, newMsg];
+            commitHistory(newHistory);
+            return;
+        }
+
+        // Finalize command for empty text
+        if (!text && isFinal && lastMsg && !lastMsg.metadata?.isFinal) {
+            const finalizedMsg = { ...lastMsg, metadata: { ...lastMsg.metadata, isFinal: true } };
+            const newHistory = prevHistory.map((item, index) => index === lastMsgIndex ? finalizedMsg : item);
+            commitHistory(newHistory);
+        }
     }, [scheduleConversationPersist]);
 
     // The Live service survives normal React renders. Update the forwarding
@@ -755,12 +754,10 @@ export default function Home() {
             correction: normalized,
             metadata: { isFinal: true, createdAt: new Date().toISOString() },
         };
-        setHistory((prev) => {
-            const next = [...prev, item];
-            historyRef.current = next;
-            if (selectedNewsRef.current) scheduleConversationPersist(selectedNewsRef.current, next);
-            return next;
-        });
+        const next = [...historyRef.current, item];
+        historyRef.current = next;
+        setHistory(next);
+        if (selectedNewsRef.current) scheduleConversationPersist(selectedNewsRef.current, next);
     }, [scheduleConversationPersist]);
 
     const onCorrectionRef = useRef(null);

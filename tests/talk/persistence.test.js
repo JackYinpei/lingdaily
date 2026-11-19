@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({ props: null, service: null, config: null, feed: null }))
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: { user: { id: 'account' } }, status: 'authenticated' }) }))
 vi.mock('@/app/contexts/LanguageContext', () => ({ useLanguage: () => ({ learningLanguage: { code: 'en', label: 'English' }, nativeLanguage: { code: 'en', label: 'English' }, loading: false }) }))
+vi.mock('@/app/contexts/ThemeContext', () => ({ useTheme: () => ({ theme: 'system', toggleTheme: vi.fn() }) }))
 vi.mock('@/app/components/NewsFeed', () => ({ default: props => { state.feed = props; return null } }))
 vi.mock('@/app/components/ScenarioFeed', () => ({ default: () => null }))
 vi.mock('@/app/components/ModeToggle', () => ({ ModeToggle: () => null }))

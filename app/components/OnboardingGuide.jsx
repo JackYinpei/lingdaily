@@ -308,14 +308,14 @@ export default function OnboardingGuide({ lang = "zh" }) {
         <h3 className="text-base font-semibold text-card-foreground mb-1">{currentStep.title}</h3>
         <p className="text-sm text-muted-foreground leading-relaxed mb-4">{currentStep.description}</p>
 
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <button
             onClick={finish}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="min-h-11 shrink-0 whitespace-nowrap text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             {ui.skip}
           </button>
-          <div className="flex gap-2">
+          <div className="ml-auto flex min-w-0 flex-wrap justify-end gap-2">
             {currentStep.showSkipMode && (
               <button
                 onClick={next}
@@ -326,7 +326,7 @@ export default function OnboardingGuide({ lang = "zh" }) {
             )}
             <button
               onClick={next}
-              className="text-sm px-4 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-medium transition-colors"
+              className="min-h-11 shrink-0 whitespace-nowrap text-sm px-4 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-medium transition-colors"
             >
               {isLast ? ui.done : ui.next}
             </button>

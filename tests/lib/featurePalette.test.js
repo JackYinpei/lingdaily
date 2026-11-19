@@ -28,6 +28,13 @@ function contrast(a, b) {
 }
 
 describe('selected Paper & Pine feature palette', () => {
+  it('keeps topic focus inside the scrollable card and short onboarding actions on one line', () => {
+    expect(featureCss).toContain('.feature-app .feature-topic-card:focus-visible { outline-offset: -3px; }')
+    const onboarding = readFileSync(new URL('../../app/components/OnboardingGuide.jsx', import.meta.url), 'utf8')
+    expect(onboarding).toContain('flex flex-wrap items-center justify-between gap-3')
+    expect(onboarding.match(/min-h-11 shrink-0 whitespace-nowrap/g)).toHaveLength(2)
+  })
+
   it.each(['light', 'dark'])('matches option A in %s mode', (theme) => {
     const actual = tokens(theme)
     expect(actual).toMatchObject(palettes[theme])

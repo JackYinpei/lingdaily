@@ -125,6 +125,7 @@
 .feature-app .feature-topic-card { border-radius: 4px; box-shadow: none; border-color: var(--border); }
 .feature-app .feature-topic-card:hover { border-color: var(--primary); box-shadow: none; }
 .feature-app .feature-topic-card[aria-pressed="true"] { background: var(--secondary); border-color: var(--primary); box-shadow: inset 3px 0 var(--primary); }
+.feature-app .feature-topic-card:focus-visible { outline-offset: -3px; }
 .feature-topic-card h3 { font-size: 16px; line-height: 1.5; }
 .feature-topic-card p, .feature-topic-card .whitespace-pre-line { font-size: 14px; line-height: 1.75; }
 .feature-chat { border: 1px solid var(--border); background: var(--card); border-radius: 4px; overflow: hidden; }

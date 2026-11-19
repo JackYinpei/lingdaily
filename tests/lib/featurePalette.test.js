@@ -53,6 +53,7 @@ describe('selected Paper & Pine feature palette', () => {
   it('extends the page palette to portaled controls and uses the selected hover shade', () => {
     expect(css).toContain('body:has(.feature-app),\n.feature-app {')
     expect(css).toContain('.dark body:has(.feature-app),\n.dark .feature-app {')
-    expect(featureCss).toContain('background-color: var(--primary-hover)')
+    const utilityLayer = featureCss.match(/@layer utilities \{([\s\S]*?)\n\}/)[1]
+    expect(utilityLayer).toContain('background-color: var(--primary-hover)')
   })
 })

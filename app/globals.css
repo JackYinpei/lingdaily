@@ -4,51 +4,59 @@
 
 @custom-variant dark (&:is(.dark *));
 
+body:has(.feature-app),
 .feature-app {
-  --background: #f8f6f0;
-  --foreground: #282e29;
-  --card: #fffdf8;
-  --card-foreground: #282e29;
-  --popover: #fffdf8;
-  --popover-foreground: #282e29;
-  --primary: #af442b;
-  --primary-foreground: #fffdf8;
-  --secondary: #eceee3;
-  --secondary-foreground: #3e4938;
-  --muted: #eceee3;
-  --muted-foreground: #686e62;
-  --accent: #eceee3;
-  --accent-foreground: #282e29;
-  --border: #dcded2;
-  --input: #dcded2;
-  --ring: #af442b;
-  --brand: #af442b;
-  --brand-from: #7a856c;
-  --brand-to: #7a856c;
+  --background: #f6f7f2;
+  --foreground: #26382f;
+  --card: #fdfef9;
+  --card-foreground: #26382f;
+  --popover: #fdfef9;
+  --popover-foreground: #26382f;
+  --primary: #365d4a;
+  --primary-hover: #294b3b;
+  --primary-foreground: #ffffff;
+  --secondary: #e8eee5;
+  --secondary-foreground: #26382f;
+  --muted: #e8eee5;
+  --muted-foreground: #58675d;
+  --accent: #e8eee5;
+  --accent-foreground: #26382f;
+  --border: #cbd5c9;
+  --input: #cbd5c9;
+  --ring: #365d4a;
+  --brand: #365d4a;
+  --brand-foreground: #ffffff;
+  --brand-from: #365d4a;
+  --brand-via: #365d4a;
+  --brand-to: #365d4a;
   --feature-serif: 'Iowan Old Style', 'Palatino Linotype', 'Noto Serif CJK SC', 'Songti SC', 'Yu Mincho', Georgia, serif;
 }
 
+.dark body:has(.feature-app),
 .dark .feature-app {
-  --background: #202620;
-  --foreground: #eeeede;
-  --card: #292f28;
-  --card-foreground: #eeeede;
-  --popover: #292f28;
-  --popover-foreground: #eeeede;
-  --primary: #e4a088;
-  --primary-foreground: #242820;
-  --secondary: #30392c;
-  --secondary-foreground: #d5ddc8;
-  --muted: #30392c;
-  --muted-foreground: #b3b6a8;
-  --accent: #30392c;
-  --accent-foreground: #eeeede;
-  --border: #454d40;
-  --input: #454d40;
-  --ring: #e4a088;
-  --brand: #e4a088;
-  --brand-from: #a3b58d;
-  --brand-to: #a3b58d;
+  --background: #18241e;
+  --foreground: #eef3e9;
+  --card: #213128;
+  --card-foreground: #eef3e9;
+  --popover: #213128;
+  --popover-foreground: #eef3e9;
+  --primary: #b1cbaa;
+  --primary-hover: #c8dabd;
+  --primary-foreground: #18241e;
+  --secondary: #2c3f32;
+  --secondary-foreground: #eef3e9;
+  --muted: #2c3f32;
+  --muted-foreground: #b6c5b7;
+  --accent: #2c3f32;
+  --accent-foreground: #eef3e9;
+  --border: #465f4d;
+  --input: #465f4d;
+  --ring: #b1cbaa;
+  --brand: #b1cbaa;
+  --brand-foreground: #18241e;
+  --brand-from: #b1cbaa;
+  --brand-via: #b1cbaa;
+  --brand-to: #b1cbaa;
 }
 
 @theme inline {

@@ -758,14 +758,7 @@ export class GeminiLiveServiceImpl {
 
     async sendText(text) {
         const socket = this.webSocket;
-        if (!this.connected || !socket || socket.readyState !== WebSocket.OPEN) return;
-
-        // A typed message supersedes the first-turn hold: restore the normal
-        // realtime-input conditions the model expects around text input.
-        this.releaseMicStreamHold();
-
-        // Optimistically update UI
-        this.config.onMessage(text, true, 'user');
+        if (!text?.trim() || !this.connected || !socket || socket.readyState !== WebSocket.OPEN) return false;
 
         // Use realtimeInput.text — same as official reference
         const message = {
@@ -773,7 +766,14 @@ export class GeminiLiveServiceImpl {
                 text: text,
             },
         };
-        socket.send(JSON.stringify(message));
+        try {
+            socket.send(JSON.stringify(message));
+        } catch {
+            return false;
+        }
+        this.releaseMicStreamHold();
+        this.config.onMessage(text, true, 'user');
+        return true;
     }
 
     async sendContextMessage(text) {

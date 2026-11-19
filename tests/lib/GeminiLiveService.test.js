@@ -381,6 +381,27 @@ function emitMicFrame(service) {
   })
 }
 
+describe('Gemini Live text acceptance', () => {
+  it('rejects a disconnected send without a local message', async () => {
+    const { service, config } = createService()
+    await expect(service.sendText('hello')).resolves.toBe(false)
+    expect(config.onMessage).not.toHaveBeenCalled()
+  })
+
+  it.each(['closed', 'throws', 'empty'])('rejects %s sends without a local message', async condition => {
+    const { service, config } = createService()
+    const socket = await connectService(service)
+    socket.send.mockClear()
+    config.onMessage.mockClear()
+    if (condition === 'closed') socket.readyState = FakeWebSocket.CLOSED
+    if (condition === 'throws') socket.send.mockImplementation(() => { throw new Error('closed') })
+    await expect(service.sendText(condition === 'empty' ? '   ' : 'hello')).resolves.toBe(false)
+    expect(config.onMessage).not.toHaveBeenCalled()
+    expect(service.micStreamHold).toBe(true)
+    service.disconnect()
+  })
+})
+
 describe('Gemini Live first turn', () => {
   it('sends context messages as clientContent with an explicit turnComplete', async () => {
     const { service } = createService()
@@ -420,7 +441,7 @@ describe('Gemini Live first turn', () => {
     const socket = await connectService(service)
     expect(service.micStreamHold).toBe(true)
 
-    await service.sendText('hello')
+    await expect(service.sendText('hello')).resolves.toBe(true)
 
     expect(service.micStreamHold).toBe(false)
     emitMicFrame(service)

@@ -4,6 +4,7 @@ import { useLanguage } from '@/app/contexts/LanguageContext';
 
 import { TextMessage } from './TextMessage';
 import { CorrectionCard } from './CorrectionCard';
+import { submitTextDraft } from '@/app/talk/_lib/textSubmission';
 
 export function History({
     isConnected,
@@ -59,6 +60,22 @@ export function History({
     const [mounted, setMounted] = useState(false);
     const containerRef = useRef(null);
     const [inputMessage, setInputMessage] = useState('');
+    const submittingRef = useRef(false);
+    const composingRef = useRef(false);
+    const submitMessage = async () => {
+        if (submittingRef.current) return;
+        submittingRef.current = true;
+        try {
+            await submitTextDraft({
+                draft: inputMessage,
+                sendTextMessage,
+                isComposing: composingRef.current,
+                onAccepted: () => setInputMessage(current => current === inputMessage ? '' : current),
+            });
+        } finally {
+            submittingRef.current = false;
+        }
+    };
     const [isInputFocused, setIsInputFocused] = useState(false);
     useEffect(() => setMounted(true), []);
 
@@ -127,7 +144,7 @@ export function History({
                 <button
                     data-tour="connect-btn"
                     onClick={connect}
-                    className={`${isInputFocused ? 'hidden sm:flex' : 'flex'} w-10 h-10 lg:w-auto lg:px-4 rounded-full lg:rounded-lg font-medium transition-colors items-center justify-center text-lg flex-shrink-0 ${isConnected
+                    className={`flex w-10 h-10 lg:w-auto lg:px-4 rounded-full lg:rounded-lg font-medium transition-colors items-center justify-center text-lg flex-shrink-0 ${isConnected
                         ? 'bg-destructive text-white hover:bg-destructive/90'
                         : isConnecting
                             ? 'bg-primary/70 text-primary-foreground hover:bg-primary/60'
@@ -159,11 +176,12 @@ export function History({
                     type="text"
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
+                    onCompositionStart={() => { composingRef.current = true; }}
+                    onCompositionEnd={() => { composingRef.current = false; }}
                     onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.nativeEvent.isComposing && inputMessage.trim() && !isConnecting) {
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && !composingRef.current) {
                             e.preventDefault();
-                            sendTextMessage(inputMessage.trim());
-                            setInputMessage('');
+                            submitMessage();
                         }
                     }}
                     onFocus={() => {
@@ -180,13 +198,8 @@ export function History({
 
 
                 <button
-                    onClick={() => {
-                        if (inputMessage.trim() && !isConnecting) {
-                            sendTextMessage(inputMessage.trim());
-                            setInputMessage('');
-                        }
-                    }}
-                    disabled={!inputMessage.trim() || isConnecting}
+                    onClick={submitMessage}
+                    disabled={!inputMessage.trim()}
                     className="px-4 py-2 rounded-lg font-medium transition-colors flex-shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {t.send}

@@ -32,6 +32,7 @@ import {
     createNewsContextMessage,
 } from './_lib/prompts';
 import { cancelLiveConnectionAttempt, fetchRealtimeTokenAfterPriming } from './_lib/liveConnection';
+import { sendTalkText } from './_lib/textSubmission';
 import {
     clearSelectedNewsFromStorage,
     loadSelectedNewsFromStorage,
@@ -958,19 +959,14 @@ export default function Home() {
 
     // 文本输入消息发送，并将本地 history 与后端同步
     const sendTextMessage = async function (input) {
-        if (isLanguageLoading || isRestoringConversation || topicHistoryLoadingRef.current) {
-            setError('正在恢复对话，请稍候再发送。');
-            return;
-        }
-        if (isConnecting) {
-            setError('连接仍在建立，请连接完成后再发送。');
-            return;
-        }
-        if (!serviceRef.current || !isConnected) {
-            setError('请先连接 Gemini Live，再发送消息。');
-            return;
-        }
-        await serviceRef.current.sendText(input);
+        return sendTalkText({
+            input,
+            restoring: isLanguageLoading || isRestoringConversation || topicHistoryLoadingRef.current,
+            connecting: isConnecting,
+            connected: isConnected,
+            service: serviceRef.current,
+            onError: setError,
+        });
     }
 
     // Clean up on unmount

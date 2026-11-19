@@ -62,6 +62,8 @@
 .feature-reader h1, .feature-reader h2 { font-family: var(--feature-serif); font-weight: 400; }
 .feature-reader audio { width: 100%; }
 .feature-app audio { accent-color: var(--primary); }
+.feature-app label[for$="-language"] { color: var(--muted-foreground); font-size: 12px; }
+.feature-app select[id$="-language"] { color: var(--foreground); background: var(--card); border-color: var(--border); border-radius: 3px; }
 .feature-practice .feature-heading { padding-block: 25px 20px; margin-bottom: 20px; }
 .feature-practice .feature-heading h1 { font-size: 30px; margin-block: 8px; }
 .feature-practice .feature-heading-art { width: 70px; height: 70px; }

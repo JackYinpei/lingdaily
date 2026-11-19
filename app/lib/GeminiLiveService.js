@@ -760,20 +760,20 @@ export class GeminiLiveServiceImpl {
 
     async sendContextMessage(text) {
         const socket = this.webSocket;
-        if (!this.connected || !socket || socket.readyState !== WebSocket.OPEN) return;
+        if (!this.connected || !socket || socket.readyState !== WebSocket.OPEN
+            || typeof text !== 'string' || !text.trim()) return;
 
-        // realtimeInput.text carries no explicit end-of-turn — the server
-        // derives one from voice activity, which never arrives while the mic
-        // streams silence, so opening prompts could sit unanswered forever.
-        // clientContent with turnComplete forces generation to start from the
-        // accumulated prompt immediately.
+        // Load context without generating, then request a spoken realtime turn.
         const message = {
             clientContent: {
                 turns: [{ role: 'user', parts: [{ text }] }],
-                turnComplete: true,
+                turnComplete: false,
             },
         };
         socket.send(JSON.stringify(message));
+        socket.send(JSON.stringify({
+            realtimeInput: { text: 'Please respond aloud to the context above.' },
+        }));
     }
 
     // ─── Disconnect ────────────────────────────────────────────────────

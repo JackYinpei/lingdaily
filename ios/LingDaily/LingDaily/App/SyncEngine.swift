@@ -140,8 +140,9 @@ final class SyncEngine: ObservableObject {
         guard let session = account.session, store.canWrite else { return nil }
         if ledger.ownerUserID != session.userID {
             if ledger.ownerUserID != nil {
-                // Data on this device belongs to another account: never upload it into this one.
-                store.clearAll()
+                // Data on this device belongs to another account (its session was rejected or revoked
+                // without a sign-out): never upload it into this one, nor show its reviews or reminders.
+                forgetAccountData()
                 ledger = SyncLedger(ownerUserID: session.userID)
             } else {
                 ledger.adopt(owner: session.userID, archive: store.archive)
@@ -172,14 +173,17 @@ final class SyncEngine: ObservableObject {
         return await syncNow()
     }
 
-    /// Forgets this device's account data after sign-out or account deletion.
-    func resetLocalData() {
+    /// Forgets everything this device holds for the account: archive, sync ledger, review history
+    /// and reminders. Runs on sign-out, account deletion, and when a different account signs in.
+    func forgetAccountData() {
         debounce?.cancel()
         store.clearAll()
         ledger = SyncLedger()
         lastSyncedAt = nil
         status = .idle
         saveLedger()
+        ReminderCenter.shared.clearAll()
+        ReviewLog.clear()
     }
 
     private func saveLedger() {

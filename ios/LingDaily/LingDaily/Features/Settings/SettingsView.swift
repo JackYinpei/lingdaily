@@ -143,9 +143,7 @@ struct SettingsView: View {
 
     /// Signing out removes this account's records from the device; they come back from the cloud on sign-in.
     private func finishSignOut() {
-        sync.resetLocalData()
-        ReminderCenter.shared.clearAll()
-        ReviewLog.clear()
+        sync.forgetAccountData()
         account.signOut()
     }
 
@@ -202,9 +200,7 @@ private struct AccountDataView: View {
                 Task {
                     do {
                         try await account.confirmDeletion(result)
-                        sync.resetLocalData()
-                        ReminderCenter.shared.clearAll()
-                        ReviewLog.clear()
+                        sync.forgetAccountData()
                         dismiss()
                     } catch is CancellationError {
                     } catch {

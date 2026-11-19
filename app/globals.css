@@ -194,39 +194,39 @@
   }
 }
 
-/* Scoped homepage palette; layout lives in components/home/home.css. */
+/* Paper & Pine (proposal A). Match the feature-app palette's semantic roles.
+   Scoped homepage palette; layout lives in components/home/home.css. */
 .home-editorial {
-  --home-paper: #f8f6f0;
-  --home-surface: #fffdf8;
-  --home-ink: #282e29;
-  --home-muted: #62675d;
-  --home-line: #dcded2;
-  --home-accent: #af442b;
-  --home-accent-ink: #fffdf8;
-  --home-wash: #eceee3;
-  --home-note: #f0e8d3;
-  --home-art-wall: #e9e4d8;
-  --home-art-window: #f6f3e7;
-  --home-art-line: #9b9c88;
-  --home-art-green: #7a856c;
-  --home-art-sun: #dbbd80;
-  --home-shadow: #343b2920;
+  --home-paper: #f6f7f2;
+  --home-surface: #fdfef9;
+  --home-ink: #26382f;
+  --home-muted: #58675d;
+  --home-line: #cbd5c9;
+  --home-accent: #365d4a;
+  --home-accent-hover: #294b3b;
+  --home-accent-ink: #ffffff;
+  --home-wash: #e8eee5;
+  --home-note: var(--home-wash);
+  --home-art-wall: var(--home-wash);
+  --home-art-window: var(--home-surface);
+  --home-art-line: #91a684;
+  --home-art-green: #91a684;
+  --home-art-sun: #91a684;
+  --home-shadow: #26382f20;
   --home-serif: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', 'Noto Serif CJK SC', 'Songti SC', 'Yu Mincho', Georgia, serif;
 }
 .dark .home-editorial {
-  --home-paper: #202620;
-  --home-surface: #292f28;
-  --home-ink: #eeeede;
-  --home-muted: #b3b6a8;
-  --home-line: #454d40;
-  --home-accent: #e4a088;
-  --home-accent-ink: #242820;
-  --home-wash: #30392c;
-  --home-note: #3c3c2c;
-  --home-art-wall: #3b4437;
-  --home-art-window: #525942;
-  --home-art-line: #929d82;
-  --home-art-green: #a3b58d;
-  --home-art-sun: #b3a16d;
+  --home-paper: #18241e;
+  --home-surface: #213128;
+  --home-ink: #eef3e9;
+  --home-muted: #b6c5b7;
+  --home-line: #465f4d;
+  --home-accent: #b1cbaa;
+  --home-accent-hover: #c8dabd;
+  --home-accent-ink: #18241e;
+  --home-wash: #2c3f32;
+  --home-art-line: #789574;
+  --home-art-green: #789574;
+  --home-art-sun: #789574;
   --home-shadow: #00000035;
 }

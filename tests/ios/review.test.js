@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('server-only', () => ({}))
 const { generate, recordUsage } = vi.hoisted(() => ({ generate: vi.fn(), recordUsage: vi.fn() }))
-vi.mock('@google/genai', () => ({ GoogleGenAI: class { models = { generateContent: generate } } }))
-vi.mock('@/app/lib/server/geminiConfig', () => ({ getServerGeminiApiKey: () => 'synthetic-secret', getServerGeminiBaseUrl: () => '' }))
+vi.mock('@/app/lib/server/geminiConfig', () => ({
+  createServerGeminiClient: () => ({ models: { generateContent: generate } }), GEMINI_REQUEST_TIMEOUT_MS: 25000,
+}))
 vi.mock('@/app/lib/server/aiUsage', () => ({ recordUsage, tokensFromUsageMetadata: (...args) => args }))
 
 import { POST } from '@/app/api/ios/review/route'

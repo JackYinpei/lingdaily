@@ -1,13 +1,9 @@
 import "server-only";
 
-import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
 
 import { auth } from "@/app/auth";
-import {
-  getServerGeminiApiKey,
-  getServerGeminiBaseUrl,
-} from "@/app/lib/server/geminiConfig";
+import { createServerGeminiClient } from "@/app/lib/server/geminiConfig";
 
 const TOKEN_LIFETIME_MS = 30 * 60 * 1000;
 const NEW_SESSION_WINDOW_MS = 2 * 60 * 1000;
@@ -39,9 +35,11 @@ export async function createRealtimeTokenResponse({ deprecated = false } = {}) {
       );
     }
 
-    const apiKey = getServerGeminiApiKey();
+    // Unlike iOS constrained tokens, these unconstrained web tokens are
+    // signed through the configured relay (baseUrl "default").
+    const client = createServerGeminiClient({ apiVersion: "v1alpha" });
 
-    if (!apiKey) {
+    if (!client) {
       return respond(
         NextResponse.json(
           { error: "Google API key not configured" },
@@ -50,14 +48,6 @@ export async function createRealtimeTokenResponse({ deprecated = false } = {}) {
         deprecated
       );
     }
-
-    const geminiBaseUrl = getServerGeminiBaseUrl();
-    const client = new GoogleGenAI({
-      apiKey,
-      ...(geminiBaseUrl
-        ? { httpOptions: { baseUrl: geminiBaseUrl, apiVersion: "v1alpha" } }
-        : { httpOptions: { apiVersion: "v1alpha" } }),
-    });
 
     const now = Date.now();
     const token = await client.authTokens.create({

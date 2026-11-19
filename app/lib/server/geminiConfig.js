@@ -15,13 +15,23 @@ export function getServerGeminiBaseUrl() {
   ).trim()
 }
 
-export function createServerGeminiClient() {
+export const GEMINI_REQUEST_TIMEOUT_MS = 25000
+
+// baseUrl: 'default' follows the configured relay, 'official' always uses
+// Google's endpoint, any other string is an explicit override.
+export function createServerGeminiClient({ baseUrl = 'default', apiVersion, timeout } = {}) {
   const apiKey = getServerGeminiApiKey()
   if (!apiKey) return null
 
-  const baseUrl = getServerGeminiBaseUrl()
+  const resolvedBaseUrl = baseUrl === 'default' ? getServerGeminiBaseUrl()
+    : baseUrl === 'official' ? '' : baseUrl
+  const httpOptions = {
+    ...(resolvedBaseUrl ? { baseUrl: resolvedBaseUrl } : {}),
+    ...(apiVersion ? { apiVersion } : {}),
+    ...(timeout ? { timeout } : {}),
+  }
   return new GoogleGenAI({
     apiKey,
-    ...(baseUrl ? { httpOptions: { baseUrl } } : {}),
+    ...(Object.keys(httpOptions).length ? { httpOptions } : {}),
   })
 }

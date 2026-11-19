@@ -6,9 +6,8 @@ vi.mock('server-only', () => ({}))
 const { generate, ensureAuthUser, apple } = vi.hoisted(() => ({
   generate: vi.fn(), ensureAuthUser: vi.fn(), apple: { keys: null },
 }))
-vi.mock('@google/genai', () => ({ GoogleGenAI: class { models = { generateContent: generate } } }))
 vi.mock('@/app/lib/server/geminiConfig', () => ({
-  getServerGeminiApiKey: () => 'fake-provider-secret', getServerGeminiBaseUrl: () => '',
+  createServerGeminiClient: () => ({ models: { generateContent: generate } }), GEMINI_REQUEST_TIMEOUT_MS: 25000,
 }))
 vi.mock('@/app/lib/server/supabaseAuthUser', () => ({ ensureAuthUser }))
 // Route code fetches Apple's JWKS; tests resolve the same lookup against a synthetic key.

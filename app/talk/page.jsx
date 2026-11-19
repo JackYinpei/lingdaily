@@ -71,6 +71,7 @@ export default function Home() {
 
     const [isConnected, setIsConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
+    const [connectionPhase, setConnectionPhase] = useState(null);
     const [isMuted, setIsMuted] = useState(false);
     const [history, setHistory] = useState([]);
     const [error, setError] = useState(null);
@@ -113,6 +114,7 @@ export default function Home() {
         });
         if (!updateState) return;
         if (resetConnected) setIsConnected(false);
+        setConnectionPhase(null);
         setIsConnecting(false);
     }, []);
 
@@ -198,6 +200,11 @@ export default function Home() {
         zh: { history: '对话历史', vocab: '生词本', saveFailed: '对话未能保存，将在对话继续时自动重试。' },
         ja: { history: '履歴', vocab: '単語帳', saveFailed: '会話を保存できませんでした。会話が続くと自動で再試行します。' },
     }[uiLangCode]), [uiLangCode]);
+    const microphoneStatus = {
+        en: 'Waiting for microphone permission. Allow access in your browser, or cancel the connection.',
+        zh: '正在等待麦克风权限。请在浏览器中允许访问，或取消连接。',
+        ja: 'マイクの許可を待っています。ブラウザでアクセスを許可するか、接続をキャンセルしてください。',
+    }[uiLangCode];
 
     // Persist sequentially so an older response cannot overwrite a newer
     // snapshot. Revision conflicts merge messages by itemId and retry once.
@@ -764,15 +771,18 @@ export default function Home() {
                 onMessage: (...args) => onMessageRef.current?.(...args),
                 onCorrection: (...args) => onCorrectionRef.current?.(...args),
                 onConnectionUpdate: (connected) => {
+                    setConnectionPhase(null);
                     setIsConnected(connected);
                     setIsConnecting(false);
                 },
                 onError: (err) => {
+                    setConnectionPhase(null);
                     setError(err);
                     setIsConnected(false);
                     setIsConnecting(false);
                 },
                 onPlaybackError: (err) => setError(err),
+                onConnectionPhase: setConnectionPhase,
             };
 
             serviceRef.current = new GeminiLiveServiceImpl(config);
@@ -1075,6 +1085,11 @@ export default function Home() {
 
                     {/* Chat Interface - Full width on mobile, 70% on desktop */}
                     <div className="flex-1 lg:w-[70%] flex flex-col min-h-0 lg:h-[calc(100vh-140px)]">
+                        {isConnecting && connectionPhase === 'microphone' && (
+                            <div role="status" className="bg-muted border border-border text-foreground p-2 rounded mb-2 text-sm">
+                                {microphoneStatus}
+                            </div>
+                        )}
                         {error && (
                             <div className="bg-red-50 border border-red-200 text-red-600 p-2 rounded mb-2 text-sm">
                                 {error}

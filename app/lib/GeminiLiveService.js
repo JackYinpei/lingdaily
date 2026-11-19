@@ -164,6 +164,7 @@ export class GeminiLiveServiceImpl {
         this.pendingAudioParts = [];
         this.playbackEpoch = 0;
         this.connectionEpoch = 0;
+        this.cancelPendingConnection = null;
         this.languagePair = normalizeLanguagePair();
         // While true, mic frames are captured but not sent. Active from setup
         // until the model's first turnComplete so the opening prompt cannot be
@@ -331,6 +332,7 @@ export class GeminiLiveServiceImpl {
         // Supersede any socket that is still opening. Its event handlers retain
         // the previous epoch and therefore cannot mutate this new connection.
         const connectionEpoch = ++this.connectionEpoch;
+        this.cancelPendingConnection?.();
         const connectionDeadline = Date.now() + 20000;
         const previousSocket = this.webSocket;
         this.webSocket = null;
@@ -395,18 +397,23 @@ export class GeminiLiveServiceImpl {
             this.webSocket = socket;
             let settled = false;
             let setupTimeout = null;
+            let microphoneRequested = false;
             const settleResolve = (value) => {
                 if (settled) return;
                 settled = true;
                 if (setupTimeout) clearTimeout(setupTimeout);
+                if (this.cancelPendingConnection === cancelConnection) this.cancelPendingConnection = null;
                 resolve(value);
             };
             const settleReject = (error) => {
                 if (settled) return;
                 settled = true;
                 if (setupTimeout) clearTimeout(setupTimeout);
+                if (this.cancelPendingConnection === cancelConnection) this.cancelPendingConnection = null;
                 reject(error);
             };
+            const cancelConnection = () => settleResolve(false);
+            this.cancelPendingConnection = cancelConnection;
             setupTimeout = setTimeout(() => {
                 if (!this.isCurrentConnection(connectionEpoch, socket)) {
                     settleResolve(false);
@@ -477,6 +484,10 @@ export class GeminiLiveServiceImpl {
 
                 try {
                     const msg = JSON.parse(jsonData);
+                    if (msg.setupComplete) {
+                        if (setupTimeout) clearTimeout(setupTimeout);
+                        setupTimeout = null;
+                    }
                     await this.handleServerMessage(msg, connectionEpoch, socket);
                     if (!this.isCurrentConnection(connectionEpoch, socket)) {
                         settleResolve(false);
@@ -484,14 +495,16 @@ export class GeminiLiveServiceImpl {
                     }
 
                     // After setup complete, start mic & signal connected
-                    if (msg.setupComplete) {
+                    if (msg.setupComplete && !microphoneRequested) {
+                        microphoneRequested = true;
                         console.log("Setup complete — starting mic (frames held until first model turn)");
-                        this.beginMicStreamHold(connectionEpoch, socket);
+                        this.config.onConnectionPhase?.('microphone');
                         const micStarted = await this.startMic(connectionEpoch, socket);
                         if (!micStarted || !this.isCurrentConnection(connectionEpoch, socket)) {
                             settleResolve(false);
                             return;
                         }
+                        this.beginMicStreamHold(connectionEpoch, socket);
                         this.config.onConnectionUpdate(true);
                         settleResolve(true);
                     }
@@ -508,8 +521,8 @@ export class GeminiLiveServiceImpl {
                 console.log("WebSocket closed", "code:", event.code, "reason:", event.reason, "wasClean:", event.wasClean);
                 this.connected = false;
                 this.session = null;
-                this.disconnect();
                 settleReject(new Error(event.reason || "WebSocket closed before setup completed"));
+                this.disconnect();
             };
 
             socket.onerror = (event) => {
@@ -521,8 +534,8 @@ export class GeminiLiveServiceImpl {
                 this.config.onError("WebSocket connection error");
                 this.connected = false;
                 this.session = null;
-                this.disconnect();
                 settleReject(new Error("WebSocket error"));
+                this.disconnect();
             };
         });
     }
@@ -782,6 +795,7 @@ export class GeminiLiveServiceImpl {
         // Invalidate handlers before closing so a late event from this socket
         // cannot tear down a subsequent connection.
         this.connectionEpoch += 1;
+        this.cancelPendingConnection?.();
         const socket = this.webSocket;
         this.webSocket = null;
         if (socket && (socket.readyState === 0 || socket.readyState === 1)) {

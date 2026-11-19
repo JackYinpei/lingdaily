@@ -93,6 +93,11 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 - 数据表的 `user_id` 通常是 Supabase UUID。但生产旧 `user_preferences.user_id`
   是 `text`，迁移会保留这个类型以兼容旧 OAuth ID。
 - 管理员不是数据库 role；`ADMIN_EMAILS` 是逗号分隔的 NextAuth email allowlist。
+- 登录后的默认落点是 `/talk`：`sign-in` 的 `getSafeCallbackUrl()` 只接受同源 `callbackUrl`，
+  缺省或不安全时回退 `/talk`；邮箱注册成功后跳 `/sign-in?callbackUrl=%2Ftalk`，注册页的
+  OAuth 按钮也直接回 `/talk`。
+- `/talk` 首次进入显示 `OnboardingGuide`；「跳过（使用新闻模式）」调用 `onSkipToNews`
+  切到新闻模式并记住已完成引导。
 
 ### 语言偏好
 
@@ -143,6 +148,17 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 - `playbackEpoch` 使打断/断开前排队的异步音频工作失效（含 `pendingAudioParts` 与 flush 监听）。
 - `connectionEpoch` 使旧 WebSocket 的迟到 `open/message/close/error` 无法影响新连接。
 - 输入静音只代表麦克风 mute，不得同时将模型输出静音。
+- 20 秒 setup 超时只覆盖 token/WebSocket/`setupComplete`；`setupComplete` 后清除超时，
+  麦克风授权是单独可取消的阶段（`onConnectionPhase('microphone')`），授权成功、麦克风启动后
+  才算连接完成。不要把 `getUserMedia()` 重新放进 setup 超时。
+- `micStreamHold`：从 setup 到模型首个 `turnComplete`，麦克风帧照常采集但不上传，避免环境
+  噪音打断开场问候；10 秒兜底自动解除。
+- 开场上下文由 `sendContextMessage()` 发送：先用 `clientContent` 发完整新闻/场景背景并
+  `turnComplete: false`，再在同一通道发一句简短提示并 `turnComplete: true`。若把长背景作为
+  一个已完成 turn 发出，模型只回文字转录（没有 `inlineData` 音频）；改用 `realtimeInput.text`
+  发提示则会丢失背景。Live 的内部指令由 `buildLiveInstructions()` 固定生成英文版本（与 UI
+  语言无关），长篇中文内部指令同样会导致无音频开场。
+- 文字消息 `sendText()` 返回是否被 socket 接受；输入框草稿只在发送成功后清空。
 - 账号或语言对变更时，必须取消正在连接的 socket，并清除旧账号的
   上下文与待保存数据。
 
@@ -163,7 +179,11 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 - 流式转录通过 `itemId` 合并；同一消息优先保留已 final 或文本更完整的版本。
 - 客户端串行化保存；DB 用 `revision` 做乐观并发。冲突时合并服务端和客户端历史，
   最多重试一次。
-- 页面隐藏/卸载时使用 compact keepalive payload；必须保留最近的真实用户轮次。
+- 页面隐藏/卸载时使用 compact keepalive payload；必须保留最近的真实用户轮次及其后的
+  AI 回复（截断而非丢弃），并合并卸载前最新的 `historyRef`。导航 keepalive 会取代排队中的旧保存。
+- `POST /api/chat-history` 必须带 `expectedUserId`，与当前 session 不一致时返回
+  `403 ACCOUNT_MISMATCH`，防止旧账号排队的保存写进新账号；`newsContentIsCompact` 保证
+  完整文章能替换已存的压缩快照，反之不行；409 重试用 `mergeOnServer` 在服务端合并。
 - 历史列表游标是 `updated_at|id`，生词列表游标是 `timestamp|id`。
   不能退回只用时间戳，否则同一毫秒内的记录会重复或丢失。
 - `unfamiliar_english` 是历史表名，现在存储任意学习语言的 word/phrase/grammar/other，
@@ -444,7 +464,10 @@ npm run check
 修改不同模块时的最低验证：
 
 - Live/音频：`tests/lib/GeminiLiveService.test.js` 和 `tests/talk/liveConnection.test.js`。
-- 对话 identity/合并/keepalive：`tests/talk/conversation.test.js`。
+- 对话 identity/合并/keepalive：`tests/talk/conversation.test.js`、`tests/talk/persistence.test.js`、
+  `tests/api/conversationPersistence.test.js`。
+- Live 内部指令/开场：`tests/talk/liveInstructions.test.js`；文字发送：`tests/talk/textSubmission.test.js`。
+- 首页：`tests/home.test.js`；注册落点与新手引导：`tests/lib/signupOnboarding.test.js`。
 - 播客 prompt/shownotes/RSS：`tests/podcast/*.test.js`。
 - 任何 schema/RLS/RPC/SQL 变更：`npm run test:migrations`，并更新生产 fixture、
   preflight 和 postflight。

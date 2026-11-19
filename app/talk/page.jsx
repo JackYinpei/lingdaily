@@ -210,14 +210,14 @@ export default function Home() {
 
     // UI strings ...
     const uiText = useMemo(() => ({
-        en: { history: 'History', vocab: 'Vocabulary', saveFailed: 'This conversation could not be saved. It will be retried as the conversation continues.' },
-        zh: { history: '对话历史', vocab: '生词本', saveFailed: '对话未能保存，将在对话继续时自动重试。' },
-        ja: { history: '履歴', vocab: '単語帳', saveFailed: '会話を保存できませんでした。会話が続くと自動で再試行します。' },
+        en: { history: 'History', vocab: 'Vocabulary', saveFailed: 'This conversation could not be saved\nIt will be retried as the conversation continues' },
+        zh: { history: '对话历史', vocab: '生词本', saveFailed: '对话未能保存 继续聊天时会自动重试' },
+        ja: { history: '履歴', vocab: '単語帳', saveFailed: '会話を保存できませんでした\n会話が続くと自動で再試行します' },
     }[uiLangCode]), [uiLangCode]);
     const microphoneStatus = {
-        en: 'Waiting for microphone permission. Allow access in your browser, or cancel the connection.',
-        zh: '正在等待麦克风权限。请在浏览器中允许访问，或取消连接。',
-        ja: 'マイクの許可を待っています。ブラウザでアクセスを許可するか、接続をキャンセルしてください。',
+        en: 'Waiting for microphone permission\nAllow access in your browser or cancel the connection',
+        zh: '正在等待麦克风权限\n请在浏览器中允许访问 或取消连接',
+        ja: 'マイクの許可を待っています\nブラウザで許可するか接続をキャンセルしてください',
     }[uiLangCode];
 
     // Persist sequentially so an older response cannot overwrite a newer
@@ -498,7 +498,7 @@ export default function Home() {
             || Boolean(service?.session || service?.webSocket);
         if (hadActiveAttempt) {
             cancelLiveConnection();
-            setError('学习语言已更改，请重新连接以使用新的语言组合。');
+            setError('学习语言已更改 请重新连接以使用新的语言组合');
         }
     }, [cancelLiveConnection, isConnecting, languagePairKey]);
 
@@ -815,12 +815,12 @@ export default function Home() {
     async function connect() {
         if (isConnecting || activeConnectionAttemptRef.current !== 0) {
             cancelLiveConnection();
-            setError('已取消连接。');
+            setError('已取消连接');
             return;
         }
         setError(null);
         if (isLanguageLoading || isRestoringConversation || topicHistoryLoadingRef.current) {
-            setError('正在恢复对话，请稍候再连接。');
+            setError('正在恢复对话 请稍候再连接');
             return;
         }
         if (isConnected) {
@@ -930,7 +930,7 @@ export default function Home() {
                 serviceRef.current?.disconnect();
                 setIsConnected(false);
                 finishCurrentAttempt();
-                if (didConnect) setError('话题或学习语言已切换，请重新连接以开始当前对话。');
+                if (didConnect) setError('话题或学习语言已切换 请重新连接以开始当前对话');
                 return;
             }
 

@@ -46,6 +46,7 @@ describe('editorial feature pages', () => {
     for (const value of Object.values(copy)) {
       if (typeof value === 'string') expect(value).not.toMatch(/[，。！？、,.!?;:：；…「」“”]/)
     }
+    expect(copy.confirmDelete('conversation')).not.toMatch(/[，。！？、,.!?;:：；…「」“”]/)
     expect(copy.practiceEmptyTitle.split('\n')).toHaveLength(2)
     for (const key of ['practiceTitle', 'historyTitle', 'vocabularyTitle', 'progressTitle']) {
       expect(copy[key].split('\n')).toHaveLength(2)

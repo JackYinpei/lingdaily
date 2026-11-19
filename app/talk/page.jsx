@@ -1112,7 +1112,7 @@ export default function Home() {
                     </div>
                 </div>
             </div>
-            <OnboardingGuide lang={uiLangCode} />
+            <OnboardingGuide lang={uiLangCode} onSkipToNews={() => handleModeToggle('news')} />
         </div>
     )
 }

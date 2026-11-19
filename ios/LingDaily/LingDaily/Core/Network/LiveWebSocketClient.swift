@@ -32,7 +32,6 @@ actor LiveWebSocketClient {
             return "语音连接已断开，请重新连接。已有内容已保留。"
         }
     }
-    private var lastFailure: FailureDiagnostics?
     private var receiver: Task<Void, Never>?
     private var uploader: Task<Void, Never>?
     private var timeout: Task<Void, Never>?
@@ -45,7 +44,7 @@ actor LiveWebSocketClient {
                  handler: @escaping Handler, failure: @escaping Failure) async throws {
         guard !Task.isCancelled, current >= generation else { throw CancellationError() }
         reset()
-        closedUploadStatistics = nil; lastFailure = nil
+        closedUploadStatistics = nil
         generation = current; self.handler = handler; self.failure = failure
         let url = try token.connectionURL()
         let config = URLSessionConfiguration.ephemeral
@@ -188,13 +187,11 @@ actor LiveWebSocketClient {
     func uploadStatistics() -> UploadStatistics {
         closedUploadStatistics ?? .init(sentFrames: sentAudioFrames, droppedFrames: outgoing.droppedAudioFrames, queuedFrames: outgoing.count)
     }
-    func failureDiagnostics() -> FailureDiagnostics? { lastFailure }
     private func fail(_ current: UInt64, stage: String, error: Error? = nil) async {
         guard generation == current else { return }
         let native = error as NSError?
         let diagnostics = FailureDiagnostics(stage: stage, closeCode: socket?.closeCode.rawValue ?? 0,
             transportCode: native?.domain == NSURLErrorDomain ? native?.code : nil)
-        lastFailure = diagnostics
         #if DEBUG
         LiveDebugDiagnostics.record("failure stage=\(stage) close=\(diagnostics.closeCode) transport=\(diagnostics.transportCode ?? 0) sentFrames=\(sentAudioFrames)")
         #endif

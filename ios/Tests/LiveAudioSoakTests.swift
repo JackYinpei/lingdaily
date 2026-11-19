@@ -103,6 +103,7 @@ final class LiveAudioSoakTests: XCTestCase {
         let stream = AsyncStream<LiveEvent>(bufferingPolicy: .bufferingNewest(256)) { continuation = $0 }
         let events = continuation!
         var disconnected = false, setup = false
+        var failure: LiveWebSocketClient.FailureDiagnostics?
         var inputs = 0, finalizedInputs = 0, outputs = 0, audioBytes = 0, audioAfterInput = 0, interruptions = 0
         var subtitles = LiveTranscriptReducer()
         var captured = PracticeSession(scenario: scenario, useAI: true)
@@ -113,8 +114,8 @@ final class LiveAudioSoakTests: XCTestCase {
         }
         var finish: Task<Void, Never>?
         defer { deadline.cancel(); finish?.cancel(); source.stop(); events.finish() }
-        try await client.connect(token, generation: 1, handler: { event, _ in events.yield(event) }, failure: { _, _ in
-            disconnected = true; events.finish()
+        try await client.connect(token, generation: 1, handler: { event, _ in events.yield(event) }, failure: { _, diagnostics in
+            disconnected = true; failure = diagnostics; events.finish()
         })
         var started: Date?
         for await event in stream {
@@ -152,7 +153,6 @@ final class LiveAudioSoakTests: XCTestCase {
         source.stop()
         let statistics = source.pipeline.statistics()
         let upload = await client.uploadStatistics()
-        let failure = await client.failureDiagnostics()
         await client.close()
         let elapsed = started.map { Date().timeIntervalSince($0) } ?? 0
         XCTAssertTrue(setup); XCTAssertFalse(disconnected); XCTAssertFalse(source.failed())

@@ -5,6 +5,7 @@ import {
     renderPodcastShownotesHtml,
     renderPodcastShownotesText,
 } from "@/app/lib/podcast/shownotes";
+import { getSiteUrl } from "@/app/lib/siteUrl.cjs";
 
 const CHANNEL = {
     title: "成杨英语日刊",
@@ -47,10 +48,7 @@ function rfc2822(isoDate) {
 }
 
 function getBaseUrl() {
-    const raw =
-        process.env.PODCAST_PUBLIC_URL ||
-        process.env.NEXT_PUBLIC_SITE_URL ||
-        "http://localhost:8000";
+    const raw = process.env.PODCAST_PUBLIC_URL || getSiteUrl();
     return raw.replace(/\/+$/, "");
 }
 

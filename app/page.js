@@ -3,10 +3,11 @@ import { auth, signOut } from "@/app/auth";
 import { AuthError } from "next-auth";
 import HomePageClient from "@/app/components/HomePageClient";
 import { headers } from "next/headers";
+import { getSiteUrl } from "@/app/lib/siteUrl.cjs";
 
 export const revalidate = 3600;
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://lingdaily.yasobi.xyz';
+const siteUrl = getSiteUrl();
 
 function detectPreferredLocale(acceptLanguageHeader = "") {
   const parts = acceptLanguageHeader

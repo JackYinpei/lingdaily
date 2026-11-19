@@ -4,8 +4,9 @@ import { headers } from 'next/headers'
 import { auth } from '@/app/auth'
 import { LanguageProvider } from '@/app/contexts/LanguageContext'
 import { ThemeProvider } from '@/app/contexts/ThemeContext'
+import { getSiteUrl } from '@/app/lib/siteUrl.cjs'
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://lingdaily.yasobi.xyz';
+const siteUrl = getSiteUrl();
 
 export const metadata = {
   title: "LingDaily - Chat with AI to Learn English | AI English Tutor",

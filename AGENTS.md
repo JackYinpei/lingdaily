@@ -180,7 +180,7 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
    整次失败，避免模型凭空编新闻），调 Gemini 生成严格 JSON 脚本。
 4. 对 intro/world/tech/business/outro 五个 chunk 分别调 Gemini multi-speaker TTS
    （最多 3 段并行、长段先开始，`PODCAST_TTS_CONCURRENCY` 可调）：拼接响应内全部音频
-   part、裁剪首尾静音，并按文稿估算时长校验（约 0.5x–1.6x 窗口）；单次调用超过
+   part、裁剪首尾静音，并按文稿估算时长逐轮校验（下限约 0.4x 朗读时长，上限 1.6x + 10 秒）；单次调用超过
    150 秒（`PODCAST_TTS_CALL_TIMEOUT_MS`）、过载或校验失败会在同一模型上退避重试。
    **同一期只用一个 TTS 模型**：某段在主模型上用尽重试时，整期改用稳定模型重新合成，
    绝不逐段混用（两代模型同名音色听感不同）。拼接前每段按说话音量（有声 50 ms 帧 RMS

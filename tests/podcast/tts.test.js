@@ -10,7 +10,6 @@ import {
   levelSpeech,
   speechLevelDb,
   trimEdgeSilence,
-  validateChunkAudio,
   validateTurnAudio,
 } from "@/app/lib/podcast/tts";
 
@@ -62,18 +61,6 @@ describe("edge silence trim", () => {
 
   it("returns an empty buffer for pure silence", () => {
     expect(trimEdgeSilence(silencePcm(20)).byteLength).toBe(0);
-  });
-});
-
-describe("chunk audio validation", () => {
-  it("salvages a good take that has a long silent tail", () => {
-    const pcm = Buffer.concat([speechPcm(10), silencePcm(74)]);
-    const trimmed = validateChunkAudio(smallChunk(), pcm);
-    expect(seconds(trimmed)).toBeLessThan(11.5);
-  });
-
-  it("rejects audio that runs several times the transcript length", () => {
-    expect(() => validateChunkAudio(smallChunk(), speechPcm(30))).toThrow(/repeated, looped, or truncated/);
   });
 });
 

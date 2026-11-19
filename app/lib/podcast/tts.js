@@ -19,7 +19,6 @@ const FULL_SCALE = 32767;
 const HAN_CHARS_PER_SECOND = 5;
 const LATIN_WORDS_PER_SECOND = 2.5;
 const TURN_GAP_SECONDS = 0.8;
-const MIN_DURATION_RATIO = 0.5;
 const MAX_DURATION_RATIO = 1.6;
 
 // Glitched responses can pad the chunk with long dead air. Trimming the edges
@@ -82,23 +81,6 @@ export function trimEdgeSilence(pcm) {
   const start = Math.max(first - keep, 0);
   const end = Math.min(last + 1 + keep, samples.length);
   return pcm.subarray(start * SAMPLE_WIDTH, end * SAMPLE_WIDTH);
-}
-
-// Trim edge silence, then reject audio whose spoken length is implausible for
-// the chunk's text — the signature of a repeated/looping or truncated take.
-export function validateChunkAudio(chunk, pcm) {
-  const trimmed = trimEdgeSilence(pcm);
-  const seconds = trimmed.byteLength / SAMPLE_WIDTH / SAMPLE_RATE;
-  const expected = estimateChunkSeconds(chunk);
-  const lower = Math.max(expected * MIN_DURATION_RATIO - 5, 3);
-  const upper = expected * MAX_DURATION_RATIO + 10;
-  if (seconds < lower || seconds > upper) {
-    throw new Error(
-      `audio runs ${seconds.toFixed(1)}s but the transcript should take ~${expected.toFixed(0)}s `
-      + `(accepted ${lower.toFixed(0)}-${upper.toFixed(0)}s); the model likely repeated, looped, or truncated it`,
-    );
-  }
-  return trimmed;
 }
 
 /** Median RMS of the voiced 50 ms frames, in dBFS; null when the audio has no speech. */

@@ -62,10 +62,12 @@ export async function issueIOSSession(userId, { env = process.env, now = Date.no
 const isPairingToken = value => /^[a-f0-9]{64}$/.test(value)
 
 /**
- * Every /api/ios/* AI route calls this first. Production accepts only an iOS
- * session issued after Sign in with Apple. The local pairing token from
- * `npm run ios:dev` is additionally accepted only in an explicitly enabled
- * development server. Returns the identity used to isolate caches and limits.
+ * Every /api/ios/* AI route calls this first. Production accepts only a native
+ * app session: issued to iOS after Sign in with Apple, or to Android after the
+ * account's email and password are verified (app/api/android/auth). The local
+ * pairing token from `npm run ios:dev` is additionally accepted only in an
+ * explicitly enabled development server. Returns the identity used to isolate
+ * caches and limits.
  */
 export async function authorizeIOSRequest(request, env = process.env) {
   const bearer = request.headers.get('authorization')?.replace(/^Bearer /, '') || ''

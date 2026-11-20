@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Only what the system draws before Compose starts. Every other colour is in ui/Brand.kt. -->
+    <color name="launcher_background">#F6F2EA</color>
+    <color name="window_background">#F6F2EA</color>
+</resources>

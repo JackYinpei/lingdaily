@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar silhouette of the two speech bubbles. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <path
+        android:pathData="M264,210L550,210C601,210 642,251 642,302L642,472C642,523 601,564 550,564L354,564L258,640L258,564C209,561 172,523 172,472L172,302C172,251 213,210 264,210Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineJoin="round"
+        android:strokeWidth="56" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M474,426L760,426C811,426 852,467 852,518L852,688C852,739 818,777 770,780L770,852L674,780L474,780C423,780 382,739 382,688L382,518C382,467 423,426 474,426Z" />
+</vector>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Debug only: plain HTTP to this machine's `npm run ios:dev` through `adb reverse`. Release stays HTTPS-only. -->
+    <application
+        android:networkSecurityConfig="@xml/network_security_config_debug"
+        tools:remove="android:usesCleartextTraffic" />
+</manifest>

@@ -69,6 +69,8 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | `ios/.../Core/Realtime/`、`Core/Network/LiveWebSocketClient.swift`、`Core/Audio/LiveAudioController.swift` | 原生 Live 编解码/字幕/有界待转录工具/generation/PCM（共享 LiveMicrophonePipeline 大缓冲拆分、静音批次失效、采集图重启与路由重排输出、opt-in有界数字诊断），URLSession WebSocket 与 AVAudioEngine；收到 setupComplete 才开采集，后台/中断需用户手动重连 |
 | `ios/.../Core/Models/DictationTranscript.swift`、`Core/Audio/SpeechController.swift` | 文字模式设备听写按音频窗口累积，停止/发送等待末句；系统TTS仅供文字/记录朗读，Live音频直传模型，不经过本地ASR/TTS |
 | `scripts/ios-dev.mjs` | 可选的本机 iOS AI 服务（调试服务端改动用）；默认回环监听，显式 `-- --device` 绑定单一私有局域网地址；配对文件只在进程运行期间存在，退出即删除，此后 Debug 构建改连线上；仅 Debug 打包配对 token，绝不打包模型密钥 |
+| `android/` | 原生 Android 版（Kotlin + Jetpack Compose，最低 Android 8.0 / API 26），功能与 iOS 版对应：文字逐轮练习、Gemini Live 语音通话、总结复盘、词库与复习、自建场景、今日播客、提醒、云同步、删除账号。与 iOS 共用 `/api/ios/*` 和同一份同步 JSON；用网页账号的邮箱密码登录（Android 没有原生 Apple 登录）。结构、运行与验证见 `android/README.md` |
+| `app/api/android/`、`app/lib/server/androidAuth.js` | Android 登录/注册/删除账号：用 Supabase 校验邮箱密码后签发与 iOS 相同的原生会话（`issueIOSSession`），因此 `/api/ios/*` 对两端通用；按邮箱限流；删除账号需再次输入密码，密码错误返回 403（App 把 401 当作会话失效并退出登录） |
 | `docs/ios/` | iOS 设计、架构、数据契约、阶段计划与待选择的产品创意；实现前阅读总览，区分现状与提案。iOS 视觉单一来源是 `ios/.../DesignSystem/Brand.swift`（纸墨 + 单一强调色，与网页紫色主题分开），改 UI 前先读 `02-design-system.md` 的设计原则 |
 
 ## 用户功能
@@ -253,6 +255,8 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 | `POST /api/ios/review` | iOS 会话 | 对话结束后的逐句表达复盘：每批最多 4 条用户原话，按消息 ID 返回自然改写/中文意思/解释；已自然则保留原句。沿用 practice 模型选择、鉴权、按用户缓存/限流和用量统计 |
 | `GET/POST /api/ios/sync` | iOS 会话 | 原生云同步：上传待同步改动并返回账号云端快照（写入下方共享表）；POST 带 `knownSessions` 时只回传有变化的会话，其余列在 `unchangedSessions` |
 | `POST /api/ios/account/delete` | iOS 会话 + Apple 二次确认 | 永久删除账号（含网页数据）与 Supabase auth 用户，可选撤销 Apple 授权 |
+| `POST /api/android/auth/password`、`/register` | 公开（需有效邮箱密码） | Android 登录/注册，签发与 iOS 相同的原生会话；注册需邮件确认时返回 `confirmationRequired: true` |
+| `POST /api/android/account/delete` | 原生会话 + 再次输入密码 | 永久删除账号（含网页与 iOS 数据） |
 | `POST /api/gemini-token` | 登录，已弃用 | 上一个接口的兼容别名，带 Deprecation/Sunset header |
 | `GET /api/news` | 公开 | 受 allowlist 限制的 Kagi RSS 代理 |
 | `POST /api/translate` | 登录 | 用 Gemini 翻译新闻标题 |
@@ -447,6 +451,7 @@ completed 只有 force 可重领，进行中租约超过 30 分钟可重领。
 
 iOS 当前实现边界、运行命令和已知验证限制见 `docs/ios/10-ai-integration.md` 与 `ios/README.md`，09 为旧原型记录。
 修改纯 Swift 练习状态/归档后执行 `swift test --package-path ios`；修改原生页面或音频后执行模拟器构建与对应交互验证。不得把本机体验版 JSON 直接上传为 Web 历史，或把预设对话当成真实 AI 能力。
+修改 Android 代码后执行 `cd android && ./gradlew :app:testDebugUnitTest :app:assembleDebug`；修改 `/api/android/*` 执行 `npx vitest run tests/android`。两端同步的会话 JSON 必须保持一致：改动 `PracticeSession` 等同步字段时，iOS、Android（`android/app/src/test/resources/ios-sync-changes.json` 由 iOS 编码器生成）和服务端要一起改。
 修改 iOS AI 接口执行 `npx vitest run tests/ios`；真实模型测试需显式设置 `LINGDAILY_AI_TEST_CONFIG`，使用合成对话，不能在普通测试中自动消耗模型额度。Live 真联调另外必须显式 `LINGDAILY_LIVE_TEST=1`（共享 Swift 的 `LiveNetworkTests` 或 `scripts/ios-live-smoke.mjs`）；不得打印临时 token、带凭据的 WebSocket URL 或供应商正文。正式部署不能开启本机配对入口（`IOS_PRACTICE_DEV_ENABLED`）；生产只通过 Apple 登录签发的 iOS 会话访问。
 
 常用命令：

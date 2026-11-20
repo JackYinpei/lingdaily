@@ -1,0 +1,354 @@
+{
+  "expressions" : {
+    "delete" : [
+
+    ],
+    "upsert" : [
+      {
+        "createdAt" : "2026-09-21T14:16:41.123Z",
+        "meaning" : "我想把押金拿回来。",
+        "source" : "退押金",
+        "text" : "I'd like to get my deposit back."
+      },
+      {
+        "createdAt" : "2026-09-21T14:16:40.123Z",
+        "kind" : "word",
+        "meaning" : "划痕",
+        "source" : "退押金",
+        "text" : "Scratch "
+      }
+    ]
+  },
+  "knownSessions" : {
+    "9cc4e21a-7e6c-4e2a-b729-924bd323a36e" : 1790000008123,
+    "ddb875eb-f7ef-4384-80fc-42cdee1bb0d7" : 1790000109123
+  },
+  "scenarios" : {
+    "delete" : [
+
+    ],
+    "upsert" : [
+      {
+        "category" : "日常",
+        "id" : "custom-0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D",
+        "partner" : "Morgan",
+        "partnerRole" : "房东",
+        "persona" : "觉得自己没错，嘴硬",
+        "setting" : "你下周搬走，想确认押金何时退还。",
+        "steps" : [
+          {
+            "expression" : "When will I get my deposit back?",
+            "goal" : "目标0",
+            "hint" : "提示0",
+            "id" : "step-0",
+            "keywords" : "deposit · return",
+            "meaning" : "押金什么时候退？",
+            "prompt" : "Prompt 0?",
+            "translation" : "译文0"
+          },
+          {
+            "expression" : "When will I get my deposit back?",
+            "goal" : "目标1",
+            "hint" : "提示1",
+            "id" : "step-1",
+            "keywords" : "deposit · return",
+            "meaning" : "押金什么时候退？",
+            "prompt" : "Prompt 1?",
+            "translation" : "译文1"
+          },
+          {
+            "expression" : "When will I get my deposit back?",
+            "goal" : "目标2",
+            "hint" : "提示2",
+            "id" : "step-2",
+            "keywords" : "deposit · return",
+            "meaning" : "押金什么时候退？",
+            "prompt" : "Prompt 2?",
+            "translation" : "译文2"
+          }
+        ],
+        "subtitle" : "和房东确认",
+        "symbol" : "text.bubble",
+        "title" : "退押金"
+      }
+    ]
+  },
+  "sessions" : {
+    "delete" : [
+
+    ],
+    "upsert" : [
+      {
+        "ai" : {
+          "feedbacks" : [
+            {
+              "feedback" : {
+                "meaning" : "",
+                "note" : "加 my。",
+                "revised" : "I want my deposit back."
+              },
+              "id" : "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
+              "stepIndex" : 0
+            }
+          ]
+        },
+        "attitude" : "tough",
+        "context" : "",
+        "createdAt" : "2026-09-21T14:15:00.123Z",
+        "id" : "DDB875EB-F7EF-4384-80FC-42CDEE1BB0D7",
+        "live" : {
+          "collected" : [
+            {
+              "meaning" : "房东",
+              "text" : "landlord",
+              "type" : "word"
+            },
+            {
+              "meaning" : "正常损耗",
+              "text" : "wear and tear",
+              "type" : "phrase"
+            }
+          ],
+          "completedTasks" : [
+            0,
+            1,
+            2
+          ],
+          "endedAt" : "2026-09-21T14:15:07.123Z",
+          "model" : "gemini-live-test"
+        },
+        "messages" : [
+          {
+            "createdAt" : "2026-09-21T14:15:02.123Z",
+            "id" : "11111111-2222-4333-8444-555555555555",
+            "kind" : "response",
+            "role" : "partner",
+            "stepIndex" : 0,
+            "text" : "Hello there.",
+            "translation" : "你好。"
+          },
+          {
+            "createdAt" : "2026-09-21T14:15:03.123Z",
+            "id" : "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
+            "kind" : "answer",
+            "role" : "user",
+            "stepIndex" : 0,
+            "text" : "I want deposit back"
+          }
+        ],
+        "personalGoal" : "",
+        "phase" : "completed",
+        "scenario" : {
+          "category" : "日常",
+          "id" : "custom-0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D",
+          "partner" : "Morgan",
+          "partnerRole" : "房东",
+          "persona" : "觉得自己没错，嘴硬",
+          "setting" : "你下周搬走，想确认押金何时退还。",
+          "steps" : [
+            {
+              "expression" : "When will I get my deposit back?",
+              "goal" : "目标0",
+              "hint" : "提示0",
+              "id" : "step-0",
+              "keywords" : "deposit · return",
+              "meaning" : "押金什么时候退？",
+              "prompt" : "Prompt 0?",
+              "translation" : "译文0"
+            },
+            {
+              "expression" : "When will I get my deposit back?",
+              "goal" : "目标1",
+              "hint" : "提示1",
+              "id" : "step-1",
+              "keywords" : "deposit · return",
+              "meaning" : "押金什么时候退？",
+              "prompt" : "Prompt 1?",
+              "translation" : "译文1"
+            },
+            {
+              "expression" : "When will I get my deposit back?",
+              "goal" : "目标2",
+              "hint" : "提示2",
+              "id" : "step-2",
+              "keywords" : "deposit · return",
+              "meaning" : "押金什么时候退？",
+              "prompt" : "Prompt 2?",
+              "translation" : "译文2"
+            }
+          ],
+          "subtitle" : "和房东确认",
+          "symbol" : "text.bubble",
+          "title" : "退押金"
+        },
+        "sentenceReviews" : [
+          {
+            "id" : "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
+            "meaning" : "我想拿回押金。",
+            "note" : "更自然。",
+            "original" : "I want deposit back",
+            "revised" : "I'd like my deposit back."
+          }
+        ],
+        "stepIndex" : 0,
+        "updatedAt" : "2026-09-21T14:15:09.123Z"
+      },
+      {
+        "ai" : {
+          "feedbacks" : [
+            {
+              "feedback" : {
+                "items" : [
+                  {
+                    "meaning" : "划痕",
+                    "text" : "scratch",
+                    "type" : "word"
+                  }
+                ],
+                "meaning" : "我想把押金拿回来。",
+                "note" : "用 I'd like 更礼貌。",
+                "revised" : "I'd like to get my deposit back."
+              },
+              "id" : "F0ACA638-2685-4E2A-99AE-BC22F5105671",
+              "stepIndex" : 0
+            },
+            {
+              "feedback" : {
+                "meaning" : "请把押金退给我。",
+                "note" : "很好。",
+                "revised" : "I'd like my deposit back, please."
+              },
+              "id" : "0AA7A881-7C75-4E85-9037-771790C0DFAF",
+              "stepIndex" : 0
+            }
+          ],
+          "model" : "gemini-test",
+          "pending" : {
+            "action" : "advance",
+            "id" : "0D5344C6-863E-4B81-861B-44CF121CAEE4"
+          },
+          "turn" : {
+            "feedback" : {
+              "meaning" : "请把押金退给我。",
+              "note" : "很好。",
+              "revised" : "I'd like my deposit back, please."
+            },
+            "hint" : "提示",
+            "keywords" : "kw",
+            "reply" : "I see.",
+            "suggestedMeaning" : "好的。",
+            "suggestedReply" : "Sure.",
+            "translation" : "译：I see."
+          }
+        },
+        "context" : "他上次说墙上有划痕",
+        "createdAt" : "2026-09-21T14:13:20.123Z",
+        "draft" : "  half typed ",
+        "id" : "9CC4E21A-7E6C-4E2A-B729-924BD323A36E",
+        "level" : "challenge",
+        "messages" : [
+          {
+            "createdAt" : "2026-09-21T14:13:21.123Z",
+            "id" : "0A3DC0A0-60BD-4630-9748-67C06650A03C",
+            "kind" : "prompt",
+            "role" : "partner",
+            "stepIndex" : 0,
+            "text" : "Hi, what's up?",
+            "translation" : "译：Hi, what's up?"
+          },
+          {
+            "createdAt" : "2026-09-21T14:13:22.123Z",
+            "id" : "F0ACA638-2685-4E2A-99AE-BC22F5105671",
+            "kind" : "answer",
+            "role" : "user",
+            "stepIndex" : 0,
+            "text" : "I want my deposit back."
+          },
+          {
+            "createdAt" : "2026-09-21T14:13:23.123Z",
+            "id" : "D161508E-87C2-431D-B9B9-2D957DC9F46D",
+            "kind" : "response",
+            "role" : "partner",
+            "stepIndex" : 0,
+            "text" : "Well, the wall is scratched.",
+            "translation" : "译：Well, the wall is scratched."
+          },
+          {
+            "createdAt" : "2026-09-21T14:13:25.123Z",
+            "id" : "0AA7A881-7C75-4E85-9037-771790C0DFAF",
+            "kind" : "retry",
+            "role" : "user",
+            "stepIndex" : 0,
+            "text" : "I'd like my deposit back, please."
+          },
+          {
+            "createdAt" : "2026-09-21T14:13:26.123Z",
+            "id" : "F139575F-0983-4AEE-B60D-D98FD0CDF5EA",
+            "kind" : "response",
+            "role" : "partner",
+            "stepIndex" : 0,
+            "text" : "I see.",
+            "translation" : "译：I see."
+          }
+        ],
+        "personalGoal" : "把押金要回来",
+        "phase" : "speaking",
+        "reviewItems" : [
+          {
+            "meaning" : "押金",
+            "text" : "deposit"
+          }
+        ],
+        "scenario" : {
+          "category" : "日常",
+          "id" : "custom-0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D",
+          "partner" : "Morgan",
+          "partnerRole" : "房东",
+          "persona" : "觉得自己没错，嘴硬",
+          "setting" : "你下周搬走，想确认押金何时退还。",
+          "steps" : [
+            {
+              "expression" : "When will I get my deposit back?",
+              "goal" : "目标0",
+              "hint" : "提示0",
+              "id" : "step-0",
+              "keywords" : "deposit · return",
+              "meaning" : "押金什么时候退？",
+              "prompt" : "Prompt 0?",
+              "translation" : "译文0"
+            },
+            {
+              "expression" : "When will I get my deposit back?",
+              "goal" : "目标1",
+              "hint" : "提示1",
+              "id" : "step-1",
+              "keywords" : "deposit · return",
+              "meaning" : "押金什么时候退？",
+              "prompt" : "Prompt 1?",
+              "translation" : "译文1"
+            },
+            {
+              "expression" : "When will I get my deposit back?",
+              "goal" : "目标2",
+              "hint" : "提示2",
+              "id" : "step-2",
+              "keywords" : "deposit · return",
+              "meaning" : "押金什么时候退？",
+              "prompt" : "Prompt 2?",
+              "translation" : "译文2"
+            }
+          ],
+          "subtitle" : "和房东确认",
+          "symbol" : "text.bubble",
+          "title" : "退押金"
+        },
+        "stepIndex" : 1,
+        "temperament" : {
+          "emotion" : -1,
+          "pushback" : 2
+        },
+        "updatedAt" : "2026-09-21T14:13:28.123Z"
+      }
+    ]
+  }
+}

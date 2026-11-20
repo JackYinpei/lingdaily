@@ -57,7 +57,8 @@ import com.qcy.lingdaily.ui.semibold
 
 /** 「今日」: the latest daily podcast to listen to, its eight terms, and a rehearsal about one story. */
 @Composable
-fun TodayCard(episode: TodayEpisode, player: PodcastPlayer, onPractice: (PracticeScenario) -> Unit, onVocabulary: () -> Unit) {
+fun TodayCard(episode: TodayEpisode, player: PodcastPlayer, onPractice: (PracticeScenario) -> Unit, onVocabulary: () -> Unit,
+              onOpenPlayer: () -> Unit) {
     val colors = Brand.colors
     val heading = if (episode.date == LocalDate.now().toString()) "今日播客" else "最新播客 · ${episode.source.removePrefix("每日播客 ")}"
     SurfaceCard(spacing = 14.dp) {
@@ -67,11 +68,16 @@ fun TodayCard(episode: TodayEpisode, player: PodcastPlayer, onPractice: (Practic
                 Text("${max(1, (it / 60.0).roundToInt())} 分钟", style = Type.caption, color = colors.secondary)
             }
         }
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(episode.title, style = Type.headline, color = colors.ink)
-            if (episode.summary.isNotEmpty()) {
-                Text(episode.summary, style = Type.subheadline, color = colors.secondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        // The title and summary open the full player with the past episodes.
+        Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onOpenPlayer).testTag("today-open-player"),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(episode.title, style = Type.headline, color = colors.ink)
+                if (episode.summary.isNotEmpty()) {
+                    Text(episode.summary, style = Type.subheadline, color = colors.secondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                }
             }
+            Icon(AppIcons.ChevronRight, null, Modifier.padding(start = 8.dp).size(20.dp), tint = colors.secondary)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             if (episode.playableURL != null) {
@@ -125,7 +131,7 @@ fun TodayVocabularyScreen(screen: Screen.TodayVocabulary) {
     val navigator = LocalNavigator.current
     val store = app.store
     val speech = app.speech
-    val episode = app.today.episode
+    val episode = screen.episode ?: app.today.episode
     DisposableEffect(Unit) {
         speech.reset()
         onDispose { speech.stopAll() }

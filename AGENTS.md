@@ -257,6 +257,8 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 | `POST /api/ios/account/delete` | iOS 会话 + Apple 二次确认 | 永久删除账号（含网页数据）与 Supabase auth 用户，可选撤销 Apple 授权 |
 | `POST /api/android/auth/password`、`/register` | 公开（需有效邮箱密码） | Android 登录/注册，签发与 iOS 相同的原生会话；注册需邮件确认时返回 `confirmationRequired: true` |
 | `POST /api/android/account/delete` | 原生会话 + 再次输入密码 | 永久删除账号（含网页与 iOS 数据） |
+| `POST /api/ios/speech`、`/transcribe` | 原生会话 | 文字模式的朗读与听写，都走 Gemini（`app/lib/server/iosSpeech.js`）：朗读返回 MP3（音色与该角色的 Live 音色一致，同一句按进程内缓存只合成一次）；听写接收 16 kHz 单声道 WAV（≤2MB）返回文字，不保存录音。用量记在 `practice` 下（`ai_usage.feature` 有 CHECK 约束，新增取值需先迁移） |
+| `GET /api/ios/podcasts` | 公开 | App 播放页的近 30 期播客，与「今日」同一结构（不含练习场景） |
 | `POST /api/gemini-token` | 登录，已弃用 | 上一个接口的兼容别名，带 Deprecation/Sunset header |
 | `GET /api/news` | 公开 | 受 allowlist 限制的 Kagi RSS 代理 |
 | `POST /api/translate` | 登录 | 用 Gemini 翻译新闻标题 |

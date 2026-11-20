@@ -6,6 +6,7 @@ import android.content.Intent
 import androidx.annotation.OptIn
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
@@ -69,11 +70,20 @@ class PodcastService : MediaSessionService() {
  * dictation or read-aloud pauses the podcast first, and only the learner resumes it.
  */
 class PodcastPlayer(context: Context, private val scope: CoroutineScope) {
-    var episodeDate by mutableStateOf<String?>(null)
+    /** The episode loaded into the player, playing or paused. */
+    var episode by mutableStateOf<TodayEpisode?>(null)
         private set
     var isPlaying by mutableStateOf(false)
         private set
     var progress by mutableFloatStateOf(0f)
+        private set
+    var positionMs by mutableLongStateOf(0L)
+        private set
+
+    /** Zero until the stream has told its length. */
+    var durationMs by mutableLongStateOf(0L)
+        private set
+    var speed by mutableFloatStateOf(1f)
         private set
     var errorMessage by mutableStateOf<String?>(null)
         private set
@@ -84,8 +94,11 @@ class PodcastPlayer(context: Context, private val scope: CoroutineScope) {
     private var whenConnected: ((MediaController) -> Unit)? = null
     private var ticker: Job? = null
 
+    val episodeDate: String? get() = episode?.date
+
     fun isCurrent(episode: TodayEpisode): Boolean = episodeDate == episode.date
 
+    /** Plays this episode, or pauses/resumes it when it is already the loaded one. */
     fun toggle(episode: TodayEpisode) {
         if (isCurrent(episode) && controller != null) {
             if (isPlaying) pause() else controller?.play()
@@ -97,13 +110,16 @@ class PodcastPlayer(context: Context, private val scope: CoroutineScope) {
             return
         }
         errorMessage = null
-        episodeDate = episode.date
+        this.episode = episode
         progress = 0f
+        positionMs = 0
+        durationMs = (episode.duration ?: 0) * 1000L
         val item = MediaItem.Builder().setMediaId(episode.date).setUri(url)
             .setMediaMetadata(MediaMetadata.Builder().setTitle(episode.title).setArtist("LingDaily").build())
             .build()
         withController {
             it.setMediaItem(item)
+            it.setPlaybackSpeed(speed)
             it.prepare()
             it.play()
         }
@@ -114,6 +130,27 @@ class PodcastPlayer(context: Context, private val scope: CoroutineScope) {
         controller?.pause()
     }
 
+    /** `fraction` of the episode, 0...1. */
+    fun seekTo(fraction: Float) {
+        val player = controller ?: return
+        if (durationMs <= 0) return
+        player.seekTo((durationMs * fraction.coerceIn(0f, 1f)).toLong())
+        tick()
+    }
+
+    /** Jumps back (negative) or ahead within the episode. */
+    fun skip(milliseconds: Long) {
+        val player = controller ?: return
+        val target = (player.currentPosition + milliseconds).coerceAtLeast(0)
+        player.seekTo(if (durationMs > 0) target.coerceAtMost(durationMs) else target)
+        tick()
+    }
+
+    fun changeSpeed(value: Float) {
+        speed = value
+        controller?.setPlaybackSpeed(value)
+    }
+
     /** Signing out: the episode leaves with the account. */
     fun stop() {
         whenConnected = null
@@ -122,9 +159,11 @@ class PodcastPlayer(context: Context, private val scope: CoroutineScope) {
             clearMediaItems()
         }
         ticker?.cancel()
-        episodeDate = null
+        episode = null
         isPlaying = false
         progress = 0f
+        positionMs = 0
+        durationMs = 0
     }
 
     private fun withController(action: (MediaController) -> Unit) {
@@ -138,7 +177,7 @@ class PodcastPlayer(context: Context, private val scope: CoroutineScope) {
             val connected = runCatching { future.get() }.getOrNull()
             if (connected == null) {
                 whenConnected = null
-                episodeDate = null
+                episode = null
                 errorMessage = "暂时无法播放，请稍后再试。"
                 return@addListener
             }
@@ -153,15 +192,17 @@ class PodcastPlayer(context: Context, private val scope: CoroutineScope) {
         override fun onIsPlayingChanged(playing: Boolean) {
             isPlaying = playing
             ticker?.cancel()
+            tick()
             if (playing) ticker = scope.launch {
                 while (isActive) {
                     tick()
-                    delay(1000)
+                    delay(500)
                 }
             }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_READY) tick()
             if (playbackState != Player.STATE_ENDED) return
             // Finished: back to the start, ready to listen again.
             controller?.run {
@@ -169,6 +210,7 @@ class PodcastPlayer(context: Context, private val scope: CoroutineScope) {
                 seekTo(0)
             }
             progress = 0f
+            positionMs = 0
         }
 
         override fun onPlayerError(error: PlaybackException) {
@@ -180,7 +222,8 @@ class PodcastPlayer(context: Context, private val scope: CoroutineScope) {
     private fun tick() {
         val player = controller ?: return
         val duration = player.duration
-        if (duration == C.TIME_UNSET || duration <= 0) return
-        progress = (player.currentPosition.toFloat() / duration).coerceIn(0f, 1f)
+        if (duration != C.TIME_UNSET && duration > 0) durationMs = duration
+        positionMs = player.currentPosition.coerceAtLeast(0)
+        if (durationMs > 0) progress = (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
     }
 }

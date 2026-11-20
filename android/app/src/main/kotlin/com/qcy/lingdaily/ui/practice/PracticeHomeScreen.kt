@@ -82,6 +82,7 @@ fun PracticeHomeScreen() {
     val settings = app.settings
     val catalog = app.catalog.scenarios
     val today = LocalDate.now()
+    val colors = Brand.colors
 
     // Own scenarios with a real conversation coming up come first, soonest first.
     val ownScenarios = remember(archive.scenarios, reminders.events, today) {
@@ -153,6 +154,15 @@ fun PracticeHomeScreen() {
                     }
                 }
             }
+            app.updates.available?.let { release ->
+                val links = androidx.compose.ui.platform.LocalUriHandler.current
+                SurfaceCard(Modifier.clip(RoundedCornerShape(20.dp)).clickable(role = Role.Button) { links.openUri(release.apkUrl) }.testTag("update-banner"), padding = 16.dp) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("有新版本 ${release.versionName}，点此下载更新", style = Type.subheadline.semibold, color = colors.accent, modifier = Modifier.weight(1f))
+                        Icon(AppIcons.ChevronRight, null, Modifier.size(18.dp), tint = colors.accent)
+                    }
+                }
+            }
             if (!account.canPractice) {
                 SurfaceCard(spacing = 14.dp) {
                     Text("先登录，再开口", style = Type.headline, color = Brand.colors.ink)
@@ -162,7 +172,8 @@ fun PracticeHomeScreen() {
             unfinished?.let { session -> ContinueCard(session) { navigator.push(Screen.Conversation(session)) } }
             val episode = app.today.episode
             if (account.canPractice && episode != null) {
-                TodayCard(episode, app.podcast, onPractice = ::open, onVocabulary = { navigator.push(Screen.TodayVocabulary()) })
+                TodayCard(episode, app.podcast, onPractice = ::open, onVocabulary = { navigator.push(Screen.TodayVocabulary()) },
+                    onOpenPlayer = { navigator.push(Screen.Podcast()) })
             }
             if (categories.size > 1) {
                 Row(

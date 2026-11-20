@@ -9,3 +9,4 @@ captures/
 *.keystore
 *.jks
 keystore.properties
+tools/.env

@@ -16,6 +16,7 @@ import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import com.qcy.lingdaily.core.model.AIPracticeRequest
@@ -75,6 +76,12 @@ interface PracticeServing {
     suspend fun reportLiveUsage(report: LiveUsageReport)
     suspend fun usageSummary(): AIUsageSummary
     suspend fun modelCatalog(): AIModelCatalog
+
+    /** One line read aloud, as MP3, in the partner's voice when a partner is named. */
+    suspend fun speech(text: String, partner: String?): ByteArray
+
+    /** The words in a short WAV recording (16 kHz mono PCM16); empty when nothing was said. */
+    suspend fun transcribe(wav: ByteArray): String
 }
 
 @Serializable
@@ -97,6 +104,15 @@ private data class IdeasResponse(val requestId: Uuid, val ideas: List<String>)
 
 @Serializable
 private data class Recorded(val recorded: Boolean)
+
+@Serializable
+private data class SpeechRequest(val text: String, val partner: String? = null)
+
+@Serializable
+private data class Transcript(val text: String)
+
+@Serializable
+private data class PodcastList(val episodes: List<TodayEpisode> = emptyList())
 
 @Serializable
 private data class Deleted(val deleted: Boolean)
@@ -214,6 +230,24 @@ class PracticeApiClient(
     /** Models the learner may choose per feature. */
     override suspend fun modelCatalog(): AIModelCatalog = post("api/ios/models", null, AIModelCatalog.serializer())
 
+    override suspend fun speech(text: String, partner: String?): ByteArray {
+        val body = encode(SpeechRequest.serializer(), SpeechRequest(text.trim().prefix(1000), partner?.trim()?.prefix(60)?.ifEmpty { null }))
+        return postBytes("api/ios/speech", body.toRequestBody(JSON), maxBytes = 2 * 1024 * 1024)
+    }
+
+    override suspend fun transcribe(wav: ByteArray): String {
+        val bytes = postBytes("api/ios/transcribe", wav.toRequestBody(WAV), maxBytes = 24 * 1024)
+        return try {
+            AppJson.decodeFromString(Transcript.serializer(), bytes.decodeToString()).text.trim()
+        } catch (_: SerializationException) {
+            throw PracticeNetworkException.invalidReply()
+        }
+    }
+
+    /** Recent daily podcasts, newest first. Public like the web's podcast page. */
+    suspend fun podcasts(): List<TodayEpisode> =
+        post("api/ios/podcasts", null, PodcastList.serializer(), maxBytes = 512 * 1024, requiresAccount = false).episodes
+
     /** Built-in scenarios. Public editorial content, so it also loads before signing in. */
     suspend fun scenarioCatalog(): List<PracticeScenario> {
         val response = post("api/ios/scenarios", null, ScenarioCatalogResponse.serializer(), maxBytes = 512 * 1024, requiresAccount = false)
@@ -228,17 +262,33 @@ class PracticeApiClient(
     /** `body` null sends a GET. */
     private suspend fun <R> post(path: String, body: String?, reply: DeserializationStrategy<R>,
                                  maxBytes: Int = 24 * 1024, requiresAccount: Boolean = true): R {
+        val bytes = postBytes(path, body?.toRequestBody(JSON), maxBytes, requiresAccount)
+        return decode(reply, bytes)
+    }
+
+    /** The development pairing when this build has one, else the signed-in account, else (public routes) nobody. */
+    private suspend fun postBytes(path: String, body: RequestBody?, maxBytes: Int, requiresAccount: Boolean = true): ByteArray {
         configuration?.let { config ->
             if (!config.isValid) throw PracticeNetworkException.notConfigured()
-            return send(path, body, reply, config.baseURL.removeSuffix("/"), config.accessToken, maxBytes)
+            return send(path, body, config.baseURL.removeSuffix("/"), config.accessToken, maxBytes)
         }
-        if (!requiresAccount) return send(path, body, reply, baseURL, bearer = null, maxBytes = maxBytes)
+        if (!requiresAccount) return send(path, body, baseURL, bearer = null, maxBytes = maxBytes)
         val account = accountSession()?.takeIf { it.isUsable() } ?: throw PracticeNetworkException.signedOut()
-        return send(path, body, reply, baseURL, account.token, maxBytes)
+        return send(path, body, baseURL, account.token, maxBytes)
+    }
+
+    private fun <R> decode(reply: DeserializationStrategy<R>, bytes: ByteArray): R = try {
+        AppJson.decodeFromString(reply, bytes.decodeToString())
+    } catch (_: SerializationException) {
+        throw PracticeNetworkException.invalidReply()
     }
 
     private suspend fun <R> send(path: String, body: String?, reply: DeserializationStrategy<R>, baseURL: String,
-                                 bearer: String?, maxBytes: Int = 24 * 1024, client: OkHttpClient = http): R {
+                                 bearer: String?, maxBytes: Int = 24 * 1024, client: OkHttpClient = http): R =
+        decode(reply, send(path, body?.toRequestBody(JSON), baseURL, bearer, maxBytes, client))
+
+    private suspend fun send(path: String, body: RequestBody?, baseURL: String, bearer: String?,
+                             maxBytes: Int, client: OkHttpClient = http): ByteArray {
         // Account, sync, usage and model-list requests do not send content to Gemini.
         if (path in AI_PATHS && !aiConsent()) {
             onConsentRequired()
@@ -246,7 +296,7 @@ class PracticeApiClient(
         }
         val request = Request.Builder().url("$baseURL/$path").apply {
             if (bearer != null) header("Authorization", "Bearer $bearer")
-            if (body != null) post(body.toRequestBody(JSON)) else get()
+            if (body != null) post(body) else get()
         }.build()
         val result = try {
             client.newCall(request).await(maxBytes)
@@ -256,27 +306,21 @@ class PracticeApiClient(
             throw PracticeNetworkException.unavailable()
         }
         val bytes = result.body ?: throw PracticeNetworkException.invalidReply()
-        if (result.code != 200) {
-            if (result.code == 401 && configuration == null && bearer != null) {
-                // The production session expired or was rejected: sign out on this device.
-                onSessionRejected()
-                throw PracticeNetworkException.signedOut()
-            }
-            val failure = try {
-                AppJson.decodeFromString(ServerFailure.serializer(), bytes.decodeToString())
-            } catch (_: SerializationException) {
-                null
-            }
-            if (failure != null && failure.message.isNotBlank() && failure.message.length <= 200) {
-                throw PracticeNetworkException.server(failure.message)
-            }
-            throw PracticeNetworkException.unavailable()
+        if (result.code == 200) return bytes
+        if (result.code == 401 && configuration == null && bearer != null) {
+            // The production session expired or was rejected: sign out on this device.
+            onSessionRejected()
+            throw PracticeNetworkException.signedOut()
         }
-        return try {
-            AppJson.decodeFromString(reply, bytes.decodeToString())
+        val failure = try {
+            AppJson.decodeFromString(ServerFailure.serializer(), bytes.decodeToString())
         } catch (_: SerializationException) {
-            throw PracticeNetworkException.invalidReply()
+            null
         }
+        if (failure != null && failure.message.isNotBlank() && failure.message.length <= 200) {
+            throw PracticeNetworkException.server(failure.message)
+        }
+        throw PracticeNetworkException.unavailable()
     }
 
     /** Status and body; the body is null when it is larger than the caller allows. */
@@ -307,8 +351,9 @@ class PracticeApiClient(
 
     companion object {
         private val JSON = "application/json".toMediaType()
+        private val WAV = "audio/wav".toMediaType()
         private val AI_PATHS = setOf("api/ios/practice", "api/ios/review", "api/ios/scenario", "api/ios/scenario-ideas",
-            "api/ios/translate", "api/ios/suggest", "api/ios/live-token")
+            "api/ios/translate", "api/ios/suggest", "api/ios/live-token", "api/ios/speech", "api/ios/transcribe")
 
         private fun client(callTimeoutSeconds: Long): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)

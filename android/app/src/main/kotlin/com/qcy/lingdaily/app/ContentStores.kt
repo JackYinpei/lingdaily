@@ -87,4 +87,31 @@ class TodayStore(private val api: PracticeApiClient) {
     }
 }
 
+/** The daily podcasts of the last weeks for the player page. Kept in memory. */
+class PodcastStore(private val api: PracticeApiClient) {
+    var episodes by mutableStateOf(emptyList<TodayEpisode>())
+        private set
+    var isLoading by mutableStateOf(false)
+        private set
+    var failed by mutableStateOf(false)
+        private set
+    private var loadedAt: Long? = null
+
+    suspend fun refresh(force: Boolean = false) {
+        if (isLoading || (!force && episodes.isNotEmpty() && loadedAt?.let { nowMillis() - it < FRESH_MS } == true)) return
+        isLoading = true
+        failed = false
+        try {
+            episodes = api.podcasts()
+            loadedAt = nowMillis()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            failed = true
+        } finally {
+            isLoading = false
+        }
+    }
+}
+
 private const val FRESH_MS = 600_000L

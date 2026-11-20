@@ -14,6 +14,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import com.qcy.lingdaily.app.AppContainer
+import com.qcy.lingdaily.app.LiveCallService
 import com.qcy.lingdaily.core.audio.LiveAudioController
 import com.qcy.lingdaily.core.model.PracticeMessage
 import com.qcy.lingdaily.core.model.PracticeSession
@@ -60,6 +61,10 @@ class LivePracticeController(private val app: AppContainer) {
     var suggesting by mutableStateOf(false)
         private set
     var suggestionError by mutableStateOf<String?>(null)
+        private set
+
+    /** The call has its foreground service, so leaving the app does not have to end it. */
+    var continuesInBackground = false
         private set
 
     private val api = app.api
@@ -153,6 +158,9 @@ class LivePracticeController(private val app: AppContainer) {
                 return@launch
             }
             if (!generations.accepts(current)) return@launch
+            // From here on the call may continue while another app is on screen.
+            app.hangUpCall = { stop() }
+            continuesInBackground = LiveCallService.start(app.context, model.session.scenario.partner)
             try {
                 // The speaker path is open before the token is asked for, so no reply can arrive before it.
                 audio.prepareOutput()
@@ -433,6 +441,9 @@ class LivePracticeController(private val app: AppContainer) {
         connectJob?.cancel()
         connectJob = null
         audio.stop()
+        LiveCallService.stop(app.context)
+        app.hangUpCall = null
+        continuesInBackground = false
         moveTo(State.DISCONNECTED)
         playing = false
         muted = false

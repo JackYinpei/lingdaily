@@ -73,23 +73,52 @@ object ReviewPicker {
     }
 }
 
-/** When each 词库 item was last reviewed on this device and how it went. Not synced. */
+/**
+ * When each 词库 item was last reviewed on this device and how it went. Not synced.
+ *
+ * Reviews are spaced: every time an item is recalled it comes back after a longer gap
+ * (1, 3, 7, 14, 30 days); a miss brings it back in the next review.
+ */
 @Serializable
 data class ReviewLog(val entries: Map<String, Entry> = emptyMap()) {
     @Serializable
-    data class Entry(val lastReviewedAt: Millis, val attempts: Int, val recalled: Int)
+    data class Entry(
+        val lastReviewedAt: Millis,
+        val attempts: Int,
+        val recalled: Int,
+        /** Recalls in a row; decides the gap before the next review. Absent in logs written before spacing. */
+        val streak: Int = 0,
+    ) {
+        val dueAt: Long get() = lastReviewedAt + INTERVAL_DAYS[streak.coerceIn(0, INTERVAL_DAYS.lastIndex)] * DAY_MS
+    }
 
     fun record(key: String, recalled: Boolean, now: Long = nowMillis()): ReviewLog {
         val entry = entries[key] ?: Entry(now, 0, 0)
-        return copy(entries = entries + (key to Entry(now, entry.attempts + 1, entry.recalled + if (recalled) 1 else 0)))
+        return copy(entries = entries + (key to Entry(now, entry.attempts + 1, entry.recalled + if (recalled) 1 else 0,
+            if (recalled) entry.streak + 1 else 0)))
     }
 
-    /** Items never reviewed come first (newest first), then the ones reviewed longest ago. */
-    fun deck(expressions: List<SavedExpression>, limit: Int = 10): List<SavedExpression> {
-        val candidates = expressions.filter { it.meaning.isNotBlank() }
-        val fresh = candidates.filter { it.id !in entries }
-        val seen = candidates.filter { it.id in entries }.sortedBy { entries.getValue(it.id).lastReviewedAt }
-        return (fresh + seen).take(limit)
+    private fun reviewable(expressions: List<SavedExpression>) = expressions.filter { it.meaning.isNotBlank() }
+
+    /** Items whose gap has passed, the most overdue first. */
+    fun due(expressions: List<SavedExpression>, now: Long = nowMillis()): List<SavedExpression> =
+        reviewable(expressions).filter { item -> entries[item.id]?.let { it.dueAt <= now } == true }
+            .sortedBy { entries.getValue(it.id).dueAt }
+
+    /**
+     * What to review now: items that are due first, then ones never reviewed (newest first).
+     * When nothing is due or new, the ones coming up soonest, so a learner who asks can always review.
+     */
+    fun deck(expressions: List<SavedExpression>, limit: Int = 10, now: Long = nowMillis()): List<SavedExpression> {
+        val candidates = reviewable(expressions)
+        val wanted = due(expressions, now) + candidates.filter { it.id !in entries }
+        if (wanted.isNotEmpty()) return wanted.take(limit)
+        return candidates.sortedBy { entries.getValue(it.id).dueAt }.take(limit)
+    }
+
+    companion object {
+        private const val DAY_MS = 86_400_000L
+        private val INTERVAL_DAYS = listOf(0, 1, 3, 7, 14, 30)
     }
 }
 
@@ -109,6 +138,33 @@ object PracticeStats {
 
     fun spokeToday(sessions: List<PracticeSession>, now: Long = nowMillis(), zone: ZoneId = ZoneId.systemDefault()): Boolean =
         recent(sessions, days = 1, now = now, zone = zone).turns > 0
+
+    data class Day(val date: java.time.LocalDate, val turns: Int)
+
+    /** How many times the learner spoke on each of the last `days` days, oldest first, today last. */
+    fun daily(sessions: List<PracticeSession>, days: Int = 7, now: Long = nowMillis(), zone: ZoneId = ZoneId.systemDefault()): List<Day> {
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val counts = sessions.flatMap { it.messages }.filter { it.role == PracticeMessage.Role.USER && it.createdAt <= now }
+            .groupingBy { Instant.ofEpochMilli(it.createdAt).atZone(zone).toLocalDate() }.eachCount()
+        return (days - 1 downTo 0).map { offset -> today.minusDays(offset.toLong()).let { Day(it, counts[it] ?: 0) } }
+    }
+
+    /**
+     * Days in a row with practice, ending today — or yesterday, so the count does not drop to
+     * zero in the morning before today's practice.
+     */
+    fun streak(sessions: List<PracticeSession>, now: Long = nowMillis(), zone: ZoneId = ZoneId.systemDefault()): Int {
+        val active = sessions.flatMap { it.messages }.filter { it.role == PracticeMessage.Role.USER && it.createdAt <= now }
+            .map { Instant.ofEpochMilli(it.createdAt).atZone(zone).toLocalDate() }.toSet()
+        var day = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        if (day !in active) day = day.minusDays(1)
+        var count = 0
+        while (day in active) {
+            count++
+            day = day.minusDays(1)
+        }
+        return count
+    }
 }
 
 /** One card per learner message, in conversation order, with its own suggestion underneath. */

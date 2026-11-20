@@ -61,11 +61,15 @@ sealed class Screen {
 
     class Conversation(val session: PracticeSession, val voiceMode: Boolean? = null, val autoStartVoice: Boolean = false) : Screen()
 
-    class Composer : Screen() {
-        val state = ComposerState()
+    class Composer(description: String = "") : Screen() {
+        val state = ComposerState().also { it.description = description }
     }
 
-    class TodayVocabulary : Screen()
+    /** The terms of one episode; null follows 「今日」. */
+    class TodayVocabulary(val episode: com.qcy.lingdaily.core.model.TodayEpisode? = null) : Screen()
+
+    /** The full-screen podcast player with the past episodes. */
+    class Podcast : Screen()
     class SessionDetail(val sessionID: UUID, val fallback: PracticeSession) : Screen()
     class Review(val title: String, val cards: List<ReviewCard>, val recordsResults: Boolean) : Screen()
     class Summary(val session: PracticeSession) : Screen()

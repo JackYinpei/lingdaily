@@ -11,7 +11,10 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CompletableDeferred
 import com.qcy.lingdaily.app.AppContainer
 import com.qcy.lingdaily.app.LingDailyApplication
+import com.qcy.lingdaily.app.PracticeWidget
 import com.qcy.lingdaily.app.ReminderCenter
+import com.qcy.lingdaily.core.model.prefix
+import com.qcy.lingdaily.ui.Screen
 import com.qcy.lingdaily.ui.LingDailyRoot
 
 class MainActivity : ComponentActivity() {
@@ -27,13 +30,26 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         app.permissionRequester = requester
-        if (savedInstanceState == null) openReminder(intent)
+        if (savedInstanceState == null) open(intent)
         setContent { LingDailyRoot(app) }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        open(intent)
+    }
+
+    private fun open(intent: Intent?) {
         openReminder(intent)
+        if (!app.navigator.isAtRoot) return
+        when (intent?.action) {
+            // Text shared from another app: describe the conversation it calls for (the composer keeps 300 characters).
+            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()?.takeIf { it.isNotEmpty() }
+                ?.let { app.navigator.push(Screen.Composer(it.prefix(300))) }
+            // The widget: straight back into the rehearsal that is waiting.
+            PracticeWidget.ACTION_CONTINUE -> PracticeWidget.unfinished(app.store.archive.sessions)
+                ?.let { app.navigator.push(Screen.Conversation(it)) }
+        }
     }
 
     /** A tapped reminder opens its scenario, but never pulls the learner away from a page they are on. */
@@ -50,6 +66,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         app.store.flush()
+        PracticeWidget.refresh(this)
     }
 
     override fun onDestroy() {

@@ -1,6 +1,16 @@
 package com.qcy.lingdaily.ui.learning
 
+import android.content.Intent
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.style.TextAlign
+import com.qcy.lingdaily.core.model.PracticeStats
+import com.qcy.lingdaily.ui.semibold
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -36,6 +46,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -98,6 +109,7 @@ fun LearningScreen() {
     val store = app.store
     val speech = app.speech
     val colors = Brand.colors
+    val context = LocalContext.current
     val archive = store.archive
     var section by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -134,6 +146,7 @@ fun LearningScreen() {
             item(key = "header") {
                 Column(Modifier.padding(bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                     PageTitle("学习", "练习 ${archive.sessions.size} 次 · 词库 ${archive.expressions.size} 条")
+                    if (archive.sessions.isNotEmpty()) ProgressCard(archive.sessions)
                     Segmented(listOf(0 to "练习记录", 1 to "词库"), section, Modifier.testTag("learning-sections")) {
                         section = it
                         speech.stopAll()
@@ -174,7 +187,9 @@ fun LearningScreen() {
                 item(key = "tools") {
                     Column(Modifier.padding(top = 4.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (filtered.any { it.meaning.isNotEmpty() }) {
-                            SolidButton("开始复习", onClick = ::startReview, modifier = Modifier.testTag("start-review"))
+                            // Spaced review: what is due today first, then what has never been reviewed.
+                            val due = app.settings.reviewLog.due(filtered).size
+                            SolidButton(if (due > 0) "开始复习 · $due 个到期" else "开始复习", onClick = ::startReview, modifier = Modifier.testTag("start-review"))
                         }
                         AppTextField(query, { query = it }, "搜索词库", minHeight = 44.dp, textStyle = Type.subheadline,
                             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
@@ -187,6 +202,14 @@ fun LearningScreen() {
                             }
                         }
                         speech.errorMessage?.let { Text(it, style = Type.caption, color = colors.secondary) }
+                        if (filtered.isNotEmpty()) {
+                            TextAction("导出这 ${filtered.size} 条", style = Type.caption, minHeight = 36.dp, modifier = Modifier.testTag("export-vocabulary")) {
+                                // Plain text, one item per line, tab-separated: pastes into notes, sheets and flashcard apps.
+                                val text = filtered.joinToString("\n") { listOf(it.text, it.meaning, kindLabel(it.kind), it.source).joinToString("\t") }
+                                context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
+                                    .putExtra(Intent.EXTRA_SUBJECT, "LingDaily 词库").putExtra(Intent.EXTRA_TEXT, text), "导出词库"))
+                            }
+                        }
                     }
                 }
                 if (filtered.isEmpty()) item(key = "none") { EmptyState("没有找到") }
@@ -210,6 +233,43 @@ fun LearningScreen() {
             },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("取消", color = colors.ink) } },
         )
+    }
+}
+
+/**
+ * Facts about the last week: days in a row with practice, and how many times the learner
+ * spoke each day. No scores or levels.
+ */
+@Composable
+private fun ProgressCard(sessions: List<PracticeSession>) {
+    val colors = Brand.colors
+    val days = remember(sessions) { PracticeStats.daily(sessions) }
+    val streak = remember(sessions) { PracticeStats.streak(sessions) }
+    val total = days.sumOf { it.turns }
+    val peak = maxOf(1, days.maxOf { it.turns })
+    SurfaceCard(Modifier.testTag("progress-card"), padding = 16.dp, spacing = 14.dp) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(if (streak > 0) "连续练习 $streak 天" else "今天还没开口", style = Type.headline, color = colors.ink)
+                Text("近 7 天开口 $total 次", style = Type.caption, color = colors.secondary)
+            }
+        }
+        Row(Modifier.fillMaxWidth().clearAndSetSemantics {
+            contentDescription = days.joinToString("，") { "${it.date.monthValue}月${it.date.dayOfMonth}日 ${it.turns} 次" }
+        }, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
+            for ((index, day) in days.withIndex()) {
+                val today = index == days.lastIndex
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.BottomCenter) {
+                        // A day without practice keeps a hairline, so the week reads as seven days.
+                        Box(Modifier.fillMaxWidth().height(if (day.turns == 0) 2.dp else (6 + 42 * day.turns / peak).dp)
+                            .clip(RoundedCornerShape(4.dp)).background(if (day.turns == 0) colors.line else if (today) colors.accent else colors.ink.copy(alpha = 0.55f)))
+                    }
+                    Text(if (today) "今天" else "一二三四五六日"[day.date.dayOfWeek.value - 1].toString(), style = Type.caption2,
+                        color = if (today) colors.accent else colors.secondary, textAlign = TextAlign.Center)
+                }
+            }
+        }
     }
 }
 
@@ -306,9 +366,9 @@ fun SessionDetailScreen(screen: Screen.SessionDetail) {
                                     latest.applyTranslation(text, message.id)?.let(store::save)
                                 }
                             },
-                            onListen = speech::speak)
+                            onListen = { speech.speak(it, session.scenario.partner) })
                         session.feedback(message.id)?.let { feedback ->
-                            FeedbackNote(feedback, session.scenario.title, speech::speak, meaningLoading = message.id in meanings.loading) {
+                            FeedbackNote(feedback, session.scenario.title, { speech.speak(it, session.scenario.partner) }, meaningLoading = message.id in meanings.loading) {
                                 meanings.fill(message.id, feedback.revised) { meaning ->
                                     val latest = store.archive.sessions.firstOrNull { it.id == session.id } ?: session
                                     latest.applyFeedbackMeaning(meaning, message.id)?.let(store::save)

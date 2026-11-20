@@ -87,13 +87,29 @@ class RecallAndReviewTest {
     }
 
     @Test
-    fun reviewDeckPutsNeverReviewedFirstThenLongestAgo() {
+    fun reviewsAreSpacedFurtherApartEachTimeAnItemIsRecalled() {
+        val day = 86_400_000L
         val items = listOf("a", "b", "c", "d").map { SavedExpression(it, it, if (it == "d") " " else "意思", "s", 0) }
-        var log = ReviewLog().record("a", recalled = true, now = 2000).record("b", recalled = false, now = 1000)
-        assertEquals(listOf("c", "b", "a"), log.deck(items).map { it.id })
-        log = log.record("b", recalled = true, now = 3000)
-        assertEquals(ReviewLog.Entry(3000, 2, 1), log.entries["b"])
-        assertEquals(listOf("c", "a"), log.deck(items, limit = 2).map { it.id })
+        // a was recalled twice (next gap 3 days), b was missed (due again at once), c is new, d has no meaning to recall.
+        var log = ReviewLog().record("a", recalled = true, now = 0).record("a", recalled = true, now = day)
+            .record("b", recalled = false, now = day)
+        assertEquals(ReviewLog.Entry(day, 2, 2, streak = 2), log.entries["a"])
+        assertEquals(day + 3 * day, log.entries.getValue("a").dueAt)
+        assertEquals("A miss comes back first, then what is new", listOf("b", "c"), log.deck(items, now = 2 * day).map { it.id })
+        assertEquals(listOf("b"), log.due(items, now = 2 * day).map { it.id })
+        assertEquals("Due items in order of how overdue they are, then new ones", listOf("b", "a", "c"), log.deck(items, now = 5 * day).map { it.id })
+        assertEquals(listOf("b", "a"), log.deck(items, limit = 2, now = 5 * day).map { it.id })
+
+        log = log.record("b", recalled = true, now = 5 * day).record("c", recalled = true, now = 5 * day).record("a", recalled = true, now = 5 * day)
+        assertEquals(1, log.entries.getValue("b").streak)
+        assertTrue(log.due(items, now = 5 * day + 1).isEmpty())
+        assertEquals("Nothing due: the soonest ones are still offered", listOf("b", "c", "a"), log.deck(items, now = 5 * day + 1).map { it.id })
+        assertEquals(setOf("b", "c"), log.due(items, now = 6 * day).map { it.id }.toSet())
+        // A long streak never runs past the last gap, and a log written before spacing still loads.
+        var long = ReviewLog()
+        repeat(12) { long = long.record("a", recalled = true, now = 0) }
+        assertEquals(30 * day, long.entries.getValue("a").dueAt)
+        assertEquals(0, AppJson.decodeFromString<ReviewLog>("""{"entries":{"a":{"lastReviewedAt":"2026-10-01T00:00:00.000Z","attempts":3,"recalled":2}}}""").entries.getValue("a").streak)
         assertEquals(log, AppJson.decodeFromString<ReviewLog>(AppJson.encodeToString(log)))
     }
 
@@ -112,6 +128,12 @@ class RecallAndReviewTest {
         // 23:30 the evening before is a different local day, even though it is less than 24 hours ago.
         val morning = ZonedDateTime.of(2026, 10, 26, 8, 0, 0, 0, zone).toInstant().toEpochMilli()
         assertFalse(PracticeStats.spokeToday(listOf(liveSession("Late.", now = morning - 8 * 3_600_000 - 1_800_000)), now = morning, zone = zone))
+
+        assertEquals(listOf(0, 0, 0, 0, 0, 1, 2), PracticeStats.daily(sessions, now = now, zone = zone).map { it.turns })
+        assertEquals(26, PracticeStats.daily(sessions, now = now, zone = zone).last().date.dayOfMonth)
+        assertEquals(2, PracticeStats.streak(sessions, now = now, zone = zone))
+        assertEquals("Yesterday's streak still counts before today's practice", 1, PracticeStats.streak(sessions.drop(1), now = now, zone = zone))
+        assertEquals(0, PracticeStats.streak(sessions.drop(2), now = now, zone = zone))
     }
 
     @Test
@@ -155,6 +177,16 @@ class RecallAndReviewTest {
         }
         assertEquals(listOf("neighbor"), catalog(listOf("neighbor", "custom-1", "today-2026", "Bad Id", "neighbor")))
         assertEquals(emptyList<String>(), catalog(listOf("neighbor"), steps = 2))
+    }
+
+    @Test
+    fun updateIsOfferedOnlyForANewerVersionFromOurOwnAddress() {
+        fun release(code: Int, url: String) = """{"versionCode":$code,"versionName":"9.9","apkUrl":"$url","sha256":"x","changelog":"改进"}"""
+        val base = com.qcy.lingdaily.app.UpdateChecker.BASE_URL
+        assertEquals("9.9", com.qcy.lingdaily.app.UpdateChecker.newer(release(3, "$base/LingDaily-v9.9.apk"), current = 2)?.versionName)
+        assertNull(com.qcy.lingdaily.app.UpdateChecker.newer(release(2, "$base/LingDaily-v9.9.apk"), current = 2))
+        assertNull("A download from anywhere else is never offered", com.qcy.lingdaily.app.UpdateChecker.newer(release(3, "https://evil.test/a.apk"), current = 2))
+        assertNull(com.qcy.lingdaily.app.UpdateChecker.newer("not json", current = 2))
     }
 
     // ---- Sentence review after a conversation ----

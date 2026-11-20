@@ -56,7 +56,8 @@ class AppContainer(context: Context) {
     val reminders = ReminderCenter(this.context, settings)
     val catalog = ScenarioCatalogStore(File(directory, "scenario-catalog.json"), api)
     val today = TodayStore(api)
-    val speech = SpeechController(this.context, scope, slowSpeech = { settings.slowSpeech },
+    val podcasts = PodcastStore(api)
+    val speech = SpeechController(this.context, scope, api, slowSpeech = { settings.slowSpeech },
         requestMicrophone = { requestPermission(android.Manifest.permission.RECORD_AUDIO) }, pausePodcast = podcast::pause)
     val sync = SyncEngine(store, account, api,
         SyncLedgerFile(File(directory, "sync-ledger.json"), { settings.syncLedgerStale }, { settings.syncLedgerStale = it }),
@@ -70,6 +71,10 @@ class AppContainer(context: Context) {
     suspend fun requestPermission(permission: String): Boolean = permissionRequester?.invoke(permission) ?: false
 
     val navigator = com.qcy.lingdaily.ui.Navigator()
+    val updates = UpdateChecker()
+
+    /** Ends the voice call in progress; set by the call while it lasts. */
+    var hangUpCall: (() -> Unit)? = null
 
     val practicedToday: Boolean get() = PracticeStats.spokeToday(store.archive.sessions)
 
@@ -78,6 +83,7 @@ class AppContainer(context: Context) {
         reminders.rescheduleDaily(practicedToday)
         scope.launch { sync.syncNow() }
         scope.launch { catalog.refresh() }
+        scope.launch { updates.check() }
         if (account.canPractice) scope.launch { today.refresh() }
     }
 }

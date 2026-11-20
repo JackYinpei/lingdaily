@@ -51,6 +51,7 @@ import com.qcy.lingdaily.ui.learning.LearningScreen
 import com.qcy.lingdaily.ui.learning.ReviewScreen
 import com.qcy.lingdaily.ui.learning.SessionDetailScreen
 import com.qcy.lingdaily.ui.practice.ConversationScreen
+import com.qcy.lingdaily.ui.practice.PodcastScreen
 import com.qcy.lingdaily.ui.practice.PracticeHomeScreen
 import com.qcy.lingdaily.ui.practice.PreparationScreen
 import com.qcy.lingdaily.ui.practice.ScenarioComposerScreen
@@ -118,6 +119,7 @@ fun LingDailyRoot(app: AppContainer) {
                             is Screen.Conversation -> ConversationScreen(screen)
                             is Screen.Composer -> ScenarioComposerScreen(screen)
                             is Screen.TodayVocabulary -> TodayVocabularyScreen(screen)
+                            is Screen.Podcast -> PodcastScreen(screen)
                             is Screen.SessionDetail -> SessionDetailScreen(screen)
                             is Screen.Review -> ReviewScreen(screen)
                             is Screen.Summary -> SummaryScreen(screen)

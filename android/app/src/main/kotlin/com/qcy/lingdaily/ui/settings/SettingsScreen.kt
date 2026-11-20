@@ -123,6 +123,14 @@ fun SettingsScreen() {
     ReadableColumn(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(28.dp)) {
             PageTitle("我的")
+            app.updates.available?.let { release ->
+                SurfaceCard(Modifier.testTag("update-card"), spacing = 10.dp) {
+                    Text("有新版本 ${release.versionName}", style = Type.headline, color = colors.ink)
+                    if (release.changelog.isNotEmpty()) Text(release.changelog, style = Type.subheadline, color = colors.secondary)
+                    SolidButton("下载更新", onClick = { links.openUri(release.apkUrl) })
+                    Text("下载完成后点开安装包即可覆盖安装，记录不会丢。", style = Type.caption, color = colors.secondary)
+                }
+            }
             if (!account.usesLocalDevelopment) {
                 SurfaceCard(spacing = 14.dp) {
                     val session = account.session

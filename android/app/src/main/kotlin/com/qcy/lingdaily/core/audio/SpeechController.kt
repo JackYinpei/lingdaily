@@ -1,41 +1,55 @@
 package com.qcy.lingdaily.core.audio
 
+import android.annotation.SuppressLint
 import android.content.Context
-import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
+import android.media.AudioFormat
 import android.media.AudioManager
-import android.os.Build
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
+import android.media.AudioRecord
+import android.media.MediaPlayer
+import android.media.MediaRecorder
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import java.util.Locale
-import java.util.UUID
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.security.MessageDigest
+import kotlin.concurrent.thread
 import kotlin.math.max
-import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
 import com.qcy.lingdaily.core.model.prefix
+import com.qcy.lingdaily.core.network.PracticeNetworkException
+import com.qcy.lingdaily.core.network.PracticeServing
+
+/** A WAV file (RIFF, PCM16 mono) around raw samples: the format the transcription route accepts. */
+fun wavFile(pcm: ByteArray, sampleRate: Int = 16_000): ByteArray {
+    val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+    header.put("RIFF".toByteArray(Charsets.US_ASCII)).putInt(36 + pcm.size).put("WAVEfmt ".toByteArray(Charsets.US_ASCII))
+    header.putInt(16).putShort(1).putShort(1).putInt(sampleRate).putInt(sampleRate * 2).putShort(2).putShort(16)
+    header.put("data".toByteArray(Charsets.US_ASCII)).putInt(pcm.size)
+    return header.array() + pcm
+}
 
 /**
- * Text-mode dictation and read-aloud, using the phone's own speech services. Live calls
- * never go through here: their audio goes straight to and from the model.
+ * Text-mode dictation and read-aloud. Both go through the LingDaily service (Gemini), so
+ * they work the same on every phone, whether or not it has an English speech service:
+ * a line is fetched as MP3 and played; a recording is sent when the learner stops and
+ * comes back as text. Live calls never go through here.
  * One instance serves every screen; all of it runs on the main thread.
  */
 class SpeechController(
     context: Context,
     private val scope: CoroutineScope,
+    private val api: PracticeServing,
     private val slowSpeech: () -> Boolean,
     private val requestMicrophone: suspend () -> Boolean,
     private val pausePodcast: () -> Unit,
@@ -46,6 +60,8 @@ class SpeechController(
         private set
     var isRequestingPermission by mutableStateOf(false)
         private set
+
+    /** The recording has ended and its words are on their way. */
     var isFinalizing by mutableStateOf(false)
         private set
     var transcript by mutableStateOf("")
@@ -53,26 +69,25 @@ class SpeechController(
     var errorMessage by mutableStateOf<String?>(null)
 
     private val context = context.applicationContext
-    private val main = Handler(Looper.getMainLooper())
     private val audioManager = this.context.getSystemService(AudioManager::class.java)
+    private val cache = File(this.context.cacheDir, "speech")
 
     // Dictation
-    private var recognizer: SpeechRecognizer? = null
     private var generation = 0
-    private var committed = ""
     private var limit = 800
+    private var record: AudioRecord? = null
+    private var recorded: ByteArrayOutputStream? = null
     private var timeout: Job? = null
-    private var finishing: CompletableDeferred<Unit>? = null
+    private var finishing: Job? = null
 
     // Read-aloud
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
-    private var pendingSpeech: String? = null
-    private var activeUtterance: String? = null
+    private var speaking = 0
+    private var player: MediaPlayer? = null
     private var focusRequest: AudioFocusRequest? = null
 
     // ---- Dictation ----
 
+    @SuppressLint("MissingPermission")
     suspend fun startRecording(maxCharacters: Int = 800) {
         if (isRecording || isRequestingPermission || isFinalizing) return
         stopAll()
@@ -80,229 +95,184 @@ class SpeechController(
         errorMessage = null
         val current = ++generation
         isRequestingPermission = true
-        try {
-            if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-                errorMessage = "这台设备没有可用的英语听写服务。可以先打字体验完整流程。"
-                return
-            }
-            val allowed = requestMicrophone()
-            if (generation != current) return
-            if (!allowed) {
-                errorMessage = "尚未允许麦克风。可以继续打字，或在系统设置中开启。"
-                return
-            }
+        val allowed = try {
+            requestMicrophone()
         } finally {
             if (generation == current) isRequestingPermission = false
         }
+        if (generation != current) return
+        if (!allowed) {
+            errorMessage = "尚未允许麦克风。可以继续打字，或在系统设置中开启。"
+            return
+        }
         limit = max(1, maxCharacters)
-        committed = ""
         transcript = ""
-        try {
-            // On-device recognition where the phone offers it: the audio then stays on the phone.
-            val created = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
-                SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
-            } else {
-                SpeechRecognizer.createSpeechRecognizer(context)
-            }
-            recognizer = created
-            created.setRecognitionListener(Listener(current))
-            created.startListening(recognitionIntent)
-            isRecording = true
-            timeout = scope.launch {
-                delay(MAX_DICTATION_MS)
-                if (generation == current) finishRecording()
-            }
+        val minimum = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        val created = try {
+            AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, RATE, AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT, max(minimum, RATE)).takeIf { it.state == AudioRecord.STATE_INITIALIZED }
+                ?.also { it.startRecording() }
         } catch (_: RuntimeException) {
-            stopRecording()
+            null
+        }
+        if (created == null || created.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+            created?.release()
             errorMessage = "麦克风暂时无法启动，可以继续打字体验。"
+            return
         }
-    }
-
-    private val recognitionIntent: Intent
-        get() = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
-            .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-            .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-
-    /**
-     * The recogniser ends a result at each pause. While the learner is still dictating it is
-     * started again and its results are appended, so a long answer with pauses is kept whole.
-     */
-    private inner class Listener(private val current: Int) : RecognitionListener {
-        private fun heard(results: Bundle?): String =
-            results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty().trim()
-
-        private fun show(latest: String) {
-            val merged = listOf(committed, latest).filter { it.isNotEmpty() }.joinToString(" ")
-            transcript = merged.prefix(limit)
-            if (merged.length >= limit) {
-                stopRecording()
-                errorMessage = "这一段较长，听写已停止。请检查已保留的内容，发送后再继续。"
-            }
-        }
-
-        private fun continueOrFinish() {
-            if (isFinalizing) {
-                finishing?.complete(Unit)
-            } else if (isRecording) {
-                runCatching { recognizer?.startListening(recognitionIntent) }.onFailure { stopRecording() }
-            }
-        }
-
-        override fun onPartialResults(partialResults: Bundle?) {
-            if (generation == current) show(heard(partialResults))
-        }
-
-        override fun onResults(results: Bundle?) {
-            if (generation != current) return
-            show(heard(results))
-            if (generation != current) return
-            committed = transcript
-            continueOrFinish()
-        }
-
-        override fun onError(error: Int) {
-            if (generation != current) return
-            when (error) {
-                // Nothing was said in this window: keep listening until the learner stops.
-                SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> continueOrFinish()
-                else -> {
-                    val finalizing = isFinalizing
-                    stopRecording()
-                    if (!finalizing && transcript.isEmpty()) {
-                        errorMessage = if (error == ERROR_LANGUAGE_NOT_SUPPORTED || error == ERROR_LANGUAGE_UNAVAILABLE) {
-                            "系统听写还不能识别英语。可以在系统设置里下载英语语音包，或继续打字。"
-                        } else {
-                            "没能听清楚，请重新尝试或打字输入。"
-                        }
-                    }
+        val buffer = ByteArrayOutputStream()
+        record = created
+        recorded = buffer
+        isRecording = true
+        thread(name = "lingdaily-dictation") {
+            val chunk = ByteArray(3200)
+            while (true) {
+                val count = try {
+                    created.read(chunk, 0, chunk.size)
+                } catch (_: RuntimeException) {
+                    -1
                 }
+                if (count <= 0) break
+                synchronized(buffer) { if (buffer.size() < MAX_BYTES) buffer.write(chunk, 0, count) }
             }
         }
-
-        override fun onReadyForSpeech(params: Bundle?) = Unit
-        override fun onBeginningOfSpeech() = Unit
-        override fun onRmsChanged(rmsdB: Float) = Unit
-        override fun onBufferReceived(buffer: ByteArray?) = Unit
-        override fun onEndOfSpeech() = Unit
-        override fun onEvent(eventType: Int, params: Bundle?) = Unit
+        timeout = scope.launch {
+            delay(MAX_DICTATION_MS)
+            if (generation == current) finishRecording()
+        }
     }
 
     /**
-     * Ends dictation gracefully, allowing the recogniser's last result to arrive.
-     * Leaving the page, going to the background and mode changes use `stopAll` at once.
+     * Ends the recording and waits for its words. Leaving the page, going to the
+     * background and mode changes use `stopAll` at once and discard the recording.
      */
     suspend fun finishRecording(): String {
+        // A second caller (the send button after the stop button) waits for the same result.
+        finishing?.let {
+            it.join()
+            return transcript
+        }
         if (!isRecording) return transcript
         val current = generation
         timeout?.cancel()
         timeout = null
+        val pcm = endCapture()
         isRecording = false
+        if (pcm.size < MIN_BYTES) return transcript
         isFinalizing = true
-        val done = CompletableDeferred<Unit>()
-        finishing = done
-        runCatching { recognizer?.stopListening() }
-        withTimeoutOrNull(FINAL_RESULT_MS) { done.await() }
-        val result = transcript
-        if (generation == current) stopRecording()
-        return result
+        val job = scope.launch {
+            try {
+                val text = api.transcribe(withContext(Dispatchers.Default) { wavFile(pcm, RATE) })
+                if (generation != current) return@launch
+                transcript = text.prefix(limit)
+                if (text.isEmpty()) errorMessage = "没能听清楚，请重新尝试或打字输入。"
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (generation == current) errorMessage = (error as? PracticeNetworkException)?.message ?: "没能听清楚，请重新尝试或打字输入。"
+            } finally {
+                if (generation == current) isFinalizing = false
+            }
+        }
+        finishing = job
+        try {
+            job.join()
+        } finally {
+            if (finishing === job) finishing = null
+        }
+        return transcript
+    }
+
+    /** Stops the microphone and returns what it captured. */
+    private fun endCapture(): ByteArray {
+        val active = record
+        val buffer = recorded
+        record = null
+        recorded = null
+        active?.let {
+            runCatching { it.stop() }
+            runCatching { it.release() }
+        }
+        return buffer?.let { synchronized(it) { it.toByteArray() } } ?: ByteArray(0)
     }
 
     fun stopRecording() {
         generation++
         timeout?.cancel()
         timeout = null
-        recognizer?.let {
-            runCatching { it.cancel() }
-            runCatching { it.destroy() }
-        }
-        recognizer = null
+        finishing?.cancel()
+        finishing = null
+        endCapture()
         isRecording = false
         isRequestingPermission = false
         isFinalizing = false
-        finishing?.complete(Unit)
-        finishing = null
     }
 
     // ---- Read-aloud ----
 
-    fun speak(text: String) {
+    /** Reads `text` aloud; `partner` picks the voice that person has in a voice call. */
+    fun speak(text: String, partner: String? = null) {
         stopAll()
         pausePodcast()
         errorMessage = null
-        if (text.isBlank()) return
+        val line = text.trim().prefix(1000)
+        if (line.isEmpty()) return
+        val current = ++speaking
         isSpeaking = true
-        val engine = tts
-        if (engine != null && ttsReady) {
-            speakNow(engine, text)
-            return
-        }
-        pendingSpeech = text
-        if (engine == null) {
-            tts = TextToSpeech(context) { status -> main.post { engineStarted(status) } }
-        }
-    }
-
-    private fun engineStarted(status: Int) {
-        val engine = tts ?: return
-        val language = if (status == TextToSpeech.SUCCESS) engine.setLanguage(Locale.US) else TextToSpeech.LANG_NOT_SUPPORTED
-        if (language == TextToSpeech.LANG_MISSING_DATA || language == TextToSpeech.LANG_NOT_SUPPORTED) {
-            // Try again from scratch next time: the learner may install a voice meanwhile.
-            runCatching { engine.shutdown() }
-            tts = null
-            if (pendingSpeech != null) speechFailed()
-            pendingSpeech = null
-            return
-        }
-        // The best installed US English voice that works offline.
-        runCatching {
-            engine.voices?.filter { it.locale == Locale.US && !it.isNetworkConnectionRequired && "notInstalled" !in it.features }
-                ?.maxByOrNull { it.quality }?.let { engine.voice = it }
-        }
-        engine.setAudioAttributes(AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) = Unit
-            override fun onDone(utteranceId: String?) = finished(utteranceId, failed = false)
-            override fun onStop(utteranceId: String?, interrupted: Boolean) = finished(utteranceId, failed = false)
-            @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) = finished(utteranceId, failed = true)
-            override fun onError(utteranceId: String?, errorCode: Int) = finished(utteranceId, failed = true)
-        })
-        ttsReady = true
-        pendingSpeech?.let { speakNow(engine, it) }
-        pendingSpeech = null
-    }
-
-    private fun speakNow(engine: TextToSpeech, text: String) {
-        val id = UUID.randomUUID().toString()
-        activeUtterance = id
-        engine.setSpeechRate(if (slowSpeech()) 0.72f else 0.92f)
-        requestFocus()
-        if (engine.speak(text.prefix(TextToSpeech.getMaxSpeechInputLength()), TextToSpeech.QUEUE_FLUSH, null, id) != TextToSpeech.SUCCESS) {
-            activeUtterance = null
-            speechFailed()
-        }
-    }
-
-    /** Called on the speech engine's thread. An utterance replaced by a newer one changes nothing. */
-    private fun finished(utteranceId: String?, failed: Boolean) {
-        main.post {
-            if (utteranceId == null || utteranceId != activeUtterance) return@post
-            activeUtterance = null
-            if (failed) speechFailed() else {
+        scope.launch {
+            try {
+                val file = withContext(Dispatchers.IO) { cached(line, partner) }
+                    ?: api.speech(line, partner).let { audio -> withContext(Dispatchers.IO) { store(line, partner, audio) } }
+                if (speaking != current) return@launch
+                play(file, current)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (speaking != current) return@launch
                 isSpeaking = false
-                abandonFocus()
+                // Asking for AI consent already explains itself on its own page.
+                val known = error as? PracticeNetworkException
+                errorMessage = if (known != null && known.kind != PracticeNetworkException.Kind.UNAVAILABLE) known.message
+                else "朗读暂时不可用，文字内容仍可正常查看。"
             }
         }
     }
 
-    private fun speechFailed() {
+    private fun play(file: File, current: Int) {
+        val created = MediaPlayer()
+        try {
+            created.setAudioAttributes(AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            created.setDataSource(file.path)
+            created.setOnCompletionListener { finished(current) }
+            created.setOnErrorListener { _, _, _ ->
+                finished(current, failed = true)
+                true
+            }
+            created.prepare()
+            if (slowSpeech()) created.playbackParams = created.playbackParams.setSpeed(0.8f)
+            requestFocus()
+            player = created
+            created.start()
+        } catch (_: Exception) {
+            created.release()
+            file.delete()
+            finished(current, failed = true)
+        }
+    }
+
+    private fun finished(current: Int, failed: Boolean = false) {
+        if (speaking != current) return
+        releasePlayer()
         isSpeaking = false
-        abandonFocus()
-        errorMessage = "朗读暂时不可用，文字内容仍可正常查看。"
+        if (failed) errorMessage = "朗读暂时不可用，文字内容仍可正常查看。"
+    }
+
+    private fun releasePlayer() {
+        player?.let { runCatching { it.release() } }
+        player = null
+        focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+        focusRequest = null
     }
 
     private fun requestFocus() {
@@ -314,17 +284,30 @@ class SpeechController(
         if (audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) focusRequest = request
     }
 
-    private fun abandonFocus() {
-        focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
-        focusRequest = null
+    // A line already heard (a 词库 word, a scenario's opening) plays again without the network.
+    private fun cacheFile(text: String, partner: String?): File {
+        val digest = MessageDigest.getInstance("SHA-256").digest("${partner.orEmpty()}\u0000$text".toByteArray())
+        return File(cache, digest.joinToString("") { "%02x".format(it) }.take(40) + ".mp3")
+    }
+
+    private fun cached(text: String, partner: String?): File? =
+        cacheFile(text, partner).takeIf { it.isFile && it.length() > 0 }?.also { it.setLastModified(System.currentTimeMillis()) }
+
+    private fun store(text: String, partner: String?, audio: ByteArray): File {
+        cache.mkdirs()
+        val file = cacheFile(text, partner)
+        val temporary = File(cache, "${file.name}.tmp")
+        temporary.writeBytes(audio)
+        if (!temporary.renameTo(file)) temporary.copyTo(file, overwrite = true)
+        // The least recently heard lines make room.
+        cache.listFiles()?.sortedByDescending { it.lastModified() }?.drop(MAX_CACHED)?.forEach { it.delete() }
+        return file
     }
 
     fun stopAll() {
-        activeUtterance = null
-        pendingSpeech = null
-        if (ttsReady) runCatching { tts?.stop() }
+        speaking++
+        releasePlayer()
         isSpeaking = false
-        abandonFocus()
         stopRecording()
     }
 
@@ -336,11 +319,14 @@ class SpeechController(
     }
 
     private companion object {
+        const val RATE = 16_000
         const val MAX_DICTATION_MS = 45_000L
-        const val FINAL_RESULT_MS = 1_000L
 
-        // SpeechRecognizer.ERROR_LANGUAGE_* were added in API 31; the values are fixed.
-        const val ERROR_LANGUAGE_NOT_SUPPORTED = 12
-        const val ERROR_LANGUAGE_UNAVAILABLE = 13
+        /** 45 s of 16 kHz PCM16, under the service's 2 MB limit. */
+        const val MAX_BYTES = RATE * 2 * 45
+
+        /** Less than a third of a second is a mis-tap, not speech. */
+        const val MIN_BYTES = RATE * 2 / 3
+        const val MAX_CACHED = 300
     }
 }

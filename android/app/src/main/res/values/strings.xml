@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">LingDaily</string>
+    <string name="widget_description">继续上次的对话，或开始今天的练习</string>
 </resources>

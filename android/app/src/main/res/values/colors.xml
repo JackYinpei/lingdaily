@@ -3,4 +3,8 @@
     <!-- Only what the system draws before Compose starts. Every other colour is in ui/Brand.kt. -->
     <color name="launcher_background">#F6F2EA</color>
     <color name="window_background">#F6F2EA</color>
+    <color name="widget_surface">#FFFDF8</color>
+    <color name="widget_ink">#1E1C19</color>
+    <color name="widget_secondary">#6F6A62</color>
+    <color name="widget_accent">#C2451E</color>
 </resources>

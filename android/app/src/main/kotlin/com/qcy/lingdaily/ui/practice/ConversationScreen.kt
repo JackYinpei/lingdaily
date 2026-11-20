@@ -129,7 +129,8 @@ fun ConversationScreen(screen: Screen.Conversation) {
     val completed = session.phase == PracticeSession.Phase.COMPLETED
     val showsSummary = completed && !inCall
     val practiceStep = session.suggestedStep ?: session.step
-    val onListen: ((String) -> Unit)? = if (voiceMode) null else speech::speak
+    // Read aloud in the voice this partner has in a call.
+    val onListen: ((String) -> Unit)? = if (voiceMode) null else ({ text -> speech.speak(text, session.scenario.partner) })
 
     fun saveAndStop() {
         if (exit.saved) return
@@ -215,12 +216,13 @@ fun ConversationScreen(screen: Screen.Conversation) {
         }
         onDispose { saveAndStop() }
     }
-    // Practice stops in the background: the microphone is never left open behind another app.
+    // A voice call goes on behind another app (with its notification); everything else stops,
+    // and so does a call that could not get its background permission.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         dictationActive = false
-        live.stop()
+        if (!live.continuesInBackground) live.stop()
         speech.stopAll()
-        model.pause()
+        if (live.state == LivePracticeController.State.DISCONNECTED) model.pause()
         model.keepDraft(draft)
         store.save(model.session)
     }
@@ -247,7 +249,7 @@ fun ConversationScreen(screen: Screen.Conversation) {
         spoken.count = messageCount
         val last = session.messages.lastOrNull()
         if (isNew && !voiceMode && settings.autoReadReplies && last?.role == PracticeMessage.Role.PARTNER
-            && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) speech.speak(last.text)
+            && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) speech.speak(last.text, session.scenario.partner)
     }
 
     ScreenScaffold(

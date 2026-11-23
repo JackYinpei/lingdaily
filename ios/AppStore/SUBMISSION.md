@@ -1,6 +1,19 @@
 # LingDaily App Store 发布记录
 
-## 1.8（构建 21）：2026-11-09
+## 1.9（构建 30）：2026-11-23
+
+**2026-11-23 11:11:21（Asia/Shanghai）本机签名 Release 归档（版本提交 `d20c0fa`）上传成功（`Upload succeeded`）。尚未在 App Store Connect 创建 1.9 商店版本、关联构建和提交审核。1.8（构建 21）上传后没有送审，直接由 1.9 取代。**
+
+- 相比 1.8 新增：首次进入选练习兴趣（目的 + 最怕的场面），首页按兴趣排序并标「适合你」，「换一批」按兴趣出题；准备页「和谁练」，每个内置场景 2–3 个不同口吻、各自音色的人；对方说话更像真人（`dea5880`）。修复 main 上 `LearningView` 编译错误（`58254d2`）。
+- 构建号跳到 30，避开 Xcode Cloud 每次推送 main 自动上传的构建号。
+- 服务端 `d20c0fa` 已部署：线上 `/api/ios/scenarios` 为 v5（含 `cast`/`tags`），`scenario-ideas` 接受 `interests`。
+- 验证：iOS API Vitest 109 项；Swift 120 项（3 个联网测试跳过，0 失败）；ESLint 零 warning；生产构建通过；全量 Vitest 中 5 个网页测试文件因本机缺 `jsdom` 未运行，`tests/podcast/tts-rest.test.js` 并发顺序用例偶发失败（与本次无关）；隔离迁移测试未运行（无 schema 变更）。模拟器验证了首次引导、授权顺序、首页排序与「和谁练」；真实模型文字抽查对方口吻明显不同。
+- 发布包核实为 `com.qcy.LingDaily` / `1.9` / `30`，最低 iOS 15，包含隐私清单，`ITSAppUsesNonExemptEncryption=false`，不包含 `AIConnection.json`。
+- 同一提交的开发签名 Release 包已安装到用户 iPhone 16 Pro（1.9 / 30）；安装时手机锁屏，未自动启动。
+- 未验证：Live 语音里不同角色的语气与音色、真机上的引导与换人交互。
+- 归档及日志：`/tmp/LingDaily-1.9-30.xcarchive`、`/tmp/lingdaily-19-*.log`，不纳入 Git。
+
+## 1.8（构建 21，已上传、未送审，由 1.9 取代）：2026-11-09
 
 **2026-11-09 13:55:55（Asia/Shanghai）本机签名 Release 归档（版本提交 `ebab6b4`）上传成功（`Upload succeeded`）。尚未在 App Store Connect 创建 1.8 商店版本、关联构建和提交审核。1.7（构建 20）上传后没有送审，直接由 1.8 取代。**
 

@@ -3,16 +3,16 @@
   "appleID": "6824758752",
   "bundleID": "com.qcy.LingDaily",
   "teamID": "8AJ84729BZ",
-  "version": "1.8",
-  "build": "21",
+  "version": "1.9",
+  "build": "30",
   "minimumIOS": "15.0",
   "platforms": [
     "iPhone",
     "iPad"
   ],
   "appStoreConnect": "https://appstoreconnect.apple.com/apps/6824758752/distribution",
-  "submissionStatus": "Uploaded; store version 1.8 not yet created or submitted (1.7 build 20 was uploaded but never submitted)",
-  "sourceCommit": "ebab6b4",
+  "submissionStatus": "Uploaded; store version 1.9 not yet created or submitted (1.8 build 21 was uploaded but never submitted)",
+  "sourceCommit": "d20c0fa",
   "category": "Education",
   "ageRating": "18+ (regional variations; legacy OS 17+)",
   "price": "Free",
@@ -37,24 +37,25 @@
   "screenshots": "screenshots/manifest.json",
   "uploadedScreenshotCount": 4,
   "checks": {
-    "swiftExecuted": 113,
+    "swiftExecuted": 120,
     "swiftSkipped": 3,
-    "fullJSTests": 254,
-    "jsSkipped": 1,
+    "iosAPITests": 109,
     "eslint": "Passed with zero warnings",
-    "isolatedMigrations": "Passed",
+    "fullJSTests": "412-413 passed, 1 skipped; 5 web files not run locally (jsdom missing); tts-rest concurrency case flaky",
+    "isolatedMigrations": "Not run (no schema change)",
     "productionBuild": "Passed",
-    "serverDeploy": "22ad43d Build and Deploy succeeded before upload",
-    "deviceArchiveAndDistributionUpload": "Passed (first export failed on a lost connection to App Store Connect; retry succeeded)",
-    "releaseBundle": "1.8 (21), iOS 15+, privacy manifest present, no AIConnection.json, non-exempt encryption false",
-    "simulatorScreens": "Preparation page temperament pad: centre, top-right (light) and lower-right (dark) on iPhone 16 Pro"
+    "serverDeploy": "d20c0fa deployed; production catalog v5 verified before release notes",
+    "deviceArchiveAndDistributionUpload": "Passed",
+    "releaseBundle": "1.9 (30), iOS 15+, privacy manifest present, no AIConnection.json, non-exempt encryption false",
+    "deviceInstall": "Development-signed Release 1.9 (30) installed on the user's iPhone 16 Pro",
+    "simulatorScreens": "First-run interests, consent after it, home ranking with 适合你, 和谁练 cast picker"
   },
   "notes": [
-    "Build 1.8 (21) uploaded from the local Mac on 2026-11-09; App Store Connect version creation, build selection and submission are still manual.",
-    "1.8 replaces the 1.7 attitude picker with a two-axis temperament pad (22ad43d) and also carries everything from 1.7: per-sentence review and partner personality.",
-    "1.7 (20) was uploaded but not submitted; submit 1.8 instead.",
-    "Not verified: real touch dragging, scroll/gesture conflict and haptics on a device; Live voice emotion on a real device.",
-    "Build numbers 20/21 skip ahead of Xcode Cloud, which keeps uploading its own builds on every main push.",
+    "Build 1.9 (30) uploaded from the local Mac on 2026-11-23; App Store Connect version creation, build selection and submission are still manual.",
+    "1.9 adds first-run interests, interest-ranked home, 和谁练 cast swapping and partner VOICE rules (dea5880); it carries everything from 1.8.",
+    "1.8 (21) was uploaded but not submitted; submit 1.9 instead.",
+    "Not verified: Live voice tone per character on a device.",
+    "Build 30 skips ahead of Xcode Cloud, which keeps uploading its own builds on every main push.",
     "Mac and Apple Vision Pro compatibility distribution remain disabled."
   ],
   "xcodeCloud": {
@@ -80,12 +81,21 @@
     "sourceCommit": "3dfefa7",
     "status": "Ready for Distribution (verified 2026-11-07)"
   },
-  "uploadedAt": "2026-11-09T13:55:55+08:00",
-  "skippedRelease": {
-    "version": "1.7",
-    "build": "20",
-    "sourceCommit": "9991a15",
-    "uploadedAt": "2026-11-09T11:19:44+08:00",
-    "status": "Uploaded, never submitted"
-  }
+  "uploadedAt": "2026-11-23T11:11:21+08:00",
+  "skippedRelease": [
+    {
+      "version": "1.7",
+      "build": "20",
+      "sourceCommit": "9991a15",
+      "uploadedAt": "2026-11-09T11:19:44+08:00",
+      "status": "Uploaded, never submitted"
+    },
+    {
+      "version": "1.8",
+      "build": "21",
+      "sourceCommit": "ebab6b4",
+      "uploadedAt": "2026-11-09T13:55:55+08:00",
+      "status": "Uploaded, never submitted"
+    }
+  ]
 }

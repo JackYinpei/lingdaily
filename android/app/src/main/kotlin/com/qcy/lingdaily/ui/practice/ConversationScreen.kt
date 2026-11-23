@@ -84,7 +84,6 @@ import com.qcy.lingdaily.ui.ReadableColumn
 import com.qcy.lingdaily.ui.Screen
 import com.qcy.lingdaily.ui.ScreenScaffold
 import com.qcy.lingdaily.ui.SolidButton
-import com.qcy.lingdaily.ui.StepProgress
 import com.qcy.lingdaily.ui.SurfaceCard
 import com.qcy.lingdaily.ui.TextAction
 import com.qcy.lingdaily.ui.Type
@@ -255,7 +254,7 @@ fun ConversationScreen(screen: Screen.Conversation) {
     ScreenScaffold(
         title = "",
         onBack = ::requestClose,
-        titleContent = if (completed) null else ({
+        titleContent = if (showsSummary) null else ({
             Row(Modifier.semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Avatar(session.scenario, 28.dp)
                 Column {
@@ -277,13 +276,8 @@ fun ConversationScreen(screen: Screen.Conversation) {
             }
         },
         header = {
-            if (!completed) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${session.stepIndex + 1}/${session.scenario.steps.size} · ${session.step.goal}", style = Type.caption.medium,
-                        color = colors.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    Spacer(Modifier.width(8.dp))
-                    StepProgress(session.stepIndex, session.scenario.steps.size, Modifier.width(96.dp))
-                }
+            if (!showsSummary) {
+                TaskProgress(session)
                 Hairline()
             }
         },
@@ -448,6 +442,39 @@ fun ConversationScreen(screen: Screen.Conversation) {
             },
             dismissButton = { TextButton(onClick = { showsLeaveConfirmation = false }) { Text("继续练习", color = colors.ink) } },
         )
+    }
+}
+
+/**
+ * 任务进度: one mark per task (done, current, to come) and what the current one asks for.
+ * Once all are done in a call, the conversation goes on until the learner hangs up.
+ */
+@Composable
+private fun TaskProgress(session: PracticeSession) {
+    val colors = Brand.colors
+    val total = session.scenario.steps.size
+    val done = session.completedSteps
+    val allDone = session.phase == PracticeSession.Phase.COMPLETED
+    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).testTag("task-progress")
+        .semantics(mergeDescendants = true) { contentDescription = if (allDone) "任务全部完成" else "任务 ${session.stepIndex + 1}/$total：${session.step.goal}" },
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (index in 0 until total) {
+            val finished = index < done
+            val current = !finished && index == session.stepIndex
+            Box(
+                Modifier.size(20.dp).clip(CircleShape)
+                    .background(if (finished) colors.ink else Color.Transparent)
+                    .border(1.5.dp, if (finished) colors.ink else if (current) colors.accent else colors.line, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (finished) Icon(AppIcons.Check, null, Modifier.size(13.dp), tint = colors.onInk)
+                else Text("${index + 1}", style = Type.caption2, color = if (current) colors.accent else colors.secondary)
+            }
+        }
+        Spacer(Modifier.width(4.dp))
+        Text(if (allDone) "任务都完成了，想聊就接着聊，挂断看总结" else session.step.goal,
+            style = Type.caption.medium, color = if (allDone) colors.ink else colors.secondary,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
     }
 }
 

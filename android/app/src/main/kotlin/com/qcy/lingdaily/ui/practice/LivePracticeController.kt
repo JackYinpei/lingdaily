@@ -79,7 +79,6 @@ class LivePracticeController(private val app: AppContainer) {
     private var model: PracticeViewModel? = null
     private var connectJob: Job? = null
     private var pendingSave: Job? = null
-    private var completionJob: Job? = null
     private var stuckJob: Job? = null
     private var turnFinished = false
 
@@ -122,8 +121,6 @@ class LivePracticeController(private val app: AppContainer) {
         transcript.reset()
         pendingTools.reset()
         cancelledTools.clear()
-        completionJob?.cancel()
-        completionJob = null
         turnFinished = false
         errorMessage = null
         muted = false
@@ -143,10 +140,7 @@ class LivePracticeController(private val app: AppContainer) {
         audio.onPlaying = { isPlaying, epoch ->
             if (generations.accepts(current) && audio.acceptsPlayback(epoch) && state != State.DISCONNECTED) {
                 playing = isPlaying
-                if (!isPlaying) {
-                    finishIfReady()
-                    watchForStuck()
-                }
+                if (!isPlaying) watchForStuck()
             }
         }
         audio.onRouteChanged = { speaker -> if (generations.accepts(current)) usesSpeaker = speaker }
@@ -209,8 +203,6 @@ class LivePracticeController(private val app: AppContainer) {
             }
             is LiveEvent.Audio -> {
                 if (event.pcm.isEmpty() || discardingPartnerTurn) return
-                completionJob?.cancel()
-                completionJob = null
                 turnFinished = false
                 audio.play(event.pcm)
                 clearSuggestion()
@@ -233,7 +225,6 @@ class LivePracticeController(private val app: AppContainer) {
                     if (event.role == PracticeMessage.Role.USER) clearSuggestion()
                     model.updateLive(pendingTools.flush(session))
                     if (event.finished) scheduleSave()
-                    finishIfReady()
                 } catch (_: LiveProtocolException) {
                     stop("这次对话内容已达到上限，请结束后开始新练习。")
                 }
@@ -245,7 +236,6 @@ class LivePracticeController(private val app: AppContainer) {
                 model.updateLive(pendingTools.flush(model.session))
                 scheduleSave()
                 prefetchSuggestion()
-                finishIfReady()
             }
             is LiveEvent.Tool -> {
                 // The acknowledgement was sent by the protocol client first. The work is
@@ -262,7 +252,6 @@ class LivePracticeController(private val app: AppContainer) {
                         pendingSave = null
                         store.save(session, collecting = collected)
                     }
-                    finishIfReady()
                 }
             }
             is LiveEvent.CancelledTools -> {
@@ -286,24 +275,6 @@ class LivePracticeController(private val app: AppContainer) {
             if (!generations.accepts(current)) return@launch
             pendingSave = null
             model?.let { store.save(it.session) }
-        }
-    }
-
-    private fun finishIfReady() {
-        if (model?.session?.phase != PracticeSession.Phase.COMPLETED || !turnFinished || audio.hasOutput) return
-        // Stop uploading immediately but allow late final subtitles/tools to
-        // settle before closing. A final task tool can arrive after turnComplete.
-        val current = generations.connection
-        if (!muted) {
-            muted = true
-            audio.setMuted(true)
-            client.endInput(current)
-        }
-        completionJob?.cancel()
-        completionJob = scope.launch {
-            delay(600)
-            if (generations.accepts(current) && model?.session?.phase == PracticeSession.Phase.COMPLETED
-                && turnFinished && !audio.hasOutput) stop()
         }
     }
 
@@ -433,8 +404,6 @@ class LivePracticeController(private val app: AppContainer) {
     fun stop(message: String? = null) {
         if (state == State.DISCONNECTED) return
         val closing = generations.connection
-        completionJob?.cancel()
-        completionJob = null
         pendingSave?.cancel()
         pendingSave = null
         generations.reconnect()

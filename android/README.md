@@ -59,10 +59,10 @@ App 启动时读取 `https://deploy.shiying.sh.cn/lingdaily/latest.json`，版�
 ```bash
 # 1. 改 app/build.gradle.kts 的 versionCode（+1）和 versionName
 ./gradlew :app:assembleRelease
-COS_ENV_FILE=/path/to/.env python3 tools/upload_release_to_cos.py --changelog "这一版改了什么"
+python3 tools/upload_release_to_cos.py --changelog "这一版改了什么"
 ```
 
-脚本把 APK 和 `latest.json` 传到腾讯云 COS 的 `lingdaily/` 前缀下；密钥从环境变量或 `COS_ENV_FILE` 指向的文件读取（`COS_SECRET_ID / COS_SECRET_KEY / COS_BUCKET / COS_REGION`），不进 Git。
+脚本把 APK 和 `latest.json` 传到腾讯云 COS 的 `lingdaily/` 前缀下；密钥默认读本机的 `tools/.env`（已忽略，0600），也可用环境变量或 `COS_ENV_FILE` 指定（`COS_SECRET_ID / COS_SECRET_KEY / COS_BUCKET / COS_REGION`），不进 Git。凭据来源、核对方法和整套发版顺序见 [docs/release.md](../docs/release.md)。
 
 ## 账号
 

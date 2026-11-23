@@ -480,6 +480,8 @@ npm run check
 - 任何 schema/RLS/RPC/SQL 变更：`npm run test:migrations`，并更新生产 fixture、
   preflight 和 postflight。
 
+完整发版顺序（服务端 → iOS 上传/装机 → Android COS 更新）与凭据位置见 `docs/release.md`。
+
 GitHub PR 和 main push 都会先跑同类质量门禁。main 通过后构建
 `ghcr.io/jackyinpei/lingdaily:latest`，再 SSH 到服务器执行 compose pull/up。CI/CD
 不会自动迁移 Supabase。

@@ -374,7 +374,16 @@ class LiveTranscriptReducer {
  * it but not yet heard, so both the hand-off backlog and the player backlog are bounded.
  * Not thread-safe: the audio controller guards it with its own lock.
  */
-class LivePlaybackBuffer(private val maxBytes: Int = 480_000, private val maxChunks: Int = 256) {
+class LivePlaybackBuffer(private val maxBytes: Int = MAX_BYTES, private val maxChunks: Int = MAX_CHUNKS) {
+    companion object {
+        /**
+         * Two minutes of 24 kHz speech. The model streams a reply faster than it plays, so a
+         * long answer arrives in a burst; a smaller bound used to drop the end of it.
+         */
+        const val MAX_BYTES = 24_000 * 2 * 120
+        const val MAX_CHUNKS = 8_192
+    }
+
     class Chunk(val data: ByteArray, val generation: Long)
 
     var generation = 0L

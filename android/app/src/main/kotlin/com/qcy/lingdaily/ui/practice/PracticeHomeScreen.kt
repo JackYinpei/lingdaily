@@ -41,12 +41,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 import com.qcy.lingdaily.core.model.LearnerInterests
 import com.qcy.lingdaily.core.model.PracticeScenario
 import com.qcy.lingdaily.core.model.PracticeSession
-import com.qcy.lingdaily.core.model.PracticeStats
 import com.qcy.lingdaily.ui.AppIcons
 import com.qcy.lingdaily.ui.Avatar
 import com.qcy.lingdaily.ui.Brand
@@ -62,7 +59,6 @@ import com.qcy.lingdaily.ui.medium
 import com.qcy.lingdaily.ui.semibold
 import com.qcy.lingdaily.ui.settings.SignInButton
 
-private val dayFormatter = DateTimeFormatter.ofPattern("M月d日 EEEE", Locale.CHINA)
 
 private fun greeting(hour: Int = LocalTime.now().hour): String = when (hour) {
     in 5..10 -> "早上好"
@@ -120,7 +116,6 @@ fun PracticeHomeScreen() {
     // A category that no longer has scenarios falls back to showing everything.
     val activeCategory = settings.homeCategory.takeIf { it in categories }
     fun shows(scenario: PracticeScenario) = activeCategory == null || scenario.category == activeCategory
-    val recent = remember(archive.sessions) { PracticeStats.recent(archive.sessions) }
 
     LaunchedEffect(account.canPractice) {
         app.catalog.refresh()
@@ -141,10 +136,6 @@ fun PracticeHomeScreen() {
     ReadableColumn(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(28.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                val date = dayFormatter.format(today)
-                // Date, plus a factual line about the last seven days once there is something to count.
-                Text(if (recent.turns > 0) "$date · 近 7 天练了 ${recent.activeDays} 天，开口 ${recent.turns} 次" else date,
-                    style = Type.subheadline, color = Brand.colors.secondary)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(greeting(), style = Type.largeTitle, color = Brand.colors.ink, modifier = Modifier.weight(1f))
                     Spacer(Modifier.width(12.dp))

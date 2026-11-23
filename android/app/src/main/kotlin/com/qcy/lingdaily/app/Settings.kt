@@ -53,7 +53,6 @@ class Settings(private val preferences: SharedPreferences) {
 
     /** Home filter; "" shows every category. */
     var homeCategory by string("homeScenarioCategory", "")
-    var speakerTipShown by boolean("speakerTipShown", false)
     /** The newest version already announced in the update dialog; it is not shown twice. */
     var updatePromptedVersion by int("updatePromptedVersion", 0)
 

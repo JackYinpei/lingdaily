@@ -61,7 +61,8 @@ class LiveEchoGate {
     }
 
     companion object {
-        const val TAIL_MS = 350L
+        /** Room reverberation and the microphone's own latency after the last presented frame. */
+        const val TAIL_MS = 500L
     }
 }
 

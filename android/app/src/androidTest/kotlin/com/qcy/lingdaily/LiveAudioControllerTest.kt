@@ -14,11 +14,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import com.qcy.lingdaily.core.audio.LiveAudioController
+import com.qcy.lingdaily.core.realtime.LiveEchoGate
 
 /**
  * The call's audio on a real device or emulator: the partner's reply is reported as
@@ -121,14 +123,42 @@ class LiveAudioControllerTest {
         assertTrue("and capture resumes", waitUntil(3000) { audio.takeFrame() != null })
 
         // On the phone's own speaker, the microphone is silenced while the partner is audible.
+        // Frames recorded before the reply are the learner's and are kept as they were.
         if (audio.usesSpeaker) {
+            generateSequence { audio.takeFrame() }.toList()
             onMain { reply(1000).forEach(audio::play) }
             assertTrue(waitUntil(1000) { playing.firstOrNull()?.first == true })
             Thread.sleep(200)
-            val during = generateSequence { audio.takeFrame() }.toList()
+            val during = generateSequence { audio.takeFrame() }.toList().drop(3)
             assertTrue(during.isNotEmpty())
             assertTrue("silence keeps the stream's timing", during.all { frame -> frame.size == 640 && frame.all { it == 0.toByte() } })
         }
+        assertNull(stopped.get())
+    }
+
+    /**
+     * The uplink stalls while the partner speaks on the loudspeaker: nothing is taken for
+     * upload until the reply and the echo tail are over. Frames recorded during the reply
+     * must still be silence then; judged at upload time they used to pass as the learner.
+     */
+    @Test
+    fun framesRecordedWhileThePartnerIsAudibleStaySilentWhenUploadedLater() {
+        onMain { audio.startCapture() }
+        assumeTrue("only the loudspeaker has an echo path", audio.usesSpeaker)
+        assertTrue("capture is running", waitUntil(3000) { audio.takeFrame() != null })
+        generateSequence { audio.takeFrame() }.toList()
+
+        onMain { reply(800).forEach(audio::play) }
+        assertTrue(waitUntil(1000) { playing.firstOrNull()?.first == true })
+        assertTrue(waitUntil(4000) { playing.lastOrNull()?.first == false })
+        Thread.sleep(LiveEchoGate.TAIL_MS + 300)
+
+        val backlog = generateSequence { audio.takeFrame() }.toList()
+        assertTrue("the backlog was kept (${backlog.size} frames)", backlog.size >= 40)
+        // The middle of the reply, clear of the frames around play() and the tail.
+        val duringReply = backlog.drop(5).take(30)
+        assertTrue("echo frames are silence even after the partner finished",
+            duringReply.all { frame -> frame.all { it == 0.toByte() } })
         assertNull(stopped.get())
     }
 }

@@ -136,9 +136,6 @@ class LivePracticeController(private val app: AppContainer) {
         audio.onStopRequired = { reason ->
             if (generations.accepts(current) && state != State.DISCONNECTED) stop(reason.message)
         }
-        audio.onBufferPressure = {
-            if (generations.accepts(current) && state == State.ACTIVE) errorMessage = "音频缓冲繁忙，部分声音可能略过；通话会继续。"
-        }
         audio.onPlaying = { isPlaying, epoch ->
             if (generations.accepts(current) && audio.acceptsPlayback(epoch) && state != State.DISCONNECTED) {
                 playing = isPlaying

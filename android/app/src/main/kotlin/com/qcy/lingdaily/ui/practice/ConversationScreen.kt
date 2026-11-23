@@ -303,8 +303,7 @@ fun ConversationScreen(screen: Screen.Conversation) {
         bottomBar = {
             when {
                 showsSummary -> SummaryActions(onRestart = ::restart, onClose = ::leavePractice)
-                voiceMode -> VoiceControls(session, live, speakerTipShown = settings.speakerTipShown,
-                    onSpeakerTipSeen = { settings.speakerTipShown = true },
+                voiceMode -> VoiceControls(session, live,
                     onConnect = {
                         dictationActive = false
                         speech.stopAll()
@@ -578,20 +577,11 @@ private fun AnswerField(value: String, onValueChange: (String) -> Unit, placehol
 }
 
 @Composable
-private fun VoiceControls(session: PracticeSession, live: LivePracticeController, speakerTipShown: Boolean,
-                          onSpeakerTipSeen: () -> Unit, onConnect: () -> Unit) {
+private fun VoiceControls(session: PracticeSession, live: LivePracticeController, onConnect: () -> Unit) {
     val colors = Brand.colors
     val active = live.state == LivePracticeController.State.ACTIVE
     Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         live.suggestion?.let { LiveSuggestionCard(it, session.scenario.partner, live::dismissSuggestion) }
-        if (active && live.usesSpeaker && !speakerTipShown) {
-            // Without this the learner talks over the partner, hears no reaction and thinks the call is broken.
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(start = 14.dp).testTag("speaker-tip"),
-                verticalAlignment = Alignment.CenterVertically) {
-                Text("外放时，想插话请先点「打断」；戴耳机可以直接说。", style = Type.caption, color = colors.ink, modifier = Modifier.weight(1f))
-                IconAction(AppIcons.Close, "知道了", iconSize = 16.dp, onClick = onSpeakerTipSeen)
-            }
-        }
         Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)) {
             if (live.status.isNotEmpty()) {
                 Text(live.status, style = Type.caption.medium, color = colors.secondary, modifier = Modifier.testTag("live-status"))
@@ -600,10 +590,7 @@ private fun VoiceControls(session: PracticeSession, live: LivePracticeController
                 // On the loudspeaker this is how to talk over the partner without echo.
                 Box(
                     Modifier.heightIn(min = 44.dp).clip(CircleShape).border(1.5.dp, colors.ink, CircleShape)
-                        .clickable(role = Role.Button) {
-                            onSpeakerTipSeen()
-                            live.interruptPartner()
-                        }.padding(horizontal = 16.dp).testTag("live-interrupt"),
+                        .clickable(role = Role.Button) { live.interruptPartner() }.padding(horizontal = 16.dp).testTag("live-interrupt"),
                     contentAlignment = Alignment.Center,
                 ) { Text("打断", style = Type.subheadline.semibold, color = colors.ink) }
             } else if (active && live.suggestion == null) {

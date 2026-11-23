@@ -9,6 +9,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
+import android.media.AudioTimestamp
 import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
@@ -33,8 +34,13 @@ import com.qcy.lingdaily.core.realtime.LiveProtocolException
  *
  * One thread reads the microphone and one feeds the speaker; neither does JSON, Base64,
  * network or file work. The speaker thread never lets the track run dry (it writes silence
- * between replies), so the track's played-frame counter is a reliable clock for "the
- * partner has finished speaking". Pressure drops bounded audio and never hangs up the call.
+ * between replies), so the track's presentation position is a reliable clock for "the
+ * partner has finished speaking".
+ *
+ * Echo on the loudspeaker: whether a microphone frame may carry the partner's voice is
+ * decided the moment it is read, never when it is uploaded. A frame waits in the upload
+ * queue while the network is slow; judged at upload, a frame recorded mid-reply would pass
+ * once the partner had finished and reach the model as the learner speaking.
  * Public methods are called on the main thread; callbacks are delivered there.
  */
 class LiveAudioController(context: Context) {
@@ -46,7 +52,6 @@ class LiveAudioController(context: Context) {
     }
 
     var onStopRequired: ((StopReason) -> Unit)? = null
-    var onBufferPressure: (() -> Unit)? = null
     var onPlaying: ((Boolean, Long) -> Unit)? = null
 
     /** The output moved between the phone's own speaker and a headset. */
@@ -58,7 +63,7 @@ class LiveAudioController(context: Context) {
 
     // Guarded by `lock`.
     private val playback = LivePlaybackBuffer()
-    private val input = LiveInputBuffer()
+    private val input = LiveInputBuffer(INPUT_BACKLOG_FRAMES)
     private var echoGate = LiveEchoGate()
     private var speakerOutput = true
     private var flushRequested = false
@@ -189,13 +194,8 @@ class LiveAudioController(context: Context) {
         captureThread = thread(name = "lingdaily-live-capture") { captureLoop(created, id) }
     }
 
-    /** The next 20 ms microphone frame for upload, or null when none is waiting. */
-    fun takeFrame(): ByteArray? = synchronized(lock) {
-        val frame = input.take() ?: return null
-        val suppress = echoGate.suppressesMicrophone(playback.reservedBytes > 0, speakerOutput, SystemClock.elapsedRealtime())
-        // Silence keeps the stream timing, so Gemini sees the learner as quiet rather than gone.
-        if (suppress) ByteArray(frame.size) else frame
-    }
+    /** The next 20 ms microphone frame for upload (already echo-gated), or null when none is waiting. */
+    fun takeFrame(): ByteArray? = synchronized(lock) { input.take() }
 
     /** 打断: stop the partner and give the learner an open microphone until the partner's next reply. */
     fun learnerTakesFloor() {
@@ -210,12 +210,12 @@ class LiveAudioController(context: Context) {
 
     fun play(pcm: ByteArray) {
         if (pcm.isEmpty()) return
-        val queued = synchronized(lock) {
+        synchronized(lock) {
             if (playback.reservedBytes == 0) echoGate.partnerStartedReply()
-            val epoch = playback.reserve(pcm.size)
-            epoch != null && playback.enqueue(pcm, epoch)
+            // Holds minutes of speech, far more than any reply; only a runaway stream is cut.
+            val epoch = playback.reserve(pcm.size) ?: return
+            playback.enqueue(pcm, epoch)
         }
-        if (!queued) onBufferPressure?.invoke()
     }
 
     fun interruptPlayback() {
@@ -319,6 +319,17 @@ class LiveAudioController(context: Context) {
         var playingEpoch: Long? = null
         var lastPlayed = -1L
         var lastProgressAt = SystemClock.elapsedRealtime()
+        val timestamp = AudioTimestamp()
+
+        // The head position counts frames the mixer has taken, which leave the speaker only
+        // after the output latency. The timestamp says when a frame is actually presented;
+        // the later of the two keeps the echo gate closed until the partner is really silent.
+        fun presented(head: Long): Long {
+            if (!track.getTimestamp(timestamp)) return head
+            val sinceNs = System.nanoTime() - timestamp.nanoTime
+            if (sinceNs < 0 || timestamp.framePosition < 0) return head
+            return min(head, timestamp.framePosition + sinceNs * OUTPUT_RATE / 1_000_000_000L)
+        }
 
         // A streaming track only starts once its buffer has been filled; a short reply
         // would otherwise sit unheard. One buffer of silence starts it for good.
@@ -380,10 +391,11 @@ class LiveAudioController(context: Context) {
                 } else {
                     Thread.sleep(4)
                 }
-                played = track.playbackHeadPosition.toLong() and 0xFFFFFFFFL
+                val head = track.playbackHeadPosition.toLong() and 0xFFFFFFFFL
+                played = presented(head)
                 val now = SystemClock.elapsedRealtime()
-                if (played != lastPlayed) {
-                    lastPlayed = played
+                if (head != lastPlayed) {
+                    lastPlayed = head
                     lastProgressAt = now
                 } else if (now - lastProgressAt > STALL_MS) {
                     // Never leave "the partner is speaking" (and the echo gate) stuck on a device
@@ -425,13 +437,13 @@ class LiveAudioController(context: Context) {
                     continue
                 }
                 val frames = framer.append(buffer.copyOf(count))
-                val pressure = synchronized(lock) {
-                    if (session != id || muted) return@synchronized false
-                    val dropped = input.droppedFrames
-                    input.append(frames)
-                    input.droppedFrames > dropped
+                synchronized(lock) {
+                    if (session != id || muted) return@synchronized
+                    // Decided now, while these frames are fresh: see the class comment.
+                    val echo = echoGate.suppressesMicrophone(playback.reservedBytes > 0, speakerOutput, SystemClock.elapsedRealtime())
+                    // Silence keeps the stream timing, so the model hears the learner as quiet rather than gone.
+                    input.append(if (echo) frames.map { ByteArray(it.size) } else frames)
                 }
-                if (pressure) main.post { onBufferPressure?.invoke() }
             }
         } catch (_: LiveProtocolException) {
             requestStop(StopReason.CAPTURE, id)
@@ -460,6 +472,9 @@ class LiveAudioController(context: Context) {
 
         /** Silence kept queued between replies, so the track never runs dry: 40 ms. */
         const val IDLE_FRAMES = OUTPUT_RATE / 25
+
+        /** Five seconds of microphone audio may wait for a slow uplink before the oldest is dropped. */
+        const val INPUT_BACKLOG_FRAMES = 250
 
         /** Played-frame counter not moving for this long means the device stopped reporting. */
         const val STALL_MS = 1_000L

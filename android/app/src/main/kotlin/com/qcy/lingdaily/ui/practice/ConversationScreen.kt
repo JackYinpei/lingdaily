@@ -68,6 +68,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlin.math.max
 import kotlinx.coroutines.launch
+import com.qcy.lingdaily.core.model.PracticeLevel
 import com.qcy.lingdaily.core.model.PracticeMessage
 import com.qcy.lingdaily.core.model.PracticeSession
 import com.qcy.lingdaily.core.model.ReviewPicker
@@ -239,6 +240,24 @@ fun ConversationScreen(screen: Screen.Conversation) {
     LaunchedEffect(speech.transcript) {
         val text = speech.transcript
         if (dictationActive && !voiceMode && text.isNotEmpty()) draft = (dictationPrefix + text).prefix(800)
+    }
+    // 轻松: each partner line shows its Chinese underneath. Text replies carry their gloss
+    // already; a call's subtitle is translated once the partner's turn is complete. Lines
+    // from before this visit stay as they were (a tap still translates them).
+    val earlierLines = remember { session.messages.map { it.id }.toSet() }
+    val glossesLines = session.practiceLevel == PracticeLevel.EASY
+    val lastPartnerText = session.messages.lastOrNull()?.takeIf { it.role == PracticeMessage.Role.PARTNER }?.text
+    LaunchedEffect(glossesLines, session.messages.size, lastPartnerText, live.turnFinished, inCall) {
+        if (!glossesLines) return@LaunchedEffect
+        val last = session.messages.lastOrNull()
+        for (message in session.messages) {
+            if (message.role != PracticeMessage.Role.PARTNER || message.text.isBlank()) continue
+            val stored = translationOf(message, session.scenario) != null
+            if (!stored && message.id in earlierLines) continue
+            // A subtitle still being spoken would be translated half-way.
+            if (!stored && message.id == last?.id && inCall && !live.turnFinished) continue
+            translations.showAutomatically(message, session.scenario) { model.applyTranslation(it, message.id) }
+        }
     }
     // Text mode reads each new partner line aloud when the learner wants that.
     val messageCount = session.messages.size

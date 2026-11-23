@@ -50,6 +50,9 @@ class LivePracticeController(private val app: AppContainer) {
         private set
     var playing by mutableStateOf(false)
         private set
+    /** The partner's current turn has been fully transcribed (its subtitle will not change). */
+    var turnFinished by mutableStateOf(false)
+        private set
     var errorMessage by mutableStateOf<String?>(null)
         private set
     var hasStarted by mutableStateOf(false)
@@ -80,7 +83,6 @@ class LivePracticeController(private val app: AppContainer) {
     private var connectJob: Job? = null
     private var pendingSave: Job? = null
     private var stuckJob: Job? = null
-    private var turnFinished = false
 
     /** Idea generated in the background as soon as the partner finishes a line. */
     private var prefetched: Pair<UUID?, Deferred<LiveSuggestion?>>? = null

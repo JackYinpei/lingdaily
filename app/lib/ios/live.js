@@ -91,7 +91,7 @@ export function voiceForPartner(partner, override = process.env.GEMINI_LIVE_VOIC
 }
 
 const LIVE_LEVEL = Object.freeze({
-  easy: 'Use very simple A1–A2 English: sentences of at most 12 words, common everyday words, no idioms, one simple point or question at a time. Speak slowly and clearly. Keep your character\'s attitude, but make every line easy to understand and react to; when the learner struggles, offer a simple either-or choice or one short, clear claim.',
+  easy: 'Use very simple A1–A2 English: sentences of at most 12 words, common everyday words, no idioms, one simple point or question at a time. Speak slowly and clearly. Keep your character\'s attitude, but make every line easy to understand and react to; when the learner struggles, offer a simple either-or choice or one short, clear claim. If the learner says a word or phrase in Chinese, pick up its English in passing within your reply (e.g. "A connection? Sure, ...") and carry on; never speak Chinese yourself.',
   standard: 'Use short, natural A2–B1 English, one question at a time.',
   challenge: 'Use natural B2 English at a normal pace with common idioms, one question at a time. Ask follow-up questions that need a reason or a detail, and at one natural point add ONE realistic complication from the setting (a constraint, a misunderstanding or an unavailable option) for the learner to handle.',
 })

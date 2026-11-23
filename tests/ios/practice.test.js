@@ -326,6 +326,7 @@ describe('speaking level and review items', () => {
     const easy = practiceInstruction({ level: 'easy' })
     expect(easy).toContain('A1-A2')
     expect(easy).toContain('under 30 English words')
+    expect(easy).toContain('pick up its English in passing')
     expect(easy).not.toContain('A2-B1 level')
     expect(practiceInstruction({ level: 'challenge' })).toContain('ONE realistic complication')
     expect(practiceInstruction({ reviewItems: review })).toContain('REVIEW:')

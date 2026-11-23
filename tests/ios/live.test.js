@@ -181,6 +181,9 @@ describe('iOS Live development token', () => {
     const easy = await instruction({ ...body(), level: 'easy' })
     expect(easy).toContain('A1–A2')
     expect(easy).not.toContain('A2–B1')
+    // 轻松: a Chinese word from the learner is picked up in English, never answered in Chinese.
+    expect(easy).toContain('pick up its English in passing')
+    expect(await instruction(body())).not.toContain('pick up its English in passing')
     expect(await instruction({ ...body(), level: 'challenge' })).toContain('ONE realistic complication')
     const review = await instruction({ ...body(), reviewItems: [{ text: 'availability', meaning: '空闲时间' }] })
     expect(review).toContain('REVIEW:')

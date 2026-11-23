@@ -77,6 +77,17 @@ class BubbleTranslations(private val api: PracticeServing, private val scope: Co
         else -> TranslationState.IDLE
     }
 
+    private val autoShown = mutableSetOf<UUID>()
+
+    /**
+     * 轻松 difficulty: opens the gloss of a finished partner line without a tap, once per
+     * line, so a gloss the learner closed stays closed.
+     */
+    fun showAutomatically(message: PracticeMessage, scenario: PracticeScenario, save: (String) -> Unit) {
+        if (message.id in shown || !autoShown.add(message.id)) return
+        toggle(message, scenario, save)
+    }
+
     fun toggle(message: PracticeMessage, scenario: PracticeScenario, save: (String) -> Unit) {
         val id = message.id
         if (id in shown) {

@@ -30,7 +30,12 @@ data class AccountSession(
 data class PasswordCredentials(val email: String, val password: String)
 
 @Serializable
-data class PhoneCredentials(val phone: String, val password: String)
+data class PhoneCredentials(
+    val phone: String,
+    val password: String,
+    /** Sign-in only: a number without an account is registered with this password. */
+    val autoRegister: Boolean? = null,
+)
 
 /** `+8613800138000` → `138 0013 8000`; other countries keep their code. */
 fun formatPhone(phone: String): String {

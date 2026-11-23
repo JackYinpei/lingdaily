@@ -34,11 +34,9 @@ class AccountStore(
 
     suspend fun signIn(email: String, password: String): Boolean = attempt { api.signIn(email, password) } != null
 
-    suspend fun signInWithPhone(phone: String, password: String): Boolean =
-        attempt { api.signInWithPhone(phone, password) } != null
-
-    suspend fun registerWithPhone(phone: String, password: String): Boolean =
-        attempt { api.registerWithPhone(phone, password) } != null
+    /** Phone sign-in; with `autoRegister` a number that has no account yet is registered. */
+    suspend fun signInWithPhone(phone: String, password: String, autoRegister: Boolean): Boolean =
+        attempt { api.signInWithPhone(phone, password, autoRegister) } != null
 
     suspend fun register(email: String, password: String): Registration {
         var confirm = false

@@ -153,16 +153,9 @@ class PracticeApiClient(
         return response.session() ?: throw PracticeNetworkException.invalidReply()
     }
 
-    /** Phone number (no SMS verification) and password → app session. */
-    suspend fun signInWithPhone(phone: String, password: String): AccountSession {
-        val response = send("api/android/auth/phone", encode(PhoneCredentials.serializer(), PhoneCredentials(phone, password)),
-            AccountSignInResponse.serializer(), baseURL, bearer = null)
-        return response.session() ?: throw PracticeNetworkException.invalidReply()
-    }
-
-    /** Creates a phone-number account; it is signed in at once (no SMS, no email). */
-    suspend fun registerWithPhone(phone: String, password: String): AccountSession {
-        val response = send("api/android/auth/phone/register", encode(PhoneCredentials.serializer(), PhoneCredentials(phone, password)),
+    /** Phone number (no SMS verification) and password → app session; `autoRegister` creates a missing account. */
+    suspend fun signInWithPhone(phone: String, password: String, autoRegister: Boolean): AccountSession {
+        val response = send("api/android/auth/phone", encode(PhoneCredentials.serializer(), PhoneCredentials(phone, password, autoRegister)),
             AccountSignInResponse.serializer(), baseURL, bearer = null)
         return response.session() ?: throw PracticeNetworkException.invalidReply()
     }

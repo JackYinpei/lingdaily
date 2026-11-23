@@ -68,7 +68,7 @@ python3 tools/upload_release_to_cos.py --changelog "这一版改了什么"
 
 - 登录：`POST /api/android/auth/password`，用 Supabase 校验邮箱密码，签发与 iOS 相同的原生会话（60 天），之后所有 `/api/ios/*` 接口通用。
 - 注册：`POST /api/android/auth/register`。Supabase 开启邮件确认时返回 `confirmationRequired`，App 提示先去邮箱确认再登录。
-- 手机号注册/登录：`POST /api/android/auth/phone/register`、`POST /api/android/auth/phone`。**不发验证短信**（没有短信服务商），手机号只是登录名。服务端用 Supabase Admin API 建一个已确认的邮箱密码账号，地址由号码派生（`8613800138000@phone.lingdaily.yasobi.xyz`，见 `app/lib/phoneAccount.js`），号码记在 `user_metadata.phone`；因此之后的会话、同步、删除账号与邮箱账号完全一样，网页登录框也接受手机号。需要服务端配置 `SUPABASE_SERVICE_ROLE_KEY`。忘记密码目前无法自助找回。
+- 手机号注册/登录：`POST /api/android/auth/phone`（App 默认带 `autoRegister: true`：未注册的号码直接用这个密码注册并登录，界面上可取消勾选；已注册号码密码错误仍只提示密码不对），以及单独的 `POST /api/android/auth/phone/register`。**不发验证短信**（没有短信服务商），手机号只是登录名。服务端用 Supabase Admin API 建一个已确认的邮箱密码账号，地址由号码派生（`8613800138000@phone.lingdaily.yasobi.xyz`，见 `app/lib/phoneAccount.js`），号码记在 `user_metadata.phone`；因此之后的会话、同步、删除账号与邮箱账号完全一样，网页登录框也接受手机号。需要服务端配置 `SUPABASE_SERVICE_ROLE_KEY`。忘记密码目前无法自助找回。
 - 删除账号：「我的 → 账号与数据 → 删除账号」，再次输入密码确认，`POST /api/android/account/delete`，网页和 iOS 的数据一并删除。
 - 会话用 Android Keystore 里的密钥加密后存在本机，不参与系统备份和换机迁移。
 - 限制：在 iPhone 上用 Apple 登录创建的账号没有密码，目前不能在 Android 登录；需要时可以再加 Google 登录或网页版 Apple 登录。

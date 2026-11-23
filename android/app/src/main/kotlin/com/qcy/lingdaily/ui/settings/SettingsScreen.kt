@@ -338,9 +338,11 @@ private fun AIModelCard() {
                 Text(feature.title, style = Type.subheadline, color = Brand.colors.ink)
                 Spacer(Modifier.width(12.dp))
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-                    MenuPicker<String?>(chosen ?: "默认（${options.defaultModel}）",
-                        listOf<Pair<String?, String>>(null to "默认（${options.defaultModel}）") +
-                            options.choices.filter { it.id != options.defaultModel }.map { it.id to "${it.id} · ${it.note}" },
+                    // Model ids name the provider; the picker shows only what each choice is like.
+                    val note = { id: String -> options.choices.firstOrNull { it.id == id }?.note ?: "其他" }
+                    MenuPicker<String?>(chosen?.let(note) ?: "默认",
+                        listOf<Pair<String?, String>>(null to "默认") +
+                            options.choices.filter { it.id != options.defaultModel }.map { it.id to it.note },
                         onSelect = { settings.setModel(feature, it) }, modifier = Modifier.testTag("model-${feature.raw}"))
                 }
             }

@@ -21,7 +21,10 @@ const phone = z.string().max(32).transform((value, ctx) => {
   if (!normalized) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'invalid phone' })
   return normalized || z.NEVER
 })
-export const phoneSignInSchema = z.object({ phone, password: z.string().min(1).max(256) }).strict()
+// `autoRegister`: an unknown number is registered with this password instead of rejected.
+export const phoneSignInSchema = z.object({
+  phone, password: z.string().min(1).max(256), autoRegister: z.boolean().optional(),
+}).strict()
 export const phoneRegisterSchema = z.object({ phone, password: z.string().min(6).max(72) }).strict()
 export const passwordConfirmSchema = z.object({ password: z.string().min(1).max(256) }).strict()
 
@@ -117,4 +120,25 @@ export async function registerWithPhone(number, password) {
   if (typeof data?.id !== 'string' || !data.id) throw unavailable()
   console.log('[android-auth] phone account created', { userId: data.id })
   return { id: data.id, email: phoneAccountEmail(number), phone: number }
+}
+
+/**
+ * Signs in with a phone number, registering it first when it has no account yet. A taken
+ * number with a wrong password stays a wrong password; it never reveals more than that.
+ */
+export async function signInOrRegisterWithPhone(number, password) {
+  try {
+    return { ...await verifyPhonePassword(number, password), created: false }
+  } catch (error) {
+    if (error?.code !== 'INVALID_CREDENTIALS') throw error
+    if (password.length < 6 || password.length > 72) {
+      throw new PracticeAPIError(401, 'INVALID_CREDENTIALS', '手机号或密码不正确（新号码的密码至少 6 位）。')
+    }
+    try {
+      return { ...await registerWithPhone(number, password), created: true }
+    } catch (registerError) {
+      if (registerError?.code === 'PHONE_TAKEN') throw error
+      throw registerError
+    }
+  }
 }

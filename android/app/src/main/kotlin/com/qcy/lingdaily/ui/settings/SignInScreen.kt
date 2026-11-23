@@ -9,6 +9,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,8 +72,8 @@ fun PasswordField(value: String, onValueChange: (String) -> Unit, placeholder: S
 
 /**
  * Phone number or email, plus password, of the LingDaily account (the same one as on the web).
- * Phone accounts are registered at once without SMS; a new email address may have to be
- * confirmed by email first when the service asks for it.
+ * Phone: one form; an unknown number is registered on the spot (no SMS) unless the learner
+ * unticks it. Email: sign in, or register and maybe confirm the address by email first.
  */
 @Composable
 fun SignInScreen(screen: Screen.SignIn) {
@@ -78,6 +84,7 @@ fun SignInScreen(screen: Screen.SignIn) {
     val scope = rememberCoroutineScope()
     var registering by rememberSaveable { mutableStateOf(false) }
     var usesPhone by rememberSaveable { mutableStateOf(true) }
+    var autoRegister by rememberSaveable { mutableStateOf(true) }
     var email by rememberSaveable { mutableStateOf("") }
     var phoneInput by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
@@ -85,7 +92,7 @@ fun SignInScreen(screen: Screen.SignIn) {
     val address = email.trim()
     val phone = normalizePhone(phoneInput)
     val ready = (if (usesPhone) phone != null else address.contains("@")) &&
-        password.length >= (if (registering) 6 else 1) && !account.isSigningIn
+        password.length >= (if (registering && !usesPhone) 6 else 1) && !account.isSigningIn
 
     fun submit() {
         if (!ready) return
@@ -94,8 +101,7 @@ fun SignInScreen(screen: Screen.SignIn) {
         scope.launch {
             if (usesPhone) {
                 val number = phone ?: return@launch
-                val done = if (registering) account.registerWithPhone(number, password) else account.signInWithPhone(number, password)
-                if (done) navigator.close(screen)
+                if (account.signInWithPhone(number, password, autoRegister)) navigator.close(screen)
                 return@launch
             }
             if (!registering) {
@@ -113,11 +119,10 @@ fun SignInScreen(screen: Screen.SignIn) {
         }
     }
 
-    ScreenScaffold(title = if (registering) "注册" else "登录", onBack = { navigator.close(screen) }, backEnabled = !account.isSigningIn) {
+    val registeringEmail = registering && !usesPhone
+    ScreenScaffold(title = if (registeringEmail) "注册" else "登录", onBack = { navigator.close(screen) }, backEnabled = !account.isSigningIn) {
         ReadableColumn(Modifier.verticalScroll(rememberScrollState())) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text(if (registering) "创建 LingDaily 账号" else "登录 LingDaily", style = Type.title, color = Brand.colors.ink)
-                Text("练习记录、词库和自建场景会同步到这个账号，网页版也能看到。", style = Type.subheadline, color = Brand.colors.secondary)
                 Segmented(listOf(true to "手机号", false to "邮箱"), usesPhone, Modifier.testTag("sign-in-method")) {
                     if (!account.isSigningIn && it != usesPhone) {
                         usesPhone = it
@@ -137,24 +142,31 @@ fun SignInScreen(screen: Screen.SignIn) {
                             keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
                         keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }))
                 }
-                PasswordField(password, { password = it }, if (registering) "密码（至少 6 位）" else "密码",
+                PasswordField(password, { password = it }, if (registeringEmail) "密码（至少 6 位）" else "密码",
                     modifier = Modifier.testTag("sign-in-password"), enabled = !account.isSigningIn, onDone = ::submit)
-                if (usesPhone && registering) {
-                    Text("手机号只作为登录账号，不发验证短信。请记住密码，目前无法通过短信找回。", style = Type.caption, color = Brand.colors.secondary)
+                if (usesPhone) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable(enabled = !account.isSigningIn, role = Role.Checkbox) { autoRegister = !autoRegister }
+                            .testTag("sign-in-auto-register"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(autoRegister, onCheckedChange = null, enabled = !account.isSigningIn,
+                            colors = CheckboxDefaults.colors(checkedColor = Brand.colors.ink, checkmarkColor = Brand.colors.surface))
+                        Text("未注册的手机号自动注册", style = Type.footnote, color = Brand.colors.ink, modifier = Modifier.padding(start = 8.dp))
+                    }
                 }
                 notice?.let { Text(it, style = Type.footnote, color = Brand.colors.ink) }
                 account.errorMessage?.let { Text(it, style = Type.footnote, color = Brand.colors.accent) }
                 SolidButton(
-                    if (account.isSigningIn) (if (registering) "正在注册…" else "正在登录…") else if (registering) "注册并登录" else "登录",
+                    if (account.isSigningIn) (if (registeringEmail) "正在注册…" else "正在登录…") else if (registeringEmail) "注册并登录" else "登录",
                     onClick = ::submit, enabled = ready, busy = account.isSigningIn, modifier = Modifier.testTag("sign-in-submit"))
-                TextAction(if (registering) "已有账号？去登录" else if (usesPhone) "没有账号？用手机号注册" else "没有账号？用邮箱注册", color = Brand.colors.ink,
-                    enabled = !account.isSigningIn, modifier = Modifier.fillMaxWidth().testTag("sign-in-switch")) {
-                    registering = !registering
-                    notice = null
-                    account.errorMessage = null
-                }
-                if (!registering) {
-                    Text("在 iPhone 上用 Apple 登录的账号没有密码，暂时不能在这里登录。", style = Type.caption, color = Brand.colors.secondary)
+                if (!usesPhone) {
+                    TextAction(if (registering) "已有账号？去登录" else "没有账号？注册", color = Brand.colors.ink,
+                        enabled = !account.isSigningIn, modifier = Modifier.fillMaxWidth().testTag("sign-in-switch")) {
+                        registering = !registering
+                        notice = null
+                        account.errorMessage = null
+                    }
                 }
                 TextAction("隐私政策", style = Type.caption) { links.openUri("${LingDailyService.BASE_URL}/privacy") }
             }

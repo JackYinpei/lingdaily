@@ -106,4 +106,31 @@ describe('Android phone sign-in', () => {
     expect((await signIn({ phone: '+8613800138000', password: 'again' })).status).toBe(429)
     expect((await signIn({ phone: '13900139000', password: 'guess' })).status).toBe(401)
   })
+  it('with autoRegister, registers an unknown number and signs it in', async () => {
+    supabase
+      .mockResolvedValueOnce(reply(400, { error_code: 'invalid_credentials' }))
+      .mockResolvedValueOnce(reply(200, { id: userA, email: phoneEmail }))
+    const { status, data } = await signIn({ phone: '13800138000', password, autoRegister: true })
+    expect(status).toBe(200)
+    expect(data.created).toBe(true)
+    expect(data.account).toEqual({ id: userA, email: phoneEmail, phone: '+8613800138000', isPrivateEmail: false })
+    expect(supabase.mock.calls[1][0]).toBe('https://auth.test/auth/v1/admin/users')
+    await expect(authorizeIOSRequest(json('/api/ios/practice', {}, data.sessionToken))).resolves.toEqual({ userId: userA })
+  })
+  it('with autoRegister, signs an existing account in without creating anything', async () => {
+    const { status, data } = await signIn({ phone: '13800138000', password, autoRegister: true })
+    expect({ status, created: data.created }).toEqual({ status: 200, created: false })
+    expect(supabase).toHaveBeenCalledTimes(1)
+  })
+  it('with autoRegister, a wrong password for a taken number stays a wrong password', async () => {
+    supabase
+      .mockResolvedValueOnce(reply(400, { error_code: 'invalid_credentials' }))
+      .mockResolvedValueOnce(reply(422, { error_code: 'email_exists', msg: 'already been registered' }))
+    expect(await signIn({ phone: '13800138000', password: 'wrong-pass', autoRegister: true }))
+      .toMatchObject({ status: 401, data: { code: 'INVALID_CREDENTIALS', message: '手机号或密码不正确。' } })
+    // Too short to be a new password: no registration is attempted.
+    supabase.mockResolvedValueOnce(reply(400, { error_code: 'invalid_credentials' }))
+    expect(await signIn({ phone: '13800138000', password: '123', autoRegister: true })).toMatchObject({ status: 401 })
+    expect(supabase).toHaveBeenCalledTimes(3)
+  })
 })

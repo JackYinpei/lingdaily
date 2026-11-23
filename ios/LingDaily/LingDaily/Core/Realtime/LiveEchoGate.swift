@@ -12,7 +12,8 @@ import Foundation
 /// first, so the open microphone then carries only the learner's voice.
 /// Headphones/Bluetooth have no echo path and keep voice barge-in.
 struct LiveEchoGate {
-    static let tail: TimeInterval = 0.35
+    /// Room reverberation and the microphone's own latency after the last played buffer.
+    static let tail: TimeInterval = 0.5
     private var quietUntil: TimeInterval = 0
     /// Set by 打断; cleared when the partner starts a new reply.
     private(set) var learnerHasFloor = false

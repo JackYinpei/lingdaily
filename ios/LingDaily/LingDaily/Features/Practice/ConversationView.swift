@@ -20,7 +20,8 @@ struct ConversationView: View {
     @State private var hintLevel = 0
     @StateObject private var translations = BubbleTranslations()
     @StateObject private var meanings = FeedbackMeanings()
-    @AppStorage("speakerTipShown") private var speakerTipShown = false
+    /// Lines already there when this page opened; 轻松 glosses only the new ones automatically.
+    @State private var earlierLines: Set<UUID>
     @FocusState private var inputFocused: Bool
     let onClose: () -> Void
     /// Set when the learner already chose 进入语音通话: the call starts without a second tap.
@@ -40,13 +41,14 @@ struct ConversationView: View {
         _draft = State(initialValue: initialSession.draft ?? "")
         let preferred = initialVoiceMode ?? (UserDefaults.standard.object(forKey: "preferVoicePractice") as? Bool ?? true)
         _voiceMode = State(initialValue: initialSession.isAI && preferred)
+        _earlierLines = State(initialValue: Set(initialSession.messages.map(\.id)))
         self.onClose = onClose
     }
 
     var body: some View {
         ZStack {
             PageBackground()
-            if session.phase == .completed && live.state == .disconnected {
+            if showsSummary {
                 PracticeSummaryView(session: session, onRestart: restart, onClose: onClose)
             } else {
                 conversation
@@ -55,13 +57,17 @@ struct ConversationView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
                 StorageBanner()
-                if session.phase != .completed { header }
+                if !showsSummary { header }
             }
         }
         .onChange(of: speech.transcript) { text in
             guard dictationActive, !voiceMode, !text.isEmpty else { return }
             draft = String((dictationPrefix + text).prefix(800))
         }
+        .onChange(of: messageCount) { _ in glossNewLines() }
+        .onChange(of: lastMessageText) { _ in glossNewLines() }
+        .onChange(of: live.turnFinished) { _ in glossNewLines() }
+        .onChange(of: live.state) { _ in glossNewLines() }
         .onChange(of: messageCount) { _ in
             if !voiceMode, autoReadReplies, scenePhase == .active, let last = session.messages.last, last.role == .partner {
                 speech.speak(last.text)
@@ -81,6 +87,7 @@ struct ConversationView: View {
         }
         .onAppear {
             hasSavedOnExit = false
+            glossNewLines()
             if voiceMode {
                 model.enterLive()
                 if autoStartVoice && !autoStarted && live.state == .disconnected {
@@ -94,6 +101,29 @@ struct ConversationView: View {
         .alert("离开这次通话？", isPresented: $showsLeaveConfirmation) {
             Button("结束并返回", role: .destructive, action: leavePractice)
             Button("继续练习", role: .cancel) {}
+        }
+    }
+
+    /// The summary replaces the conversation once it is complete and no call is open. A call
+    /// that completed all tasks stays open: the learner may carry on and hangs up when done.
+    private var showsSummary: Bool { session.phase == .completed && live.state == .disconnected }
+
+    /// 轻松: each partner line shows its Chinese underneath. Text replies carry their gloss
+    /// already; a call's subtitle is translated once the partner's turn is complete. Lines
+    /// from before this visit stay as they were (a tap still translates them).
+    private func glossNewLines() {
+        guard session.practiceLevel == .easy else { return }
+        let last = session.messages.last
+        let inCall = live.state != .disconnected
+        for message in session.messages where message.role == .partner {
+            guard !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            let stored = MessageBubble.translation(of: message, in: session.scenario) != nil
+            if !stored && earlierLines.contains(message.id) { continue }
+            // A subtitle still being spoken would be translated half-way.
+            if !stored && message.id == last?.id && inCall && !live.turnFinished { continue }
+            translations.showAutomatically(message, in: session.scenario, using: api) { text in
+                model.applyTranslation(text, to: message.id, store: store)
+            }
         }
     }
 
@@ -139,7 +169,7 @@ struct ConversationView: View {
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .principal) {
-            if session.phase != .completed {
+            if !showsSummary {
                 HStack(spacing: 8) {
                     Avatar(scenario: session.scenario, size: 28)
                     VStack(alignment: .leading, spacing: 0) {
@@ -169,13 +199,35 @@ struct ConversationView: View {
         }
     }
 
+    /// 任务进度: one mark per task (done, current, to come) and what the current one asks for.
+    /// Once all are done in a call, the conversation goes on until the learner hangs up.
     private var header: some View {
-        HStack(spacing: 12) {
-            Text("\(session.stepIndex + 1)/\(session.scenario.steps.count) · \(session.step.goal)")
-                .font(.caption.weight(.medium)).foregroundColor(Brand.secondary).lineLimit(1)
-            Spacer(minLength: 8)
-            StepProgress(current: session.stepIndex, total: session.scenario.steps.count).frame(width: 96)
+        let total = session.scenario.steps.count
+        let done = session.completedSteps
+        let allDone = session.phase == .completed
+        return HStack(spacing: 6) {
+            ForEach(0..<total, id: \.self) { index in
+                let finished = index < done
+                let current = !finished && index == session.stepIndex
+                ZStack {
+                    Circle().fill(finished ? Brand.ink : Color.clear)
+                    Circle().stroke(finished ? Brand.ink : (current ? Brand.accent : Brand.line), lineWidth: 1.5)
+                    if finished {
+                        Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundColor(Brand.onInk)
+                    } else {
+                        Text(String(index + 1)).font(.caption2.weight(.medium)).foregroundColor(current ? Brand.accent : Brand.secondary)
+                    }
+                }
+                .frame(width: 20, height: 20)
+            }
+            Text(allDone ? "任务都完成了，想聊就接着聊，挂断看总结" : session.step.goal)
+                .font(.caption.weight(.medium)).foregroundColor(allDone ? Brand.ink : Brand.secondary).lineLimit(1)
+                .padding(.leading, 4)
+            Spacer(minLength: 0)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(allDone ? "任务全部完成" : "任务 \(session.stepIndex + 1)/\(total)：\(session.step.goal)")
+        .accessibilityIdentifier("task-progress")
         .padding(.horizontal, 20).padding(.vertical, 8)
         .background(Brand.page)
         .overlay(alignment: .bottom) { Brand.line.frame(height: 1) }
@@ -195,6 +247,7 @@ struct ConversationView: View {
                     .font(.footnote).foregroundColor(Brand.secondary).lineSpacing(3)
                     .multilineTextAlignment(.center).frame(maxWidth: .infinity)
                     .padding(.horizontal, 12).padding(.bottom, 8)
+                    steps
                     transcriptRows
                     if !voiceMode && session.pendingAIRequest != nil { pendingState }
                     Color.clear.frame(height: 1).id("latest")
@@ -218,6 +271,27 @@ struct ConversationView: View {
             .onChange(of: hintLevel) { _ in scrollToLatest(proxy) }
             .onChange(of: inputFocused) { if $0 { scrollToLatest(proxy) } }
         }
+    }
+
+    /// The goals of this conversation, shown once at its start (they used to sit on the preparation page).
+    private var steps: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("这次要说到").font(.subheadline.weight(.semibold)).foregroundColor(Brand.ink)
+            ForEach(Array(session.scenario.steps.enumerated()), id: \.element.id) { index, step in
+                let done = index < session.stepIndex || session.phase == .completed
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(String(index + 1)).font(.footnote.weight(.semibold).monospacedDigit())
+                        .foregroundColor(Brand.secondary).frame(width: 16)
+                    Text(step.goal).font(.footnote).foregroundColor(done ? Brand.secondary : Brand.ink)
+                }
+            }
+        }
+        .padding(18).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Brand.surface)
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Brand.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("conversation-steps")
     }
 
     private var transcriptRows: some View {
@@ -248,19 +322,6 @@ struct ConversationView: View {
             if let suggestion = live.suggestion {
                 LiveSuggestionCard(suggestion: suggestion, partner: session.scenario.partner) { live.dismissSuggestion() }
             }
-            if live.state == .active && live.usesSpeaker && !speakerTipShown {
-                // Without this the learner talks over the partner, hears no reaction and thinks the call is broken.
-                HStack(spacing: 4) {
-                    Text("外放时，想插话请先点「打断」；戴耳机可以直接说。")
-                        .font(.caption).foregroundColor(Brand.ink).lineSpacing(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button { speakerTipShown = true } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
-                        .font(.caption).foregroundColor(Brand.secondary).accessibilityLabel("知道了")
-                }
-                .padding(.leading, 14).background(Brand.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .accessibilityIdentifier("speaker-tip")
-            }
             HStack(spacing: 12) {
                 if !live.status.isEmpty {
                     Text(live.status).font(.caption.weight(.medium)).foregroundColor(Brand.secondary)
@@ -268,7 +329,7 @@ struct ConversationView: View {
                 }
                 if live.state == .active && live.playing {
                     // On the loudspeaker this is how to talk over the partner without echo.
-                    Button { speakerTipShown = true; live.interruptPartner() } label: {
+                    Button { live.interruptPartner() } label: {
                         Label("打断", systemImage: "hand.raised").font(.subheadline.weight(.semibold))
                             .padding(.horizontal, 16).frame(minHeight: 44)
                             .overlay(Capsule().stroke(Brand.ink, lineWidth: 1.5))
@@ -531,6 +592,16 @@ final class BubbleTranslations: ObservableObject {
 
     func state(of id: UUID) -> MessageBubble.TranslationState {
         loading.contains(id) ? .loading : failed.contains(id) ? .failed : .idle
+    }
+
+    private var autoShown: Set<UUID> = []
+
+    /// 轻松: opens the gloss of a finished partner line without a tap, once per line,
+    /// so a gloss the learner closed stays closed.
+    func showAutomatically(_ message: PracticeMessage, in scenario: PracticeScenario, using api: any PracticeServing,
+                           save: @escaping (String) -> Void) {
+        guard !shown.contains(message.id), autoShown.insert(message.id).inserted else { return }
+        toggle(message, in: scenario, using: api, save: save)
     }
 
     func toggle(_ message: PracticeMessage, in scenario: PracticeScenario, using api: any PracticeServing,

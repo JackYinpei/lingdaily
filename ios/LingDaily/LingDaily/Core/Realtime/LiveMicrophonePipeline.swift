@@ -4,13 +4,19 @@ import Foundation
 
 /// Shared by native iOS capture and the opt-in real Mac microphone test. The
 /// realtime callback only copies into fixed slots, splitting hardware buffers.
+///
+/// Echo on the loudspeaker is decided in `process`, right after the audio was
+/// captured, never when a frame is taken for upload: a frame can wait in the
+/// queue while the uplink is slow, and judged then, one recorded mid-reply
+/// would pass as the learner once the partner had finished.
 final class LiveMicrophonePipeline {
     let format: AVAudioFormat
     private let lock = NSLock()
     private let pool: [AVAudioPCMBuffer]
     private var free: [Int] = Array(0..<8)
     private var captured: [Int] = []
-    private var frames = LiveInputBuffer()
+    /// Five seconds of 20 ms frames may wait for a slow uplink.
+    private var frames = LiveInputBuffer(capacity: 250)
     private let converter: LivePCMConverter
     private var framer = LivePCMFramer()
     private var active = true, muted = false, needsReset = false
@@ -57,8 +63,10 @@ final class LiveMicrophonePipeline {
         }
     }
     /// Called from one serial worker, never from the realtime callback.
+    /// `isEcho` says whether the partner is audible on the loudspeaker now;
+    /// frames captured then are kept as silence, preserving the stream timing.
     @discardableResult
-    func process() throws -> Bool {
+    func process(isEcho: () -> Bool = { false }) throws -> Bool {
         lock.lock()
         let indexes = captured; captured.removeAll(keepingCapacity: true)
         let epoch = generation, reset = needsReset; needsReset = false
@@ -77,7 +85,8 @@ final class LiveMicrophonePipeline {
                     peak = max(peak, abs(Int(value)))
                 }
             }
-            let batch = try framer.append(pcm)
+            var batch = try framer.append(pcm)
+            if !batch.isEmpty, isEcho() { batch = batch.map { Data(count: $0.count) } }
             lock.lock()
             if active, !muted, epoch == generation {
                 peakSample = max(peakSample, peak); convertedFrames += batch.count; frames.append(batch)

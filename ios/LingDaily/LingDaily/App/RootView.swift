@@ -28,7 +28,8 @@ struct RootView: View {
             #endif
             offerAIConsent()
             #if DEBUG
-            if DebugLaunch.opensLearning { tab = 1 }
+            if DebugLaunch.opensLearning { tab = 2 }
+            if DebugLaunch.opensPodcast { tab = 1 }
             #endif
         }
         .onChange(of: account.canPractice) { _ in offerAIConsent() }
@@ -41,10 +42,12 @@ struct RootView: View {
         TabView(selection: $tab) {
             PracticeHomeView()
                 .tabItem { Label("练习", systemImage: "bubble.left.and.bubble.right") }.tag(0)
+            PodcastTabView()
+                .tabItem { Label("播客", systemImage: "headphones") }.tag(1)
             LearningView()
-                .tabItem { Label("学习", systemImage: "book.closed") }.tag(1)
+                .tabItem { Label("学习", systemImage: "book.closed") }.tag(2)
             SettingsView()
-                .tabItem { Label("我的", systemImage: "person") }.tag(2)
+                .tabItem { Label("我的", systemImage: "person") }.tag(3)
         }
         // A tapped reminder opens its scenario from the practice page.
         .onReceive(reminders.$pendingScenarioID) { if $0 != nil { tab = 0 } }

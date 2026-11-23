@@ -339,9 +339,10 @@ private struct ModelRow: View {
             Text(feature.title).font(.subheadline).foregroundColor(Brand.ink)
             Spacer(minLength: 8)
             Picker(feature.title, selection: $selection) {
-                Text("默认（\(options.default)）").tag("")
+                // Model ids name the provider; the picker shows only what each choice is like.
+                Text("默认").tag("")
                 ForEach(options.choices.filter { $0.id != options.default }, id: \.id) { choice in
-                    Text("\(choice.id) · \(choice.note)").tag(choice.id)
+                    Text(choice.note).tag(choice.id)
                 }
             }
             .pickerStyle(.menu).tint(Brand.secondary).font(.caption)

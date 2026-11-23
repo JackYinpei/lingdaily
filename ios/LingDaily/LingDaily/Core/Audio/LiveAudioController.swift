@@ -4,6 +4,8 @@ import Foundation
 /// The tap copies into eight preallocated buffers using try-lock only. A serial
 /// worker converts them and frames PCM. No JSON, Base64, network or file I/O on
 /// the realtime callback. Pressure drops bounded audio, never hangs up the call.
+/// The loudspeaker echo gate is applied when the worker converts captured audio
+/// (see LiveMicrophonePipeline), never when a frame is taken for upload.
 final class LiveAudioController {
     enum StopReason: String {
         case interruption, routeUnavailable, mediaReset, capture, routeReconfiguration, playback
@@ -35,7 +37,6 @@ final class LiveAudioController {
     private var speakerOutput = true
     private var observers: [NSObjectProtocol] = []
     var onStopRequired: ((StopReason) -> Void)?
-    var onBufferPressure: (() -> Void)?
     var onPlaying: ((Bool, UInt64) -> Void)?
     /// Called on the main queue when the output moves between the phone's speaker and headphones.
     var onRouteChanged: ((Bool) -> Void)?
@@ -155,18 +156,18 @@ final class LiveAudioController {
     }
     private func convertCaptured() {
         lock.lock(); let pipeline = microphone; lock.unlock()
-        do { if try pipeline?.process() == true { reportPressure() } }
+        do { try pipeline?.process(isEcho: { [weak self] in self?.partnerIsEchoing() ?? false }) }
         catch { requestStop(.capture) }
     }
+    private func partnerIsEchoing() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return echoGate.suppressesMicrophone(partnerAudible: playback.reservedBytes > 0,
+                                             speakerOutput: speakerOutput, now: ProcessInfo.processInfo.systemUptime)
+    }
+    /// The next 20 ms frame for upload, already echo-gated when it was converted.
     func takeFrame() -> Data? {
         lock.lock(); let pipeline = microphone; lock.unlock()
-        guard let frame = pipeline?.takeFrame() else { return nil }
-        lock.lock()
-        let suppress = echoGate.suppressesMicrophone(partnerAudible: playback.reservedBytes > 0,
-                                                     speakerOutput: speakerOutput, now: ProcessInfo.processInfo.systemUptime)
-        lock.unlock()
-        // Silence keeps the stream timing, so Gemini sees the learner as quiet rather than gone.
-        return suppress ? Data(count: frame.count) : frame
+        return pipeline?.takeFrame()
     }
 
     /// 打断: stop the partner and give the learner an open microphone until the partner's next reply.
@@ -195,7 +196,8 @@ final class LiveAudioController {
         lock.lock()
         if playback.reservedBytes == 0 { echoGate.partnerStartedReply() }
         receivedBytes += pcm.count
-        guard let epoch = playback.reserve(bytes: pcm.count) else { droppedBytes += pcm.count; lock.unlock(); reportPressure(); return }
+        // Holds minutes of speech, far more than any reply; only a runaway stream is cut.
+        guard let epoch = playback.reserve(bytes: pcm.count) else { droppedBytes += pcm.count; lock.unlock(); return }
         lock.unlock()
         worker.async { [weak self] in
             guard let self, self.isCurrent(epoch) else { return }
@@ -269,11 +271,6 @@ final class LiveAudioController {
             sessionActive = false
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
-    }
-    private func reportPressure() {
-        // Callers may hold lock, so dispatch without waiting or reading state.
-        let callback = onBufferPressure
-        DispatchQueue.main.async { callback?() }
     }
     private func requestStop(_ reason: StopReason) {
         lock.lock(); let epoch = playback.generation; lock.unlock()

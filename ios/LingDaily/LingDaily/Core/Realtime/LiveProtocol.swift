@@ -278,7 +278,10 @@ struct LivePlaybackBuffer {
     private(set) var schedulingGeneration: UInt64 = 0
     let maxBytes: Int
     let maxChunks: Int
-    init(maxBytes: Int = 480_000, maxChunks: Int = 256) {
+    /// Two minutes of 24 kHz speech. The model streams a reply faster than it
+    /// plays, so a long answer arrives in a burst; 10 s used to drop its end.
+    static let defaultMaxBytes = 24_000 * 2 * 120
+    init(maxBytes: Int = LivePlaybackBuffer.defaultMaxBytes, maxChunks: Int = 8_192) {
         self.maxBytes = maxBytes; self.maxChunks = maxChunks
     }
     mutating func reserve(bytes: Int) -> UInt64? {

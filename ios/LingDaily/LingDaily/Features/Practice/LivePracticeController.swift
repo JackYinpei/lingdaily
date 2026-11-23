@@ -17,6 +17,8 @@ final class LivePracticeController: ObservableObject {
     /// The partner plays through the phone itself, so talking over them needs 打断.
     @Published private(set) var usesSpeaker = false
     @Published private(set) var playing = false
+    /// The partner's current turn is fully transcribed (its subtitle will not change).
+    @Published private(set) var turnFinished = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var hasStarted = false
     /// Reply idea shown when the learner seems stuck (or asks for help).
@@ -42,9 +44,7 @@ final class LivePracticeController: ObservableObject {
     private var transcript = LiveTranscriptReducer()
     private var pendingTools = LivePendingTools()
     private var cancelledTools = Set<String>()
-    private var turnFinished = false
     private var pendingSave: Task<Void, Never>?
-    private var completionTask: Task<Void, Never>?
     #if DEBUG
     private var diagnosticTask: Task<Void, Never>?
     #endif
@@ -74,7 +74,6 @@ final class LivePracticeController: ObservableObject {
         generations.reconnect()
         let current = generations.connection
         transcript.reset(); pendingTools.reset(); cancelledTools.removeAll()
-        completionTask?.cancel(); completionTask = nil
         turnFinished = false
         errorMessage = nil; muted = false; playing = false; state = .connecting
         usage = LiveUsage(); usageModel = nil; usageReportID = UUID()
@@ -90,15 +89,11 @@ final class LivePracticeController: ObservableObject {
             #endif
             self.stop(message: reason.message)
         }
-        audio.onBufferPressure = { [weak self] in
-            guard let self, self.generations.accepts(connection: current), self.state == .active else { return }
-            self.errorMessage = "音频缓冲繁忙，部分声音可能略过；通话会继续。"
-        }
         audio.onPlaying = { [weak self] playing, epoch in
             Task { @MainActor in
                 guard let self, self.generations.accepts(connection: current), self.audio.acceptsPlayback(epoch), self.state != .disconnected else { return }
                 self.playing = playing
-                if !playing { self.finishIfReady(); self.watchForStuck() }
+                if !playing { self.watchForStuck() }
             }
         }
         audio.onRouteChanged = { [weak self] speaker in
@@ -187,7 +182,6 @@ final class LivePracticeController: ObservableObject {
             }
         case .audio(let pcm):
             guard !pcm.isEmpty, !discardingPartnerTurn else { return }
-            completionTask?.cancel(); completionTask = nil
             turnFinished = false; audio.play(pcm)
             clearSuggestion()
         case .interrupted:
@@ -210,7 +204,6 @@ final class LivePracticeController: ObservableObject {
                 pendingTools.flush(to: &session)
                 model.updateLive(session)
                 if finished { scheduleSave() }
-                finishIfReady()
             } catch { stop(message: "这次对话内容已达到上限，请结束后开始新练习。") }
         case .turnComplete:
             #if DEBUG
@@ -221,7 +214,6 @@ final class LivePracticeController: ObservableObject {
             transcript.finishTurn()
             var session = model.session; pendingTools.flush(to: &session); model.updateLive(session); scheduleSave()
             prefetchSuggestion()
-            finishIfReady()
         case .tool(let call):
             // Acknowledgement was queued by the protocol client first. Work is
             // deferred to a separate turn on MainActor, with generation guards.
@@ -239,7 +231,6 @@ final class LivePracticeController: ObservableObject {
                     self.pendingSave?.cancel(); self.pendingSave = nil
                     store.save(session, collecting: collected)
                 }
-                self.finishIfReady()
             }
         case .cancelledTools(let ids):
             guard cancelledTools.count + ids.count <= 512 else { stop(message: "工具调用已达到上限，请重新连接。"); return }
@@ -258,24 +249,6 @@ final class LivePracticeController: ObservableObject {
                   let model = self.model, let store = self.store else { return }
             self.pendingSave = nil
             store.save(model.session)
-        }
-    }
-    private func finishIfReady() {
-        guard model?.session.phase == .completed, turnFinished, !audio.hasOutput else { return }
-        // Stop uploading immediately but allow late final subtitles/tools to
-        // settle before closing. A final task tool can arrive after turnComplete.
-        if !muted {
-            muted = true; audio.setMuted(true)
-            let current = generations.connection
-            Task { await client.endInput(generation: current) }
-        }
-        completionTask?.cancel()
-        let current = generations.connection
-        completionTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            guard !Task.isCancelled, let self, self.generations.accepts(connection: current),
-                  self.model?.session.phase == .completed, self.turnFinished, !self.audio.hasOutput else { return }
-            self.stop()
         }
     }
     /// Best effort with one retry; the report ID makes a repeated upload harmless.
@@ -389,7 +362,6 @@ final class LivePracticeController: ObservableObject {
         #if DEBUG
         diagnosticTask?.cancel(); diagnosticTask = nil
         #endif
-        completionTask?.cancel(); completionTask = nil
         pendingSave?.cancel(); pendingSave = nil
         generations.reconnect(); connectTask?.cancel(); connectTask = nil
         audio.stop(); state = .disconnected; playing = false; muted = false

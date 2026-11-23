@@ -7,12 +7,10 @@ struct PracticeHomeView: View {
     @EnvironmentObject private var catalog: ScenarioCatalogStore
     @EnvironmentObject private var today: TodayStore
     @EnvironmentObject private var reminders: ReminderCenter
-    @ObservedObject private var player = PodcastPlayer.shared
     @State private var selectedScenario: PracticeScenario?
     @State private var resumed: PracticeSession?
     @State private var composing = false
     @State private var created: PracticeScenario?
-    @State private var showsVocabulary = false
     /// Home filter; "" shows every category. Kept across launches.
     @AppStorage("homeScenarioCategory") private var category = ""
     /// First-run picks; matching built-in scenarios come first.
@@ -60,8 +58,6 @@ struct PracticeHomeView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 28) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(dayLine)
-                            .font(.subheadline).foregroundColor(Brand.secondary)
                         HStack {
                             Text(Self.greeting()).font(.largeTitle.bold()).foregroundColor(Brand.ink)
                             Spacer(minLength: 12)
@@ -75,10 +71,6 @@ struct PracticeHomeView: View {
                     }
                     if !account.canPractice { signInCard }
                     if let unfinished { continueCard(unfinished) }
-                    if account.canPractice, let episode = today.episode {
-                        TodayCard(episode: episode, player: player, onPractice: { selectedScenario = $0 },
-                                  onVocabulary: { showsVocabulary = true })
-                    }
                     if categories.count > 1 { categoryFilter }
                     VStack(spacing: 14) {
                         ForEach(ownScenarios.filter { !finished.contains($0.id) && shows($0) }) { scenario in
@@ -125,11 +117,8 @@ struct PracticeHomeView: View {
         .pushDestination(item: $resumed) { session in
             ConversationView(initialSession: session, onClose: { resumed = nil })
         }
-        .pushDestination(isPresented: $showsVocabulary) {
-            if let episode = today.episode { TodayVocabularyView(episode: episode) }
-        }
         .task {
-            // Independent requests: the Today card does not wait for the catalog.
+            // Independent requests: 「今日」 (also used by the 播客 tab) does not wait for the catalog.
             async let catalogRefresh: Void = catalog.refresh()
             if account.canPractice { await today.refresh() }
             await catalogRefresh
@@ -140,7 +129,6 @@ struct PracticeHomeView: View {
                 try? await Task.sleep(nanoseconds: 600_000_000)
             }
             if DebugLaunch.take("prep") { selectedScenario = catalog.scenario(id: DebugLaunch.argument) ?? today.episode?.practiceScenario }
-            if DebugLaunch.take("today-vocabulary"), today.episode != nil { showsVocabulary = true }
             if DebugLaunch.take("compose") { created = nil; composing = true }
             #endif
         }
@@ -152,13 +140,6 @@ struct PracticeHomeView: View {
             guard selectedScenario == nil, resumed == nil, !composing else { return }
             selectedScenario = store.archive.scenarios.first { $0.id == id } ?? catalog.scenario(id: id)
         }
-    }
-
-    /// Date, plus a factual line about the last seven days once there is something to count.
-    private var dayLine: String {
-        let date = Self.dayFormatter.string(from: Date())
-        let recent = PracticeStats.recent(store.archive.sessions)
-        return recent.turns > 0 ? "\(date) · 近 7 天练了 \(recent.activeDays) 天，开口 \(recent.turns) 次" : date
     }
 
     /// Scenarios with at least one completed rehearsal.
@@ -258,13 +239,6 @@ struct PracticeHomeView: View {
             }.surfaceCard(padding: 16)
         }.buttonStyle(.plain).accessibilityIdentifier("continue-rehearsal")
     }
-
-    private static let dayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = "M月d日 EEEE"
-        return formatter
-    }()
 
     private static func greeting(now: Date = Date()) -> String {
         switch Calendar.current.component(.hour, from: now) {

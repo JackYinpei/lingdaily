@@ -118,6 +118,26 @@ final class LiveReviewRegressionTests: XCTestCase {
         pipeline.stop(); pipeline.capture(native); try pipeline.process()
         XCTAssertNil(pipeline.takeFrame())
     }
+    /// The uplink stalls while the partner speaks on the loudspeaker. Frames
+    /// converted then must stay silence when they are finally taken, after the
+    /// partner has finished; judged at upload they used to pass as the learner.
+    func testEchoIsDecidedWhenAudioIsConvertedNotWhenItIsUploaded() throws {
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1))
+        let native = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4800))
+        native.frameLength = 4800
+        for i in 0..<4800 { native.floatChannelData![0][i] = 0.2 }
+        let pipeline = try LiveMicrophonePipeline(format: format)
+        var partnerAudible = true
+        pipeline.capture(native); try pipeline.process(isEcho: { partnerAudible })
+        partnerAudible = false
+        pipeline.capture(native); try pipeline.process(isEcho: { partnerAudible })
+        let backlog = LiveUploadBatch.take(nextFrame: { pipeline.takeFrame() })
+        XCTAssertEqual(backlog.count, 10)
+        XCTAssertTrue(backlog.prefix(5).allSatisfy { $0.count == 640 && $0.allSatisfy { $0 == 0 } },
+                      "frames recorded during the reply are silence, whenever they are uploaded")
+        XCTAssertEqual(try LivePCMFramer.decode(backlog.last!).last!, 0.2, accuracy: 0.01,
+                       "the learner's own audio after the reply is kept")
+    }
     func testPlaybackOverflowAndEmptyChunkDoNotPoisonLaterPlayback() throws {
         var buffer = LivePlaybackBuffer(maxBytes: 480_000)
         XCTAssertNil(buffer.reserve(bytes: 0))

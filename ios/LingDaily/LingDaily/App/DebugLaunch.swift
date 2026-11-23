@@ -19,5 +19,6 @@ enum DebugLaunch {
 
     static var argument: String { route.split(separator: ":", maxSplits: 1).dropFirst().first.map(String.init) ?? "" }
     static var opensLearning: Bool { ["vocabulary", "review", "session", "summary"].contains(route) }
+    static var opensPodcast: Bool { ["podcast", "today-vocabulary"].contains(route) }
 }
 #endif

@@ -11,12 +11,10 @@ struct PreparationFlowView: View {
     @State private var context = ""
     @State private var addsContext = false
     @State private var reviewItems: [ReviewTarget] = []
-    @State private var quickReview = false
     /// The partner's avatar on the 脾气 pad, each axis -1...1; the centre is the scenario's persona.
     @State private var padPoint = CGPoint.zero
     /// The partner's persona for this rehearsal; editing it never changes the saved scenario.
     @State private var persona: String
-    @State private var editsPersona = false
     /// Who plays the partner this time (「换个人」); nil keeps the scenario's own partner.
     @State private var player: PartnerCharacter?
     @AppStorage("preferVoicePractice") private var voiceMode = true
@@ -45,20 +43,6 @@ struct PreparationFlowView: View {
                     VStack(alignment: .leading, spacing: 28) {
                         scene
                         if cast.count > 1 { castPicker }
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("这次要说到").font(.headline).foregroundColor(Brand.ink)
-                            ForEach(Array(scenario.steps.enumerated()), id: \.element.id) { index, step in
-                                HStack(spacing: 12) {
-                                    Text(String(index + 1)).font(.subheadline.weight(.semibold).monospacedDigit())
-                                        .foregroundColor(Brand.secondary).frame(width: 18)
-                                    Text(step.goal).font(.body).foregroundColor(Brand.ink)
-                                }
-                            }
-                            Button { quickReview = true } label: {
-                                Label("先过一遍三句话", systemImage: "text.badge.checkmark")
-                            }.font(.subheadline).foregroundColor(Brand.secondary).frame(minHeight: 44)
-                                .accessibilityIdentifier("quick-review")
-                        }
                         VStack(alignment: .leading, spacing: 10) {
                             Text("难度").font(.headline).foregroundColor(Brand.ink)
                             Picker("难度", selection: $levelRaw) {
@@ -91,16 +75,12 @@ struct PreparationFlowView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 10) {
                     if account.canPractice {
-                        Picker("对话模式", selection: $voiceMode) {
-                            Text("文字").tag(false)
-                            Text("语音通话").tag(true)
-                        }.pickerStyle(.segmented).accessibilityIdentifier("preparation-mode")
-                        Button {
-                            fieldFocused = false
-                            session = PracticeSession(scenario: current.withPersona(persona), goal: goal, context: context, useAI: true,
-                                                      level: level, temperament: temperament, reviewItems: reviewEnabled ? reviewItems : [])
-                        } label: { Text(voiceMode ? "进入语音通话" : "开始文字对话") }
-                            .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("start-rehearsal")
+                        HStack(spacing: 12) {
+                            Button { start(voice: false) } label: { Text("文字对话") }
+                                .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("start-text")
+                            Button { start(voice: true) } label: { Text("语音通话") }
+                                .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("start-voice")
+                        }
                     } else {
                         // Signing in here keeps the learner on this scenario instead of sending them to 我的.
                         AppleSignInButton()
@@ -111,15 +91,17 @@ struct PreparationFlowView: View {
             }
             .navigationBack(title: "准备对话") { dismiss() }
             .onAppear { if reviewItems.isEmpty { reviewItems = ReviewPicker.pick(from: store.archive, for: scenario) } }
-            .pushDestination(isPresented: $quickReview) {
-                ReviewView(title: "快速过一遍", cards: scenario.steps.map {
-                    ReviewCard(id: $0.id, text: $0.expression, meaning: $0.meaning, label: $0.goal)
-                })
-            }
         }
     }
 
-    /// 对方的脾气: drag the partner around a two-axis pad, then optionally rewrite who they are.
+    private func start(voice: Bool) {
+        fieldFocused = false
+        voiceMode = voice
+        session = PracticeSession(scenario: current.withPersona(persona), goal: goal, context: context, useAI: true,
+                                  level: level, temperament: temperament, reviewItems: reviewEnabled ? reviewItems : [])
+    }
+
+    /// 对方的脾气: drag the partner around a two-axis pad.
     private var partner: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("对方的脾气").font(.headline).foregroundColor(Brand.ink)
@@ -134,15 +116,6 @@ struct PreparationFlowView: View {
                         .font(.caption).foregroundColor(Brand.secondary).frame(minHeight: 44)
                         .accessibilityIdentifier("reset-temperament")
                 }
-            }
-            if editsPersona {
-                field("比如：觉得自己没错，嘴硬又不耐烦", text: $persona, limit: PracticeScenario.personaLimit)
-                    .accessibilityIdentifier("partner-persona")
-            } else {
-                Button { editsPersona = true } label: {
-                    Label(persona.isEmpty ? "描述一下对方的性格" : "改一改对方的性格", systemImage: "pencil")
-                }.font(.subheadline).foregroundColor(Brand.secondary).frame(minHeight: 44)
-                    .accessibilityIdentifier("edit-persona")
             }
         }
     }
@@ -171,10 +144,7 @@ struct PreparationFlowView: View {
     /// 「换个人」: the same role played by someone with another temper and way of talking.
     private var castPicker: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("和谁练").font(.headline).foregroundColor(Brand.ink)
-                Text("同一个场景，换个人说话就不一样").font(.caption).foregroundColor(Brand.secondary)
-            }
+            Text("和谁练").font(.headline).foregroundColor(Brand.ink)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(cast, id: \.self) { person in
@@ -184,7 +154,6 @@ struct PreparationFlowView: View {
                             withAnimation(.easeOut(duration: 0.2)) {
                                 player = person
                                 persona = person.persona
-                                editsPersona = false
                                 padPoint = .zero
                             }
                             UISelectionFeedbackGenerator().selectionChanged()

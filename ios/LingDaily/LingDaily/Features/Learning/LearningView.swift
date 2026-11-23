@@ -221,6 +221,7 @@ struct LearningView: View {
 struct SessionDetailView: View {
     @EnvironmentObject private var store: PracticeStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.practiceService) private var api
     @StateObject private var speech = SpeechController()
     @State private var activeSession: PracticeSession?
     @StateObject private var translations = BubbleTranslations()
@@ -251,7 +252,7 @@ struct SessionDetailView: View {
                                       showTranslation: translations.shown.contains(message.id),
                                       translationState: translations.state(of: message.id),
                                       onTranslate: {
-                                          translations.toggle(message, in: session.scenario) { text in
+                                          translations.toggle(message, in: session.scenario, using: api) { text in
                                               var updated = session
                                               guard updated.applyTranslation(text, to: message.id) else { return }
                                               store.save(updated)
@@ -261,7 +262,7 @@ struct SessionDetailView: View {
                         if let feedback = session.feedback(for: message.id) {
                             FeedbackNote(feedback: feedback, source: session.scenario.title, onListen: speech.speak,
                                          meaningLoading: meanings.loading.contains(message.id)) {
-                                meanings.fill(message.id, revised: feedback.revised) { meaning in
+                                meanings.fill(message.id, revised: feedback.revised, using: api) { meaning in
                                     var updated = session
                                     if updated.applyFeedbackMeaning(meaning, to: message.id) { store.save(updated) }
                                     store.fillMeaning(of: feedback.revised, with: meaning)

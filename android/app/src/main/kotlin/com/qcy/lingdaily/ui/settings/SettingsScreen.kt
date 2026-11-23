@@ -137,7 +137,7 @@ fun SettingsScreen() {
                     if (session == null) SignInButton() else {
                         val failed = sync.status is SyncEngine.Status.Failed
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(session.email, style = Type.subheadline, color = colors.ink)
+                            Text(session.displayName, style = Type.subheadline, color = colors.ink)
                             Text(when (val status = sync.status) {
                                 SyncEngine.Status.Syncing -> "正在同步…"
                                 is SyncEngine.Status.Failed -> status.message
@@ -411,7 +411,7 @@ fun AccountDataScreen(screen: Screen.AccountData) {
     ScreenScaffold(title = "账号与数据", onBack = { navigator.close(screen) }, backEnabled = !deleting) {
         ReadableColumn(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                SurfaceCard { Text(account.session?.email.orEmpty(), style = Type.subheadline, color = colors.ink) }
+                SurfaceCard { Text(account.session?.displayName.orEmpty(), style = Type.subheadline, color = colors.ink) }
                 if (!showsDeletion) {
                     TextAction("删除账号", style = Type.footnote, modifier = Modifier.align(Alignment.CenterHorizontally).testTag("delete-account")) { showsDeletion = true }
                 } else {

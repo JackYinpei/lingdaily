@@ -34,6 +34,12 @@ class AccountStore(
 
     suspend fun signIn(email: String, password: String): Boolean = attempt { api.signIn(email, password) } != null
 
+    suspend fun signInWithPhone(phone: String, password: String): Boolean =
+        attempt { api.signInWithPhone(phone, password) } != null
+
+    suspend fun registerWithPhone(phone: String, password: String): Boolean =
+        attempt { api.registerWithPhone(phone, password) } != null
+
     suspend fun register(email: String, password: String): Registration {
         var confirm = false
         val session = attempt { api.register(email, password).also { confirm = it == null } }

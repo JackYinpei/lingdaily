@@ -30,12 +30,14 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import com.qcy.lingdaily.app.AccountStore
 import com.qcy.lingdaily.core.network.LingDailyService
+import com.qcy.lingdaily.core.network.normalizePhone
 import com.qcy.lingdaily.ui.AppTextField
 import com.qcy.lingdaily.ui.Brand
 import com.qcy.lingdaily.ui.LocalApp
 import com.qcy.lingdaily.ui.LocalNavigator
 import com.qcy.lingdaily.ui.ReadableColumn
 import com.qcy.lingdaily.ui.Screen
+import com.qcy.lingdaily.ui.Segmented
 import com.qcy.lingdaily.ui.ScreenScaffold
 import com.qcy.lingdaily.ui.SolidButton
 import com.qcy.lingdaily.ui.TextAction
@@ -63,8 +65,9 @@ fun PasswordField(value: String, onValueChange: (String) -> Unit, placeholder: S
 }
 
 /**
- * Email and password of the LingDaily account (the same one as on the web). A new address
- * can register here; when the service asks for it, the address is confirmed by email first.
+ * Phone number or email, plus password, of the LingDaily account (the same one as on the web).
+ * Phone accounts are registered at once without SMS; a new email address may have to be
+ * confirmed by email first when the service asks for it.
  */
 @Composable
 fun SignInScreen(screen: Screen.SignIn) {
@@ -74,17 +77,27 @@ fun SignInScreen(screen: Screen.SignIn) {
     val links = LocalUriHandler.current
     val scope = rememberCoroutineScope()
     var registering by rememberSaveable { mutableStateOf(false) }
+    var usesPhone by rememberSaveable { mutableStateOf(true) }
     var email by rememberSaveable { mutableStateOf("") }
+    var phoneInput by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
     val address = email.trim()
-    val ready = address.contains("@") && password.length >= (if (registering) 6 else 1) && !account.isSigningIn
+    val phone = normalizePhone(phoneInput)
+    val ready = (if (usesPhone) phone != null else address.contains("@")) &&
+        password.length >= (if (registering) 6 else 1) && !account.isSigningIn
 
     fun submit() {
         if (!ready) return
         focus.clearFocus()
         notice = null
         scope.launch {
+            if (usesPhone) {
+                val number = phone ?: return@launch
+                val done = if (registering) account.registerWithPhone(number, password) else account.signInWithPhone(number, password)
+                if (done) navigator.close(screen)
+                return@launch
+            }
             if (!registering) {
                 if (account.signIn(address, password)) navigator.close(screen)
                 return@launch
@@ -105,19 +118,36 @@ fun SignInScreen(screen: Screen.SignIn) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(if (registering) "创建 LingDaily 账号" else "登录 LingDaily", style = Type.title, color = Brand.colors.ink)
                 Text("练习记录、词库和自建场景会同步到这个账号，网页版也能看到。", style = Type.subheadline, color = Brand.colors.secondary)
-                AppTextField(email, { email = it }, "邮箱", limit = 254, enabled = !account.isSigningIn,
-                    modifier = Modifier.testTag("sign-in-email"),
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false,
-                        keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
-                    keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }))
+                Segmented(listOf(true to "手机号", false to "邮箱"), usesPhone, Modifier.testTag("sign-in-method")) {
+                    if (!account.isSigningIn && it != usesPhone) {
+                        usesPhone = it
+                        notice = null
+                        account.errorMessage = null
+                    }
+                }
+                if (usesPhone) {
+                    AppTextField(phoneInput, { phoneInput = it }, "手机号", limit = 32, enabled = !account.isSigningIn,
+                        modifier = Modifier.testTag("sign-in-phone"),
+                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }))
+                } else {
+                    AppTextField(email, { email = it }, "邮箱", limit = 254, enabled = !account.isSigningIn,
+                        modifier = Modifier.testTag("sign-in-email"),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false,
+                            keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }))
+                }
                 PasswordField(password, { password = it }, if (registering) "密码（至少 6 位）" else "密码",
                     modifier = Modifier.testTag("sign-in-password"), enabled = !account.isSigningIn, onDone = ::submit)
+                if (usesPhone && registering) {
+                    Text("手机号只作为登录账号，不发验证短信。请记住密码，目前无法通过短信找回。", style = Type.caption, color = Brand.colors.secondary)
+                }
                 notice?.let { Text(it, style = Type.footnote, color = Brand.colors.ink) }
                 account.errorMessage?.let { Text(it, style = Type.footnote, color = Brand.colors.accent) }
                 SolidButton(
                     if (account.isSigningIn) (if (registering) "正在注册…" else "正在登录…") else if (registering) "注册并登录" else "登录",
                     onClick = ::submit, enabled = ready, busy = account.isSigningIn, modifier = Modifier.testTag("sign-in-submit"))
-                TextAction(if (registering) "已有账号？去登录" else "没有账号？用邮箱注册", color = Brand.colors.ink,
+                TextAction(if (registering) "已有账号？去登录" else if (usesPhone) "没有账号？用手机号注册" else "没有账号？用邮箱注册", color = Brand.colors.ink,
                     enabled = !account.isSigningIn, modifier = Modifier.fillMaxWidth().testTag("sign-in-switch")) {
                     registering = !registering
                     notice = null

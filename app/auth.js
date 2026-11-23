@@ -4,6 +4,7 @@ import Credentials from "next-auth/providers/credentials"
 import Google from "next-auth/providers/google"
 import { getSupabasePublicAuthConfig } from "./lib/server/supabaseRest"
 import { ensureAuthUser } from "./lib/server/supabaseAuthUser"
+import { normalizePhone, phoneAccountEmail } from "./lib/phoneAccount"
 
 const LinuxDo = {
   id: "linux-do",
@@ -81,9 +82,12 @@ const providers = [
       password: { label: "Password", type: "password" },
     },
     authorize: async (credentials) => {
-      const email = credentials?.email
+      const identifier = typeof credentials?.email === "string" ? credentials.email.trim() : ""
       const password = credentials?.password
-      if (!email || !password) return null
+      if (!identifier || !password) return null
+      // Phone accounts (registered in the Android app) sign in with their number.
+      const phone = identifier.includes("@") ? null : normalizePhone(identifier)
+      const email = phone ? phoneAccountEmail(phone) : identifier
       try {
         const user = await signInWithSupabase(email, password)
         return user

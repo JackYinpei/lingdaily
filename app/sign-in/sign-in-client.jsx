@@ -64,7 +64,7 @@ export default function SignInClient({ googleEnabled, linuxDoEnabled }) {
         redirect: false,
       })
       if (res?.error) {
-        setError(res.error === "CredentialsSignin" ? "Invalid email or password (or email not confirmed)." : res.error)
+        setError(res.error === "CredentialsSignin" ? "Invalid email/phone or password (or email not confirmed)." : res.error)
         return
       }
       window.location.assign(callbackUrl)
@@ -142,15 +142,19 @@ export default function SignInClient({ googleEnabled, linuxDoEnabled }) {
             ) : null}
             <form onSubmit={handleEmailSignIn} className="space-y-4">
               <div className="space-y-2">
-                <label htmlFor="email" className="text-sm">Email</label>
+                <label htmlFor="email" className="text-sm">Email or phone</label>
                 <input
                   id="email"
-                  type="email"
+                  type="text"
+                  inputMode="email"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full rounded-md border border-white/20 bg-transparent px-3 py-2 outline-none focus:border-white/50"
-                  placeholder="you@example.com"
+                  placeholder="you@example.com / 13800138000"
                 />
               </div>
               <div className="space-y-2">

@@ -70,7 +70,7 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | `ios/.../Core/Models/DictationTranscript.swift`、`Core/Audio/SpeechController.swift` | 文字模式设备听写按音频窗口累积，停止/发送等待末句；系统TTS仅供文字/记录朗读，Live音频直传模型，不经过本地ASR/TTS |
 | `scripts/ios-dev.mjs` | 可选的本机 iOS AI 服务（调试服务端改动用）；默认回环监听，显式 `-- --device` 绑定单一私有局域网地址；配对文件只在进程运行期间存在，退出即删除，此后 Debug 构建改连线上；仅 Debug 打包配对 token，绝不打包模型密钥 |
 | `android/` | 原生 Android 版（Kotlin + Jetpack Compose，最低 Android 8.0 / API 26），功能与 iOS 版对应：文字逐轮练习、Gemini Live 语音通话、总结复盘、词库与复习、自建场景、今日播客、提醒、云同步、删除账号。与 iOS 共用 `/api/ios/*` 和同一份同步 JSON；用网页账号的邮箱密码登录（Android 没有原生 Apple 登录）。结构、运行与验证见 `android/README.md` |
-| `app/api/android/`、`app/lib/server/androidAuth.js` | Android 登录/注册/删除账号：用 Supabase 校验邮箱密码后签发与 iOS 相同的原生会话（`issueIOSSession`），因此 `/api/ios/*` 对两端通用；按邮箱限流；删除账号需再次输入密码，密码错误返回 403（App 把 401 当作会话失效并退出登录） |
+| `app/api/android/`、`app/lib/server/androidAuth.js` | Android 登录/注册/删除账号：用 Supabase 校验邮箱密码后签发与 iOS 相同的原生会话（`issueIOSSession`），因此 `/api/ios/*` 对两端通用；按邮箱/手机号限流；手机号账号不发短信，由 `app/lib/phoneAccount.js` 映射为 Admin API 建的已确认邮箱账号（`<号码>@phone.lingdaily.yasobi.xyz`，号码存 `user_metadata.phone`），网页登录框也接受手机号；删除账号需再次输入密码，密码错误返回 403（App 把 401 当作会话失效并退出登录） |
 | `docs/ios/` | iOS 设计、架构、数据契约、阶段计划与待选择的产品创意；实现前阅读总览，区分现状与提案。iOS 视觉单一来源是 `ios/.../DesignSystem/Brand.swift`（纸墨 + 单一强调色，与网页紫色主题分开），改 UI 前先读 `02-design-system.md` 的设计原则 |
 
 ## 用户功能
@@ -256,6 +256,7 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 | `GET/POST /api/ios/sync` | iOS 会话 | 原生云同步：上传待同步改动并返回账号云端快照（写入下方共享表）；POST 带 `knownSessions` 时只回传有变化的会话，其余列在 `unchangedSessions` |
 | `POST /api/ios/account/delete` | iOS 会话 + Apple 二次确认 | 永久删除账号（含网页数据）与 Supabase auth 用户，可选撤销 Apple 授权 |
 | `POST /api/android/auth/password`、`/register` | 公开（需有效邮箱密码） | Android 登录/注册，签发与 iOS 相同的原生会话；注册需邮件确认时返回 `confirmationRequired: true` |
+| `POST /api/android/auth/phone`、`/phone/register` | 公开（需手机号+密码） | Android 手机号登录/注册，无短信验证，注册即登录 |
 | `POST /api/android/account/delete` | 原生会话 + 再次输入密码 | 永久删除账号（含网页与 iOS 数据） |
 | `POST /api/ios/speech`、`/transcribe` | 原生会话 | 文字模式的朗读与听写，都走 Gemini（`app/lib/server/iosSpeech.js`）：朗读返回 MP3（音色与该角色的 Live 音色一致，同一句按进程内缓存只合成一次）；听写接收 16 kHz 单声道 WAV（≤2MB）返回文字，不保存录音。用量记在 `practice` 下（`ai_usage.feature` 有 CHECK 约束，新增取值需先迁移） |
 | `GET /api/ios/podcasts` | 公开 | App 播放页的近 30 期播客，与「今日」同一结构（不含练习场景） |

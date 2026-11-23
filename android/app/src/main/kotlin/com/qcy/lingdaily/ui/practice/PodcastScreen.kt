@@ -22,12 +22,12 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +52,7 @@ import com.qcy.lingdaily.ui.ScreenScaffold
 import com.qcy.lingdaily.ui.SurfaceCard
 import com.qcy.lingdaily.ui.TextAction
 import com.qcy.lingdaily.ui.Type
+import com.qcy.lingdaily.ui.PageTitle
 import com.qcy.lingdaily.ui.medium
 import com.qcy.lingdaily.ui.semibold
 
@@ -70,23 +71,40 @@ private val SPEEDS = listOf(0.8f, 1f, 1.25f, 1.5f)
  */
 @Composable
 fun PodcastScreen(screen: Screen.Podcast) {
+    val navigator = LocalNavigator.current
+    ScreenScaffold(title = "每日播客", onBack = { navigator.close(screen) }) {
+        ReadableColumn(Modifier.weight(1f)) { PodcastList() }
+    }
+}
+
+/** 播客: the same page as a tab of its own, with the page title on top. */
+@Composable
+fun PodcastTab() {
+    ReadableColumn(Modifier.fillMaxSize()) { PodcastList(title = "播客") }
+}
+
+@Composable
+private fun PodcastList(title: String? = null) {
     val app = LocalApp.current
     val navigator = LocalNavigator.current
     val player = app.podcast
     val store = app.podcasts
     val colors = Brand.colors
     val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) { store.refresh() }
+    LaunchedEffect(app.account.canPractice) {
+        launch { store.refresh() }
+        // 「今日」 (the newest episode with its rehearsal) needs an account.
+        if (app.account.canPractice) app.today.refresh()
+    }
 
     // What the page is about: the loaded episode, else today's, else the newest in the list.
     val current = player.episode ?: app.today.episode ?: store.episodes.firstOrNull()
     // 「今日」 carries the rehearsal; the list does not.
     val rehearsal = app.today.episode?.takeIf { it.date == current?.date }?.practiceScenario
 
-    ScreenScaffold(title = "每日播客", onBack = { navigator.close(screen) }) {
-        ReadableColumn(Modifier.weight(1f)) {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 24.dp),
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = if (title != null) 20.dp else 12.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (title != null) item(key = "title") { Box(Modifier.padding(bottom = 12.dp)) { PageTitle(title) } }
                 if (current != null) item(key = "player") {
                     SurfaceCard(Modifier.padding(bottom = 12.dp), padding = 20.dp, spacing = 14.dp) {
                         Text(current.source.removePrefix("每日播客 ").ifEmpty { current.date }, style = Type.caption.semibold, color = colors.accent)
@@ -126,8 +144,6 @@ fun PodcastScreen(screen: Screen.Podcast) {
                     }
                     else -> item(key = "empty") { Text("还没有往期播客。", style = Type.subheadline, color = colors.secondary) }
                 }
-            }
-        }
     }
 }
 

@@ -56,6 +56,7 @@ import com.qcy.lingdaily.ui.learning.ReviewScreen
 import com.qcy.lingdaily.ui.learning.SessionDetailScreen
 import com.qcy.lingdaily.ui.practice.ConversationScreen
 import com.qcy.lingdaily.ui.practice.PodcastScreen
+import com.qcy.lingdaily.ui.practice.PodcastTab
 import com.qcy.lingdaily.ui.practice.PracticeHomeScreen
 import com.qcy.lingdaily.ui.practice.PreparationScreen
 import com.qcy.lingdaily.ui.practice.ScenarioComposerScreen
@@ -156,7 +157,8 @@ private fun Tabs(selected: Int, onSelect: (Int) -> Unit) {
             holder.SaveableStateProvider("tab-$selected") {
                 when (selected) {
                     0 -> PracticeHomeScreen()
-                    1 -> LearningScreen()
+                    1 -> PodcastTab()
+                    2 -> LearningScreen()
                     else -> SettingsScreen()
                 }
             }
@@ -169,8 +171,9 @@ private fun Tabs(selected: Int, onSelect: (Int) -> Unit) {
                 .height(58.dp),
         ) {
             TabItem("练习", AppIcons.Chat, selected == 0) { onSelect(0) }
-            TabItem("学习", AppIcons.Book, selected == 1) { onSelect(1) }
-            TabItem("我的", AppIcons.Person, selected == 2) { onSelect(2) }
+            TabItem("播客", AppIcons.Headphones, selected == 1) { onSelect(1) }
+            TabItem("学习", AppIcons.Book, selected == 2) { onSelect(2) }
+            TabItem("我的", AppIcons.Person, selected == 3) { onSelect(3) }
         }
     }
 }

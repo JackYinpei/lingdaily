@@ -25,11 +25,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,7 +43,6 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlinx.coroutines.launch
 import com.qcy.lingdaily.core.model.LearnerInterests
 import com.qcy.lingdaily.core.model.PracticeScenario
 import com.qcy.lingdaily.core.model.PracticeSession
@@ -124,9 +123,7 @@ fun PracticeHomeScreen() {
     val recent = remember(archive.sessions) { PracticeStats.recent(archive.sessions) }
 
     LaunchedEffect(account.canPractice) {
-        // Independent requests: the Today card does not wait for the catalog.
-        launch { app.catalog.refresh() }
-        if (account.canPractice) app.today.refresh()
+        app.catalog.refresh()
     }
     LaunchedEffect(reminders.pendingScenarioID) {
         val id = reminders.pendingScenarioID ?: return@LaunchedEffect
@@ -179,11 +176,6 @@ fun PracticeHomeScreen() {
                 }
             }
             unfinished?.let { session -> ContinueCard(session) { navigator.push(Screen.Conversation(session)) } }
-            val episode = app.today.episode
-            if (account.canPractice && episode != null) {
-                TodayCard(episode, app.podcast, onPractice = ::open, onVocabulary = { navigator.push(Screen.TodayVocabulary()) },
-                    onOpenPlayer = { navigator.push(Screen.Podcast()) })
-            }
             if (categories.size > 1) {
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).semantics { contentDescription = "场景分类" },

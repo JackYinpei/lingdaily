@@ -67,7 +67,6 @@ import com.qcy.lingdaily.ui.LocalApp
 import com.qcy.lingdaily.ui.LocalNavigator
 import com.qcy.lingdaily.ui.PreparationState
 import com.qcy.lingdaily.ui.ReadableColumn
-import com.qcy.lingdaily.ui.ReviewCard
 import com.qcy.lingdaily.ui.Screen
 import com.qcy.lingdaily.ui.ScreenScaffold
 import com.qcy.lingdaily.ui.Segmented
@@ -96,7 +95,6 @@ fun PreparationScreen(screen: Screen.Preparation) {
     val focus = LocalFocusManager.current
     val level = PracticeLevel.from(settings.practiceLevel) ?: PracticeLevel.STANDARD
     val temperament = PartnerTemperament.at(state.padX.toDouble(), state.padY.toDouble())
-    val voiceMode = settings.preferVoicePractice
 
     LaunchedEffect(Unit) {
         if (state.reviewItems.isEmpty()) state.reviewItems = ReviewPicker.pick(app.store.archive, scenario)
@@ -107,17 +105,19 @@ fun PreparationScreen(screen: Screen.Preparation) {
         bottomBar = {
             Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (app.account.canPractice) {
-                    Segmented(listOf(false to "文字", true to "语音通话"), voiceMode, Modifier.testTag("preparation-mode")) {
-                        settings.preferVoicePractice = it
-                    }
-                    SolidButton(if (voiceMode) "进入语音通话" else "开始文字对话", modifier = Modifier.testTag("start-rehearsal"), onClick = {
+                    fun start(voice: Boolean) {
                         focus.clearFocus()
+                        settings.preferVoicePractice = voice
                         val session = PracticeSession.start(scenario.withPersona(state.persona), goal = state.goal, context = state.context,
                             useAI = true, level = level, temperament = temperament,
                             reviewItems = if (settings.reviewWordsInPractice) state.reviewItems else emptyList())
                         // Leaving the conversation goes back to where this page was opened from.
-                        navigator.replaceTop(Screen.Conversation(session, voiceMode = voiceMode, autoStartVoice = voiceMode))
-                    })
+                        navigator.replaceTop(Screen.Conversation(session, voiceMode = voice, autoStartVoice = voice))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SolidButton("文字对话", modifier = Modifier.weight(1f).testTag("start-text"), onClick = { start(false) })
+                        SolidButton("语音通话", modifier = Modifier.weight(1f).testTag("start-voice"), onClick = { start(true) })
+                    }
                 } else {
                     // Signing in here keeps the learner on this scenario instead of sending them to 我的.
                     SignInButton()
@@ -134,18 +134,6 @@ fun PreparationScreen(screen: Screen.Preparation) {
                     state.editsPersona = false
                     state.padX = 0f
                     state.padY = 0f
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("这次要说到", style = Type.headline, color = colors.ink)
-                    scenario.steps.forEachIndexed { index, step ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("${index + 1}", style = Type.subheadline.semibold, color = colors.secondary, modifier = Modifier.width(18.dp))
-                            Text(step.goal, style = Type.body, color = colors.ink)
-                        }
-                    }
-                    TextAction("先过一遍三句话", icon = AppIcons.Check, modifier = Modifier.testTag("quick-review")) {
-                        navigator.push(Screen.Review("快速过一遍", scenario.steps.map { ReviewCard(it.id, it.expression, it.meaning, it.goal) }, recordsResults = false))
-                    }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("难度", style = Type.headline, color = colors.ink)
@@ -205,10 +193,7 @@ private fun CastPicker(scenario: PracticeScenario, cast: List<PartnerCharacter>,
     val colors = Brand.colors
     val haptics = LocalHapticFeedback.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("和谁练", style = Type.headline, color = colors.ink)
-            Text("同一个场景，换个人说话就不一样", style = Type.caption, color = colors.secondary)
-        }
+        Text("和谁练", style = Type.headline, color = colors.ink)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             for (person in cast) {
                 val isSelected = person.partner == selected
@@ -254,13 +239,6 @@ private fun PartnerSection(scenario: PracticeScenario, state: PreparationState, 
                     scope.launch { glideToCentre(state) }
                 }
             }
-        }
-        if (state.editsPersona) {
-            AppTextField(state.persona, { state.persona = it }, "比如：觉得自己没错，嘴硬又不耐烦", limit = PracticeScenario.PERSONA_LIMIT,
-                modifier = Modifier.testTag("partner-persona"))
-        } else {
-            TextAction(if (state.persona.isEmpty()) "描述一下对方的性格" else "改一改对方的性格", icon = AppIcons.Edit,
-                modifier = Modifier.testTag("edit-persona")) { state.editsPersona = true }
         }
     }
 }

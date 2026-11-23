@@ -52,6 +52,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import com.qcy.lingdaily.BuildConfig
 import com.qcy.lingdaily.app.SyncEngine
+import com.qcy.lingdaily.app.UpdateChecker
 import com.qcy.lingdaily.core.network.AIModelCatalog
 import com.qcy.lingdaily.core.network.AIModelFeature
 import com.qcy.lingdaily.core.network.LingDailyService
@@ -112,6 +113,7 @@ fun SettingsScreen() {
     val links = LocalUriHandler.current
     val scope = rememberCoroutineScope()
     var signingOut by remember { mutableStateOf(false) }
+    var updateNote by remember { mutableStateOf<String?>(null) }
     var unsyncedOnSignOut by remember { mutableStateOf(false) }
 
     // Signing out removes this account's records from the device; they come back from the cloud on sign-in.
@@ -211,8 +213,20 @@ fun SettingsScreen() {
                     TextAction("AI 数据使用", color = colors.ink, modifier = Modifier.fillMaxWidth()) { app.consentRequested = true }
                 }
             }
-            Text("LingDaily ${BuildConfig.VERSION_NAME}" + if (account.usesLocalDevelopment) " · 本机开发服务" else "",
-                style = Type.caption, color = colors.secondary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("LingDaily ${BuildConfig.VERSION_NAME}" + if (account.usesLocalDevelopment) " · 本机开发服务" else "",
+                    style = Type.caption, color = colors.secondary, textAlign = TextAlign.Center)
+                TextAction(if (app.updates.isChecking) "正在检查…" else updateNote ?: "检查更新", style = Type.caption,
+                    enabled = !app.updates.isChecking, modifier = Modifier.testTag("check-update")) {
+                    scope.launch {
+                        updateNote = when (app.updates.check(force = true)) {
+                            UpdateChecker.Outcome.UP_TO_DATE -> "已是最新版本"
+                            UpdateChecker.Outcome.FAILED -> "检查失败，点此重试"
+                            else -> null
+                        }
+                    }
+                }
+            }
         }
     }
 

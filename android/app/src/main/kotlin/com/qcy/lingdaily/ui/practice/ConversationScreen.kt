@@ -375,7 +375,8 @@ fun ConversationScreen(screen: Screen.Conversation) {
         }
         val listState = rememberLazyListState()
         val pending = !voiceMode && session.pendingAIRequest != null
-        val anchor = 1 + session.messages.size + if (pending) 1 else 0
+        // Index of the "latest" item: after "setting", "steps", the messages and the pending reply.
+        val anchor = 2 + session.messages.size + if (pending) 1 else 0
         // Stays on the newest line as it grows, when a hint opens and when the keyboard comes up.
         val lastText = if (voiceMode) session.messages.lastOrNull()?.text else null
         LaunchedEffect(anchor, lastText, session.phase, hintLevel, inputFocused, live.suggestion != null) {
@@ -391,6 +392,19 @@ fun ConversationScreen(screen: Screen.Conversation) {
                         Text(session.scenario.setting, style = style, color = colors.secondary, textAlign = TextAlign.Center)
                         if (session.personalGoal.isNotEmpty()) Text("你的目标：${session.personalGoal}", style = style, color = colors.secondary, textAlign = TextAlign.Center)
                         if (session.context.isNotEmpty()) Text("背景：${session.context}", style = style, color = colors.secondary, textAlign = TextAlign.Center)
+                    }
+                }
+                // The goals of this conversation, shown once at its start (they used to sit on the preparation page).
+                item(key = "steps") {
+                    SurfaceCard(spacing = 10.dp, modifier = Modifier.testTag("conversation-steps")) {
+                        Text("这次要说到", style = Type.subheadline.semibold, color = colors.ink)
+                        session.scenario.steps.forEachIndexed { index, step ->
+                            val done = index < session.stepIndex || completed
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("${index + 1}", style = Type.footnote.semibold, color = colors.secondary, modifier = Modifier.width(16.dp))
+                                Text(step.goal, style = Type.footnote, color = if (done) colors.secondary else colors.ink)
+                            }
+                        }
                     }
                 }
                 items(session.messages, key = { it.id }) { message ->

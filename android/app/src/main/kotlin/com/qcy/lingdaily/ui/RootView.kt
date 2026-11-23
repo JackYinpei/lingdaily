@@ -30,6 +30,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -136,6 +140,7 @@ fun LingDailyRoot(app: AppContainer) {
                 }
                 if (!app.settings.learnerInterestsAsked) InterestsOnboarding(onDone = {})
                 else if (app.consentRequested) AIDataConsentPage(onDone = { app.consentRequested = false })
+                else UpdateDialog()
             }
         }
     }
@@ -181,4 +186,26 @@ private fun androidx.compose.foundation.layout.RowScope.TabItem(label: String, i
         Icon(icon, null, Modifier.size(24.dp), tint = color)
         Text(label, style = Type.caption2.medium, color = color)
     }
+}
+
+/** Announces a newer version once; afterwards it stays on 练习 and 我的 until installed. */
+@Composable
+private fun UpdateDialog() {
+    val app = LocalApp.current
+    val links = LocalUriHandler.current
+    val release = app.updates.available ?: return
+    if (release.versionCode <= app.settings.updatePromptedVersion) return
+    val dismiss = { app.settings.updatePromptedVersion = release.versionCode }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text("发现新版本 ${release.versionName}") },
+        text = { if (release.changelog.isNotEmpty()) Text(release.changelog) },
+        confirmButton = {
+            TextButton(onClick = {
+                dismiss()
+                links.openUri(release.apkUrl)
+            }, modifier = Modifier.testTag("update-download")) { Text("下载更新", color = Brand.colors.accent) }
+        },
+        dismissButton = { TextButton(onClick = dismiss) { Text("稍后", color = Brand.colors.ink) } },
+    )
 }

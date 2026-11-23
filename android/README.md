@@ -54,7 +54,7 @@ Release 包用自签名证书签名：密钥库 `android/lingdaily-release.jks` 
 
 ### 发布新版本给测试者
 
-App 启动时读取 `https://deploy.shiying.sh.cn/lingdaily/latest.json`，版本号更大时在首页和「我的」提示下载。发布步骤：
+App 启动和每次回到前台时（最多每小时一次）读取 `https://deploy.shiying.sh.cn/lingdaily/latest.json`，版本号更大时弹窗提示一次（同一版本不重复弹），并在首页和「我的」保留下载入口；「我的」底部的「检查更新」可随时手动检查。发布步骤：
 
 ```bash
 # 1. 改 app/build.gradle.kts 的 versionCode（+1）和 versionName

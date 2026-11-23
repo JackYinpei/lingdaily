@@ -14,30 +14,46 @@ import com.qcy.lingdaily.core.network.PracticeApiClient
 
 /**
  * Test builds are handed out as APK files, not through a store. `latest.json` next to the
- * APK says which version is current; a newer one is offered as a download in the browser,
- * and Android's own installer takes it from there.
+ * APK says which version is current; a newer one is announced once in a dialog, stays on
+ * 练习 and 我的, and is downloaded in the browser; Android's own installer takes it from there.
  */
 class UpdateChecker {
     @Serializable
     data class Release(val versionCode: Int, val versionName: String, val apkUrl: String, val changelog: String = "")
 
+    enum class Outcome { AVAILABLE, UP_TO_DATE, FAILED, SKIPPED }
+
     /** A newer version than this build, when there is one. */
     var available by mutableStateOf<Release?>(null)
         private set
+    /** A check started from 「检查更新」 is under way. */
+    var isChecking by mutableStateOf(false)
+        private set
     private var checkedAt = 0L
 
-    suspend fun check() {
-        if (nowMillis() - checkedAt < 6 * 3_600_000L) return
-        checkedAt = nowMillis()
-        available = withContext(Dispatchers.IO) {
-            runCatching {
-                // The query keeps a CDN from answering with yesterday's file.
-                val request = Request.Builder().url("$BASE_URL/latest.json?t=${nowMillis() / 60_000}").build()
-                PracticeApiClient.sharedClient.newCall(request).execute().use { response ->
-                    if (response.code != 200) return@use null
-                    newer(response.body.source().apply { request(64 * 1024) }.buffer.clone().readUtf8(), BuildConfig.VERSION_CODE)
-                }
-            }.getOrNull()
+    /**
+     * Reads `latest.json`. Automatic checks (launch, back from the background) run at most
+     * once an hour; `force` is the learner tapping 「检查更新」.
+     */
+    suspend fun check(force: Boolean = false): Outcome {
+        if (isChecking || (!force && nowMillis() - checkedAt < 3_600_000L)) return Outcome.SKIPPED
+        isChecking = true
+        try {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    // The query keeps a CDN from answering with yesterday's file.
+                    val request = Request.Builder().url("$BASE_URL/latest.json?t=${nowMillis() / 60_000}").build()
+                    PracticeApiClient.sharedClient.newCall(request).execute().use { response ->
+                        if (response.code != 200) error("HTTP ${response.code}")
+                        response.body.source().apply { request(64 * 1024) }.buffer.clone().readUtf8()
+                    }
+                }.getOrNull()
+            } ?: return Outcome.FAILED
+            checkedAt = nowMillis()
+            available = newer(result, BuildConfig.VERSION_CODE)
+            return if (available != null) Outcome.AVAILABLE else Outcome.UP_TO_DATE
+        } finally {
+            isChecking = false
         }
     }
 

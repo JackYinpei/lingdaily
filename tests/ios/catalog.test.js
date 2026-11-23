@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { GET } from '@/app/api/ios/scenarios/route'
 import { catalogScenarioSchema, SCENARIO_CATALOG, SCENARIO_CATALOG_VERSION } from '@/app/lib/ios/scenarioCatalog'
 import { voiceForPartner } from '@/app/lib/ios/live'
+import { INTEREST_IDS } from '@/app/lib/ios/interests'
 
 describe('built-in scenario catalog', () => {
   it('serves every scenario publicly, with a version and a short cache', async () => {
@@ -40,5 +41,23 @@ describe('built-in scenario catalog', () => {
     const pinned = SCENARIO_CATALOG.map(item => voiceForPartner(item.partner, ''))
     expect(pinned.every(Boolean)).toBe(true)
     expect(new Set(pinned).size).toBeGreaterThanOrEqual(6)
+  })
+  it('casts two or three different people per scenario, the default first, each sounding different', () => {
+    const names = SCENARIO_CATALOG.flatMap(item => item.cast.map(person => person.partner))
+    // A name is one person with one voice, so no name plays two roles.
+    expect(new Set(names).size).toBe(names.length)
+    for (const scenario of SCENARIO_CATALOG) {
+      const [first, ...others] = scenario.cast
+      expect(first, scenario.id).toEqual({ partner: scenario.partner, label: expect.any(String), persona: scenario.persona })
+      expect(others.length, scenario.id).toBeGreaterThanOrEqual(1)
+      const voices = scenario.cast.map(person => voiceForPartner(person.partner, ''))
+      expect(new Set(voices).size, scenario.id).toBe(voices.length)
+      // Every alternate is pinned rather than hashed into a voice.
+      for (const person of others) expect(voiceForPartner(`${person.partner} Zz`, ''), person.partner).toBe(voices[scenario.cast.indexOf(person)])
+    }
+  })
+  it('tags every scenario with first-run interests, covering each pick', () => {
+    const tags = new Set(SCENARIO_CATALOG.flatMap(item => item.tags))
+    expect([...tags].sort()).toEqual([...INTEREST_IDS].sort())
   })
 })

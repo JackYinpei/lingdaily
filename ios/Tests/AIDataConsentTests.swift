@@ -34,7 +34,7 @@ final class AIDataConsentTests: XCTestCase {
                 scenario: .init(title: "Synthetic", partner: "Alex", partnerRole: "Barista", setting: "Cafe", goals: ["a", "b", "c"]),
                 messages: [.init(messageId: UUID(), text: "Synthetic answer", precedingPartner: "Hello")])) },
             { _ = try await api.createScenario(from: "Synthetic cafe") },
-            { _ = try await api.scenarioIdeas(avoiding: []) },
+            { _ = try await api.scenarioIdeas(avoiding: [], interests: []) },
             { _ = try await api.translate("Hello") },
             { _ = try await api.liveToken(for: practice) },
             { _ = try await api.suggest(for: withOpeningLine) },

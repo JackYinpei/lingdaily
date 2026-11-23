@@ -148,7 +148,7 @@ struct ScenarioComposerView: View {
         Task {
             defer { refreshing = false }
             do {
-                let ideas = try await api.scenarioIdeas(avoiding: avoid)
+                let ideas = try await api.scenarioIdeas(avoiding: avoid, interests: LearnerInterests.picks())
                 examples = ideas
                 shownIdeas += ideas
             } catch {

@@ -60,4 +60,19 @@ data class ScenarioCatalogResponse(val version: Int, val scenarios: List<Practic
         }
 }
 
+/** Interest tags and alternate cast read from the same catalog entries, kept out of `PracticeScenario`. */
+@Serializable
+data class ScenarioExtrasResponse(val scenarios: List<ScenarioExtras> = emptyList())
+
+/** The valid built-in scenarios and their extras, by scenario id. */
+data class ScenarioCatalog(val scenarios: List<PracticeScenario>, val extras: Map<String, ScenarioExtras>)
+
+fun parseScenarioCatalog(json: String): ScenarioCatalog {
+    val scenarios = AppJson.decodeFromString(ScenarioCatalogResponse.serializer(), json).validScenarios
+    val ids = scenarios.map { it.id }.toSet()
+    val extras = runCatching { AppJson.decodeFromString(ScenarioExtrasResponse.serializer(), json).scenarios }.getOrDefault(emptyList())
+        .filter { it.id in ids }.associate { it.id to it.cleaned() }
+    return ScenarioCatalog(scenarios, extras)
+}
+
 private val ID_PATTERN = Regex("^[a-z][a-z0-9-]{1,39}$")

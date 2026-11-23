@@ -15,6 +15,20 @@ struct PracticeHomeView: View {
     @State private var showsVocabulary = false
     /// Home filter; "" shows every category. Kept across launches.
     @AppStorage("homeScenarioCategory") private var category = ""
+    /// First-run picks; matching built-in scenarios come first.
+    @AppStorage(LearnerInterests.key) private var interestsRaw = ""
+
+    private var picks: [String] { LearnerInterests.picks(from: interestsRaw) }
+
+    /// Built-in scenarios, the ones matching the learner's picks first.
+    private var catalogScenarios: [PracticeScenario] {
+        LearnerInterests.ranked(catalog.scenarios, extras: catalog.extras, picks: picks)
+    }
+
+    /// The best few unfinished matches get a 「适合你」 mark.
+    private var recommended: Set<String> {
+        LearnerInterests.recommended(catalog.scenarios.filter { !finished.contains($0.id) }, extras: catalog.extras, picks: picks)
+    }
 
     /// Own scenarios with a real conversation coming up come first, soonest first.
     private var ownScenarios: [PracticeScenario] {
@@ -70,7 +84,7 @@ struct PracticeHomeView: View {
                         ForEach(ownScenarios.filter { !finished.contains($0.id) && shows($0) }) { scenario in
                             customSceneButton(scenario)
                         }
-                        ForEach(catalog.scenarios.filter { !finished.contains($0.id) && shows($0) }) { sceneButton($0, isCustom: false) }
+                        ForEach(catalogScenarios.filter { !finished.contains($0.id) && shows($0) }) { sceneButton($0, isCustom: false) }
                     }
                     if !finishedScenarios.isEmpty {
                         // Finished scenarios fold away so new ones stay on top; still one tap to practise again.
@@ -154,7 +168,7 @@ struct PracticeHomeView: View {
 
     private var finishedScenarios: [(scenario: PracticeScenario, isCustom: Bool)] {
         ownScenarios.filter { finished.contains($0.id) && shows($0) }.map { ($0, true) }
-            + catalog.scenarios.filter { finished.contains($0.id) && shows($0) }.map { ($0, false) }
+            + catalogScenarios.filter { finished.contains($0.id) && shows($0) }.map { ($0, false) }
     }
 
     /// Categories that have at least one scenario: everyday life and school first, work last.
@@ -214,7 +228,8 @@ struct PracticeHomeView: View {
 
     private func sceneButton(_ scenario: PracticeScenario, isCustom: Bool) -> some View {
         Button { selectedScenario = scenario } label: {
-            SceneCard(scenario: scenario, isCustom: isCustom, eventDay: isCustom ? reminders.eventDay(for: scenario.id) : nil)
+            SceneCard(scenario: scenario, isCustom: isCustom, eventDay: isCustom ? reminders.eventDay(for: scenario.id) : nil,
+                      recommended: !isCustom && recommended.contains(scenario.id))
         }
             .buttonStyle(.plain)
             .accessibilityIdentifier("scene-\(scenario.id)")
@@ -268,6 +283,8 @@ struct SceneCard: View {
     var isCustom = false
     /// The day of the real conversation, when the learner set one.
     var eventDay: Date? = nil
+    /// Matches the learner's first-run picks.
+    var recommended = false
 
     private var eventLabel: String? {
         guard let eventDay else { return nil }
@@ -289,6 +306,8 @@ struct SceneCard: View {
                 Spacer(minLength: 0)
                 if let eventLabel {
                     Text(eventLabel).font(.caption.weight(.semibold)).foregroundColor(Brand.accent)
+                } else if recommended {
+                    Text("适合你 · \(scenario.category)").font(.caption.weight(.semibold)).foregroundColor(Brand.accent)
                 } else {
                     Text(isCustom ? "我的 · \(scenario.category)" : scenario.category)
                         .font(.caption.weight(.medium)).foregroundColor(Brand.inkOnTone)

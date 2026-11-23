@@ -463,6 +463,21 @@ Nginx示例增加JP server_name，保留Upgrade/HTTP1.1/长超时/不缓冲；`/
 - 导航补充验收：iOS 16+ 的 `pushDestination()` 同时切换为 `navigationDestination(isPresented:)`；iOS 15 保留隐藏 `NavigationLink`。iOS 18.6 已实测深浅主题、收藏/取消收藏后页面保持、滚动查看第五条、完成后回到记录详情，以及首页进入场景准备页。Debug/Release 模拟器构建通过。
 
 
+### 首次兴趣选择、换个人与活人感（2026-11-23，服务端随部署生效，iOS/Android 需发版）
+
+用户反馈对方「脾气都太好、没有活人感」。原因：文字模式指令开头把模型定位成 "LingDaily, an English rehearsal partner and … coach"，教练和角色混在一起；persona 只写立场不写口吻；难度句把所有人压成同一种教科书短句；内置场景一半是友好/耐心的客服腔。
+
+- **角色规则**（`app/lib/ios/practice.js`，文字与 Live 共用）：`PARTNER_CHARACTER` 新增 `VOICE:` 段——按 persona 的年龄、背景、心情、说话习惯说话（缩略、语气词、半句话、插话、口语），自己的状态会流露，不必每句都提问，不夸学习者英语、不用 "I understand your concern" 类客服套话，对学习者的态度有反应，难度只限制词汇和句长、不限制性格。文字模式开头改为「reply 是对方的台词；feedback/hint 等是 LingDaily 教练的旁注，二者不混」，start/advance 不再强制「一个具体问题」，可以是一句反应。Live 补充「声音就是这个人的声音」（语速、能量随 persona）。
+- **persona 更丰满**：内置清单改写为「谁 + 怎么说话 + 怎么对你」，上限 80 → 120 字（App 的 `personaLimit`）；场景生成的 persona 改为 ≤60 字并要求写口吻，`scenarioDraftSchema.persona` 上限 120。
+- **换个人 `cast`**：内置清单（版本 5）每个场景有 `cast`（2–3 人，`cast[0]` 即默认 partner/persona）和 `label`（≤8 字，如「不耐烦的老店员」）。50 个新角色名字全清单唯一，在 `live.js` 各自固定音色，同一场景内音色互不相同。准备页场景卡下「和谁练」横排选择；换人只影响本次练习：会话快照的 `partner`、`persona` 换成新人，`setting` 与三步台词里出现的旧名字替换为新名字（10 个场景的情境写了对方名字）。`id` 不变，进度、配色、再练一次照旧。
+- **兴趣 `tags`**：每个内置场景带 1–4 个兴趣 id（`app/lib/ios/interests.js`：目的 travel/campus/work/interview/social/living，怕的场面 fast/pushback/smalltalk/asking），测试保证每个 id 至少被一个场景覆盖。
+- **首次引导**：两屏多选「你练英语，主要为了什么？」「开口时，你最怕哪种场面？」，可跳过；AI 数据授权页在它之后出现。结果只存本机（`learnerInterests` 逗号分隔、`learnerInterestsAsked`），不进云同步；「我的 → 练习偏好」可改。首页内置场景按命中数稳定排序，前 3 个未练完的命中标「适合你 · 分类」。「换一批」`POST /api/ios/scenario-ideas` 可选 `interests`（未知 id 丢弃），服务端以 `learnerGoals`/`learnerHardMoments` 英文说明传给模型：至少 2 条贴合目的，1 条练怕的场面。
+- **同步边界**：`tags`/`cast` 不属于 `PracticeScenario`。iOS 用 `ScenarioCatalogResponse` 对同一 `scenarios` 数组二次解码出 `ScenarioExtras`，Android 用 `parseScenarioCatalog()`；两端都另存 `scenario-catalog-extras.json`，会话 JSON 不变。
+
+兼容：服务端字段都是可选的，旧 App 会忽略 `tags`/`cast`，同时马上用上新的角色规则和更丰满的 persona。新 App 发送 `interests` 之前必须先部署服务端（旧服务端的 strict schema 会返回 400，「换一批」失败）。不涉及 migration。
+
+验证：iOS API Vitest 109 项通过（新增：每场景 cast/音色/标签覆盖、ideas 的 interests 载荷、VOICE 规则）；Swift 包 120 项（117 通过、3 个联网测试跳过，新增 `LearnerInterestsTests`）；Android `testDebugUnitTest` 64 项通过、`assembleDebug` 通过（新增 `LearnerInterestsTest`）。iOS 模拟器（本机 ios:dev）看过首次引导、引导之后的 AI 授权、首页排序（选「职场+被人怼」后「会上提出不同意见」排第一并标「适合你」）、准备页「和谁练」；Android 模拟器走通引导两屏 → 授权 → 首页排序 → 换人后情境里的名字跟着换。显式真实模型抽查（gemini-3.1-flash-lite，合成对话）：Sam "We're a bit slammed right now"；Lou "We're busy, so make it quick." / "Fine."；Remy 一直推销夏威夷果奶；Tatum "Why are you suddenly making a big deal out of this…"。Live 语音的语气没有在真机上验证。顺带修复：`LearningView` 的 `SessionDetailView` 调用翻译/释义时缺少 `using:` 参数，导致 main 上 iOS 编译失败（0649bf6 引入），改为注入 `practiceService`。
+
 ### 对方的脾气：二维拖动面板（2026-11-09，服务端随部署生效，App 1.8）
 
 准备页「难度」下面的「对方态度」三段选择换成一块拖动面板：横轴「好商量 ↔ 不让步」，纵轴「冷静 ↔ 情绪外放」，拖动的圆点就是对方的头像。

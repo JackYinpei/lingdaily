@@ -4,6 +4,7 @@ struct PreparationFlowView: View {
     let scenario: PracticeScenario
     @EnvironmentObject private var account: AccountStore
     @EnvironmentObject private var store: PracticeStore
+    @EnvironmentObject private var catalog: ScenarioCatalogStore
     @Environment(\.dismiss) private var dismiss
     @State private var session: PracticeSession?
     @State private var goal = ""
@@ -16,6 +17,8 @@ struct PreparationFlowView: View {
     /// The partner's persona for this rehearsal; editing it never changes the saved scenario.
     @State private var persona: String
     @State private var editsPersona = false
+    /// Who plays the partner this time (「换个人」); nil keeps the scenario's own partner.
+    @State private var player: PartnerCharacter?
     @AppStorage("preferVoicePractice") private var voiceMode = true
     @AppStorage(PracticeLevel.key) private var levelRaw = PracticeLevel.standard.rawValue
     @AppStorage(ReviewPicker.enabledKey) private var reviewEnabled = true
@@ -23,6 +26,9 @@ struct PreparationFlowView: View {
 
     private var level: PracticeLevel { PracticeLevel(rawValue: levelRaw) ?? .standard }
     private var temperament: PartnerTemperament { PartnerTemperament(x: padPoint.x, y: padPoint.y) }
+    /// The scenario as it will be played: the chosen person, before the learner's persona edit.
+    private var current: PracticeScenario { player.map { scenario.played(by: $0) } ?? scenario }
+    private var cast: [PartnerCharacter] { catalog.cast(for: scenario.id) }
 
     init(scenario: PracticeScenario) {
         self.scenario = scenario
@@ -38,6 +44,7 @@ struct PreparationFlowView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 28) {
                         scene
+                        if cast.count > 1 { castPicker }
                         VStack(alignment: .leading, spacing: 12) {
                             Text("这次要说到").font(.headline).foregroundColor(Brand.ink)
                             ForEach(Array(scenario.steps.enumerated()), id: \.element.id) { index, step in
@@ -90,7 +97,7 @@ struct PreparationFlowView: View {
                         }.pickerStyle(.segmented).accessibilityIdentifier("preparation-mode")
                         Button {
                             fieldFocused = false
-                            session = PracticeSession(scenario: scenario.withPersona(persona), goal: goal, context: context, useAI: true,
+                            session = PracticeSession(scenario: current.withPersona(persona), goal: goal, context: context, useAI: true,
                                                       level: level, temperament: temperament, reviewItems: reviewEnabled ? reviewItems : [])
                         } label: { Text(voiceMode ? "进入语音通话" : "开始文字对话") }
                             .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("start-rehearsal")
@@ -116,9 +123,9 @@ struct PreparationFlowView: View {
     private var partner: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("对方的脾气").font(.headline).foregroundColor(Brand.ink)
-            TemperamentPad(scenario: scenario, point: $padPoint)
+            TemperamentPad(scenario: current, point: $padPoint)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(temperament.label.map { "\(scenario.partner)：\($0)" } ?? "按场景设定。拖动头像，让对方更好商量或更难缠、更冷静或更激动。")
+                Text(temperament.label.map { "\(current.partner)：\($0)" } ?? "按场景设定。拖动头像，让对方更好商量或更难缠、更冷静或更激动。")
                     .font(.caption).foregroundColor(Brand.secondary).fixedSize(horizontal: false, vertical: true)
                     .accessibilityHidden(true)
                 Spacer(minLength: 0)
@@ -161,12 +168,57 @@ struct PreparationFlowView: View {
         }
     }
 
+    /// 「换个人」: the same role played by someone with another temper and way of talking.
+    private var castPicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("和谁练").font(.headline).foregroundColor(Brand.ink)
+                Text("同一个场景，换个人说话就不一样").font(.caption).foregroundColor(Brand.secondary)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(cast, id: \.self) { person in
+                        let selected = person.partner == current.partner
+                        Button {
+                            guard !selected else { return }
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                player = person
+                                persona = person.persona
+                                editsPersona = false
+                                padPoint = .zero
+                            }
+                            UISelectionFeedbackGenerator().selectionChanged()
+                        } label: {
+                            HStack(spacing: 10) {
+                                Avatar(scenario: scenario.played(by: person), size: 36)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(person.partner).font(.subheadline.weight(.semibold)).foregroundColor(Brand.ink)
+                                    Text(person.label).font(.caption).foregroundColor(Brand.secondary).lineLimit(1)
+                                }
+                            }
+                            .padding(.leading, 8).padding(.trailing, 14).frame(minHeight: 52)
+                            .background(Brand.surface)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(selected ? Brand.accent : Brand.line, lineWidth: selected ? 1.5 : 1))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(selected ? .isSelected : [])
+                        .accessibilityIdentifier("cast-\(person.partner)")
+                    }
+                }
+                .padding(.horizontal, 20).padding(.vertical, 1)
+            }
+            .padding(.horizontal, -20)
+        }
+    }
+
     private var scene: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 14) {
-                Avatar(scenario: scenario, size: 56)
+                Avatar(scenario: current, size: 56)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(scenario.partner).font(.title3.weight(.semibold)).foregroundColor(Brand.ink)
+                    Text(current.partner).font(.title3.weight(.semibold)).foregroundColor(Brand.ink)
                     Text(scenario.partnerRole).font(.subheadline).foregroundColor(Brand.inkOnTone)
                 }
             }
@@ -174,7 +226,7 @@ struct PreparationFlowView: View {
             Text(scenario.setting).font(.body).foregroundColor(Brand.inkOnTone).lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
             if let shown = PracticeScenario.cleanPersona(persona) {
-                Text("\(scenario.partner)：\(shown)").font(.subheadline).foregroundColor(Brand.inkOnTone)
+                Text("\(current.partner)：\(shown)").font(.subheadline).foregroundColor(Brand.inkOnTone)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("partner-persona-summary")
             }

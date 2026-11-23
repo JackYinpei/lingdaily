@@ -44,6 +44,7 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.launch
+import com.qcy.lingdaily.core.model.LearnerInterests
 import com.qcy.lingdaily.core.model.PracticeScenario
 import com.qcy.lingdaily.core.model.PracticeSession
 import com.qcy.lingdaily.core.model.PracticeStats
@@ -80,7 +81,11 @@ fun PracticeHomeScreen() {
     val account = app.account
     val reminders = app.reminders
     val settings = app.settings
-    val catalog = app.catalog.scenarios
+    // Built-in scenarios, the ones matching the learner's first-run picks first.
+    val picks = LearnerInterests.picks(settings.learnerInterests)
+    val catalog = remember(app.catalog.scenarios, app.catalog.extras, picks) {
+        LearnerInterests.ranked(app.catalog.scenarios, app.catalog.extras, picks)
+    }
     val today = LocalDate.now()
     val colors = Brand.colors
 
@@ -102,6 +107,10 @@ fun PracticeHomeScreen() {
     // Scenarios with at least one completed rehearsal.
     val finished = remember(archive.sessions) {
         archive.sessions.filter { it.phase == PracticeSession.Phase.COMPLETED }.map { it.scenario.id }.toSet()
+    }
+    // The best few unfinished matches get a 「适合你」 mark.
+    val recommended = remember(catalog, finished, picks) {
+        LearnerInterests.recommended(catalog.filter { it.id !in finished }, app.catalog.extras, picks)
     }
     // Categories that have at least one scenario: everyday life and school first, work last.
     val categories = remember(ownScenarios, catalog) {
@@ -196,7 +205,7 @@ fun PracticeHomeScreen() {
                     }
                 }
                 for (scenario in catalog.filter { it.id !in finished && shows(it) }) {
-                    SceneItem(scenario, onOpen = { open(scenario) }) { SceneCard(scenario) }
+                    SceneItem(scenario, onOpen = { open(scenario) }) { SceneCard(scenario, recommended = scenario.id in recommended) }
                 }
             }
             val practised = ownScenarios.filter { it.id in finished && shows(it) }.map { it to true } +
@@ -258,7 +267,7 @@ private fun ContinueCard(session: PracticeSession, onClick: () -> Unit) {
 
 /** Leads with the person and their first line — what the learner will actually face. */
 @Composable
-fun SceneCard(scenario: PracticeScenario, isCustom: Boolean = false, eventDay: LocalDate? = null) {
+fun SceneCard(scenario: PracticeScenario, isCustom: Boolean = false, eventDay: LocalDate? = null, recommended: Boolean = false) {
     val colors = Brand.colors
     val today = LocalDate.now()
     // The day of the real conversation, when the learner set one.
@@ -280,6 +289,7 @@ fun SceneCard(scenario: PracticeScenario, isCustom: Boolean = false, eventDay: L
                 Text(scenario.partnerRole, style = Type.caption, color = colors.inkOnTone)
             }
             if (eventLabel != null) Text(eventLabel, style = Type.caption.semibold, color = colors.accent)
+            else if (recommended) Text("适合你 · ${scenario.category}", style = Type.caption.semibold, color = colors.accent)
             else Text(if (isCustom) "我的 · ${scenario.category}" else scenario.category, style = Type.caption.medium, color = colors.inkOnTone)
         }
         Text("“${scenario.steps[0].prompt}”", style = Type.english(Type.title3), color = colors.ink)

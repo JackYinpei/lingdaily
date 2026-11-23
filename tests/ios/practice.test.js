@@ -215,7 +215,7 @@ describe('learner-described scenarios', () => {
     const { persona, ...withoutPersona } = draft
     expect(persona).toBeTruthy()
     expect(scenarioDraftSchema.safeParse(withoutPersona).success).toBe(false)
-    expect(scenarioDraftSchema.safeParse({ ...draft, persona: '长'.repeat(81) }).success).toBe(false)
+    expect(scenarioDraftSchema.safeParse({ ...draft, persona: '长'.repeat(121) }).success).toBe(false)
     expect(SCENARIO_INSTRUCTION).toContain('Complaints, conflicts and arguments')
     expect(SCENARIO_INSTRUCTION).toContain('rather than apologise or help')
     expect(SCENARIO_INSTRUCTION).not.toContain('never sexual, hateful, violent or dangerous')
@@ -297,6 +297,19 @@ describe('scenario ideas (换一批)', () => {
     expect(sent.config.systemInstruction).not.toContain('房东')
     expect(JSON.parse(sent.contents[0].parts[0].text)).toEqual({ avoid: ['周五要跟房东谈退押金'] })
   })
+  it('steers ideas toward the learner\'s first-run picks, ignoring unknown ids', async () => {
+    const ideas = ['明天面试要介绍自己的项目经历', '周末想在餐厅换一个靠窗的座位', '下周要跟室友商量分摊电费']
+    generate.mockResolvedValueOnce({ text: JSON.stringify({ ideas }), candidates: [{ finishReason: 'STOP' }], modelVersion: 'test-model' })
+    const body = { requestId: randomUUID(), interests: ['work', 'pushback', 'from-a-newer-app', 'work'] }
+    expect((await POST_IDEAS(ideasRequest(body))).status).toBe(200)
+    const sent = generate.mock.calls.at(-1)[0]
+    const payload = JSON.parse(sent.contents[0].parts[0].text)
+    expect(payload.learnerGoals).toHaveLength(1)
+    expect(payload.learnerGoals[0]).toContain('at work')
+    expect(payload.learnerHardMoments[0]).toContain('pushed back on')
+    expect(JSON.stringify(payload)).not.toContain('from-a-newer-app')
+    expect(sent.config.systemInstruction).toContain('learnerGoals')
+  })
   it('requires a session and rejects malformed input', async () => {
     expect((await POST_IDEAS(ideasRequest({ requestId: randomUUID() }, 'invalid'))).status).toBe(401)
     expect((await POST_IDEAS(ideasRequest({ requestId: randomUUID(), avoid: 'x' }))).status).toBe(400)
@@ -323,6 +336,11 @@ describe('speaking level and review items', () => {
     expect(natural).toContain('not a helpful assistant')
     expect(natural).toContain('Never apologise first')
     expect(natural).toContain('BOUNDARIES')
+    // A distinct person, not a tutor: the coach stays out of reply and stock service phrases go.
+    expect(natural).toContain('VOICE:')
+    expect(natural).toContain('never your personality')
+    expect(natural).toContain('the coach never speaks inside reply')
+    expect(natural).not.toContain('You are LingDaily, an English rehearsal partner')
     expect(natural).not.toContain('ATTITUDE')
     expect(practiceInstruction({ attitude: 'tough' })).toContain('hardest realistic version')
     expect(practiceInstruction({ attitude: 'friendly' })).toContain('cooperative version')

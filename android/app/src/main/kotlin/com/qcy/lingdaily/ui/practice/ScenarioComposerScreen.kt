@@ -52,6 +52,7 @@ import com.qcy.lingdaily.ui.LocalNavigator
 import com.qcy.lingdaily.ui.ReadableColumn
 import com.qcy.lingdaily.ui.Screen
 import com.qcy.lingdaily.ui.ScreenScaffold
+import com.qcy.lingdaily.core.model.LearnerInterests
 import com.qcy.lingdaily.ui.SolidButton
 import com.qcy.lingdaily.ui.TextAction
 import com.qcy.lingdaily.ui.Type
@@ -83,7 +84,7 @@ fun ScenarioComposerScreen(screen: Screen.Composer) {
         val avoid = state.shownIdeas
         scope.launch {
             try {
-                val ideas = app.api.scenarioIdeas(avoid)
+                val ideas = app.api.scenarioIdeas(avoid, LearnerInterests.picks(app.settings.learnerInterests))
                 state.examples = ideas
                 state.shownIdeas = state.shownIdeas + ideas
             } catch (error: CancellationException) {

@@ -9,6 +9,7 @@ import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 import kotlinx.serialization.encodeToString
 import com.qcy.lingdaily.core.model.AppJson
+import com.qcy.lingdaily.core.model.LearnerInterests
 import com.qcy.lingdaily.core.model.PracticeLevel
 import com.qcy.lingdaily.core.model.ReviewLog
 import com.qcy.lingdaily.core.model.ReviewPicker
@@ -44,6 +45,11 @@ class Settings(private val preferences: SharedPreferences) {
     var livePauseMs by int(LivePause.KEY, LivePause.STANDARD)
     var preferVoicePractice by boolean("preferVoicePractice", true)
     var practiceLevel by string(PracticeLevel.KEY, PracticeLevel.STANDARD.raw)
+
+    /** First-run picks, comma-joined (see LearnerInterests); matching scenarios lead the home page. */
+    var learnerInterests by string(LearnerInterests.KEY, "")
+    /** The first-run page was answered or skipped. */
+    var learnerInterestsAsked by boolean(LearnerInterests.ASKED_KEY, false)
 
     /** Home filter; "" shows every category. */
     var homeCategory by string("homeScenarioCategory", "")

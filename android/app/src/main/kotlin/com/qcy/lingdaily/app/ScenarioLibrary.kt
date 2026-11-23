@@ -14,7 +14,7 @@ object ScenarioLibrary {
             PracticeStep("request", "提出请求", "Oh no. How much more time do you need to fix it?", "糟糕。修好它还需要多久？", "说出需要两天，再用商量的语气提出改到周一。", "two more days · would it be possible · Monday", "I need about two more days to fix and test it. Would it be possible to move the launch to Monday?", "我大概还需要两天来修复和测试。可以把上线改到周一吗？"),
             PracticeStep("plan", "给出方案", "Monday could work. How can we make sure everything is ready by then?", "周一也许可以。我们怎么确保到时一切准备好？", "提出周五先给演示版，让对方知道你有计划。", "working demo · Friday · final version", "I'll share a working demo on Friday and have the final version ready by Monday.", "我周五先给一个能演示的版本，周一准备好最终版。"),
         ),
-        persona = "在意按期上线，会追问能不能先上一部分",
+        persona = "在意按期上线的同事，语速快、讲效率，会追问能不能先上一部分",
     )
 
     val hotel = PracticeScenario(
@@ -26,7 +26,7 @@ object ScenarioLibrary {
             PracticeStep("alternative", "询问选择", "I'm sorry about that. What would you prefer?", "不好意思。你更希望换成什么样的房间？", "问问有没有更安静的房间。", "available · quieter room", "Do you have a quieter room available?", "还有更安静的房间吗？"),
             PracticeStep("confirm", "确认安排", "We have a room on the top floor. It will be ready in about an hour.", "顶楼还有一间，大约一小时后可以入住。", "接受方案，并确认行李怎么处理。", "that works · leave my luggage", "That works for me. Could I leave my luggage here while I wait?", "这样可以。等候的时候能把行李放在这里吗？"),
         ),
-        persona = "客气但手里没有空房，先强调已经按预订安排",
+        persona = "客气但手里没有空房的前台，说话标准礼貌，先强调已经按你的预订安排",
     )
 
     val introduction = PracticeScenario(
@@ -38,7 +38,7 @@ object ScenarioLibrary {
             PracticeStep("challenge", "回应追问", "What was the biggest challenge, and how did you handle it?", "最大的挑战是什么？你是怎么处理的？", "先说问题，再说你采取的行动。", "main challenge · requirements changed · broke it down", "The main challenge was that the requirements changed two weeks before launch, so I broke the work down into smaller tasks.", "主要挑战是上线前两周需求变了，所以我把工作拆成了更小的任务。"),
             PracticeStep("lesson", "总结收获", "What would you do differently next time?", "下一次你会做出什么不同的选择？", "说一个具体改进，不必否定自己。", "next time · communicate earlier", "Next time, I'd communicate potential delays earlier so the team can plan ahead.", "下次我会更早沟通可能的延期，让团队提前安排。"),
         ),
-        persona = "专业友善，会追问细节和你具体做了什么",
+        persona = "专业友善的面试官，节奏稳，会追问细节和你具体做了什么",
     )
 
     val coffee = PracticeScenario(
@@ -50,7 +50,7 @@ object ScenarioLibrary {
             PracticeStep("change", "应对变化", "We're out of oat milk today. Would you like something else?", "今天燕麦奶没有了。想换一种吗？", "先问问有哪些其他选择。", "other options · available", "What other milk options do you have available?", "你们还有哪些其他奶类可以选择？"),
             PracticeStep("finish", "完成点单", "We have soy milk and regular milk. Would either of those work?", "我们有豆奶和普通牛奶，这两种有合适的吗？", "选一种，并补充堂食或外带。", "soy milk · to go", "Soy milk would be great. Could I have it to go?", "豆奶就很好。可以帮我做成外带吗？"),
         ),
-        persona = "友好利落，店里正忙，但乐意帮你找替代选项",
+        persona = "二十出头的兼职生，早高峰一个人顶班。说话快，爱说 \"Sure thing\" \"Gotcha\"，忙中会让你等一下，但真心想帮你找替代",
     )
 
     val all = listOf(deadline, hotel, introduction, coffee)

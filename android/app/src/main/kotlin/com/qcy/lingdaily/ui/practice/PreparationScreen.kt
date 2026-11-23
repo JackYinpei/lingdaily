@@ -1,5 +1,11 @@
 package com.qcy.lingdaily.ui.practice
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -46,7 +52,9 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import com.qcy.lingdaily.core.model.PartnerCharacter
 import com.qcy.lingdaily.core.model.PartnerTemperament
+import com.qcy.lingdaily.core.model.playedBy
 import com.qcy.lingdaily.core.model.PracticeLevel
 import com.qcy.lingdaily.core.model.PracticeScenario
 import com.qcy.lingdaily.core.model.PracticeSession
@@ -80,8 +88,10 @@ fun PreparationScreen(screen: Screen.Preparation) {
     val app = LocalApp.current
     val navigator = LocalNavigator.current
     val settings = app.settings
-    val scenario = screen.scenario
     val state = screen.state
+    // The scenario as it will be played: the chosen person (「换个人」), before the learner's persona edit.
+    val scenario = state.player?.let { screen.scenario.playedBy(it) } ?: screen.scenario
+    val cast = app.catalog.cast(screen.scenario.id)
     val colors = Brand.colors
     val focus = LocalFocusManager.current
     val level = PracticeLevel.from(settings.practiceLevel) ?: PracticeLevel.STANDARD
@@ -118,6 +128,13 @@ fun PreparationScreen(screen: Screen.Preparation) {
         ReadableColumn(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(28.dp)) {
                 SceneHeader(scenario, state.persona)
+                if (cast.size > 1) CastPicker(screen.scenario, cast, selected = scenario.partner) { person ->
+                    state.player = person
+                    state.persona = person.persona
+                    state.editsPersona = false
+                    state.padX = 0f
+                    state.padY = 0f
+                }
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("这次要说到", style = Type.headline, color = colors.ink)
                     scenario.steps.forEachIndexed { index, step ->
@@ -178,6 +195,45 @@ private fun SceneHeader(scenario: PracticeScenario, persona: String) {
         Text(scenario.setting, style = Type.body.copy(lineHeight = Type.body.lineHeight * 1.1f), color = colors.inkOnTone)
         PracticeScenario.cleanPersona(persona)?.let {
             Text("${scenario.partner}：$it", style = Type.subheadline, color = colors.inkOnTone, modifier = Modifier.testTag("partner-persona-summary"))
+        }
+    }
+}
+
+/** 「换个人」: the same role played by someone with another temper and way of talking. */
+@Composable
+private fun CastPicker(scenario: PracticeScenario, cast: List<PartnerCharacter>, selected: String, onPick: (PartnerCharacter) -> Unit) {
+    val colors = Brand.colors
+    val haptics = LocalHapticFeedback.current
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("和谁练", style = Type.headline, color = colors.ink)
+            Text("同一个场景，换个人说话就不一样", style = Type.caption, color = colors.secondary)
+        }
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            for (person in cast) {
+                val isSelected = person.partner == selected
+                Row(
+                    Modifier.heightIn(min = 52.dp).clip(CircleShape).background(colors.surface)
+                        .border(if (isSelected) 1.5.dp else 1.dp, if (isSelected) colors.accent else colors.line, CircleShape)
+                        .clickable(role = Role.RadioButton) {
+                            if (!isSelected) {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onPick(person)
+                            }
+                        }
+                        .semantics(mergeDescendants = true) { this.selected = isSelected }
+                        .testTag("cast-${person.partner}")
+                        .padding(start = 8.dp, end = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Avatar(scenario.playedBy(person), 36.dp)
+                    Column {
+                        Text(person.partner, style = Type.subheadline.semibold, color = colors.ink)
+                        Text(person.label, style = Type.caption, color = colors.secondary, maxLines = 1)
+                    }
+                }
+            }
         }
     }
 }

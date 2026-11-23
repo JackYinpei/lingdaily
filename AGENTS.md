@@ -62,7 +62,7 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | `ios/` | 原生 SwiftUI AI 体验版，最低 iOS 15；Sign in with Apple 后连线上服务，真实 Gemini 逐轮文字 + Live 实时语音/重说/历史与收藏；本机存档经 `SyncEngine` 同步到与网页共用的 Supabase 表，可删除账号 |
 | `app/api/ios/auth/apple/` | 原生 Sign in with Apple：验证 Apple identity token（JWKS、bundle ID audience、nonce），按 Apple 验证邮箱复用 `ensureAuthUser()` 映射 Supabase UUID，签发 60 天 iOS 会话 JWT（AUTH_SECRET 经 HKDF 派生的独立密钥） |
 | `app/api/ios/practice/`、`app/api/ios/scenario/`、`app/api/ios/live-token/` | Gemini 逐句练习、新场景生成及受约束 Gemini Live 临时 token API；生产只接受 iOS 会话，本机配对 token 仅 development + 显式启用可用；缓存与限流按用户隔离，不读写数据库 |
-| `app/api/ios/scenarios/`、`app/api/ios/today/` | 内置场景清单（公开、无模型调用，内容在 `app/lib/ios/scenarioCatalog.js`，上新无需发版；数组顺序即首页顺序，生活/学习/社交在前、职场在后，每个对话对象在 `app/lib/ios/live.js` 固定音色）；「今日」最新每日播客 + 按期共享生成一次的「聊聊这条新闻」场景（`app/lib/server/iosToday.js`，只用节目稿事实） |
+| `app/api/ios/scenarios/`、`app/api/ios/today/` | 内置场景清单（公开、无模型调用，内容在 `app/lib/ios/scenarioCatalog.js`，上新无需发版；数组顺序即默认首页顺序，生活/学习/社交在前、职场在后；每个场景有 `tags`（兴趣 id，见 `app/lib/ios/interests.js`，App 按首次引导的选择排序）和 `cast`（2–3 个可「换个人」的角色，`cast[0]` 为默认；所有名字全清单唯一，各自在 `app/lib/ios/live.js` 固定音色）；`tags`/`cast` 不进会话快照与同步）；「今日」最新每日播客 + 按期共享生成一次的「聊聊这条新闻」场景（`app/lib/server/iosToday.js`，只用节目稿事实） |
 | `instrumentation.js`、`instrumentation-node.js` | 服务端启动钩子（Node 部分单独文件，不进 Edge bundle）：Supabase 在国内、服务器在东京，新建 TLS 约 250–360ms、复用约 85ms，故把 fetch 空闲连接保持 45s（数据库网关约 60s 断开）；仅 Node 自带 undici 6.x（Node 20）时生效，`undici` 依赖须与之同一大版本 |
 | `nginx/lingdaily-site.conf` | 主站 nginx 参考配置：HTTP/2、JSON/XML gzip、TLS 会话复用、上游 keepalive、8MB 请求体（iOS 同步）；不改应用行为，部署前 `nginx -t` |
 | `app/lib/ios/liveEndpoint.mjs`、`nginx/gemini-proxy.conf` | 原生Live服务端独立选择Google/受控JP/旧中转，严格origin与固定Constrained路径；Nginx示例透传WSS且禁用含凭据URL日志，App也检查完整endpoint白名单 |
@@ -245,7 +245,7 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 | `POST /api/ios/auth/apple` | 公开（需有效 Apple token） | iOS Apple 登录，签发 iOS 会话 |
 | `POST /api/ios/practice`、`/scenario`、`/live-token` | iOS 会话 | 原生练习、场景生成、Live 临时 token；对方按场景 `persona` 演真实的人（理亏会嘴硬、甩锅），可选 `temperament: {pushback, emotion}`（−2…2，准备页二维「脾气」面板；1.7 的 `attitude: friendly\|tough` 仍兼容，temperament 优先）覆盖，有不辱骂/不威胁的底线 |
 | `GET /api/ios/models` | iOS 会话 | App 可选模型清单（按功能：practice/suggest/translate/live），见 `app/lib/ios/models.js` |
-| `POST /api/ios/scenario-ideas` | iOS 会话 | 新建场景页「换一批」：生成 3 条不重复的场景灵感 |
+| `POST /api/ios/scenario-ideas` | iOS 会话 | 新建场景页「换一批」：生成 3 条不重复的场景灵感；可选 `interests`（首次引导选的兴趣 id，只存本机），未知 id 丢弃 |
 | `GET /api/ios/scenarios` | 公开 | App 内置场景清单（version + 对方 `persona` + 三步练习计划），App 缓存，离线回退内置 4 个 |
 | `GET /api/ios/today` | iOS 会话 | 最近 7 天内最新一期播客（摘要、音频、8 个生词）及共享的新闻练习场景；无则 `today: null` |
 | `GET/POST /api/ios/usage` | iOS 会话 | 本人近 30 天 token 用量（不含价格）；POST 为 App 上报一次 Live 连接的用量（reportId 幂等） |

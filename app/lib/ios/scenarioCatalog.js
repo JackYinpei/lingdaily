@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { interestIdSchema } from './interests'
 import { SCENARIO_CATEGORIES } from './practice'
 
 // Built-in rehearsals served to the app by GET /api/ios/scenarios, so new ones ship
@@ -7,17 +8,26 @@ import { SCENARIO_CATEGORIES } from './practice'
 // sessions and colours reference. Order is the home page order: everyday life,
 // school and friends first, work last.
 // Partner names are gender-neutral and each has its own Live voice (see ../ios/live.js).
-// persona is how the partner treats the learner; the difficult ones are meant to be argued with.
-export const SCENARIO_CATALOG_VERSION = 4
+// persona is who the partner is, how they talk and how they treat the learner (at most 120
+// characters, the apps' limit); the difficult ones are meant to be argued with. tags are the
+// interest ids (./interests) the app matches against the learner's first-run picks.
+export const SCENARIO_CATALOG_VERSION = 5
 
 const step = (id, goal, prompt, translation, hint, keywords, expression, meaning) =>
   ({ id, goal, prompt, translation, hint, keywords, expression, meaning })
 
-export const SCENARIO_CATALOG = Object.freeze([
+const person = (partner, label, persona) => ({ partner, label, persona })
+
+const ENTRIES = [
   {
     id: 'coffee', title: '点单，多一点变化', subtitle: '当你想要的选项暂时没有', category: '日常', symbol: 'cup.and.saucer',
     partner: 'Sam', partnerRole: '咖啡师',
-    persona: '友好利落，店里正忙，但乐意帮你找替代选项',
+    label: '忙碌的兼职生', persona: '二十出头的兼职生，早高峰一个人顶班。说话快，爱说 "Sure thing" "Gotcha"，忙中会让你等一下，但真心想帮你找替代',
+    tags: ['travel', 'living', 'fast'],
+    others: [
+      person('Lou', '不耐烦的老店员', '在这家店干了十年的老店员，见惯了挑剔的客人。说话短、没表情，你犹豫太久会催你，不主动推荐'),
+      person('Remy', '话痨咖啡迷', '痴迷咖啡的店员，一听你要换奶就兴奋地讲豆子和奶怎么搭，话多爱跑题，需要你把他拉回来'),
+    ],
     setting: '你想点一杯燕麦奶拿铁，不过今天有个小变化。试着问清楚有哪些选择，再完成点单。',
     steps: [
       step('order', '表达需要', 'Hi there! What can I get for you today?', '你好！今天想喝点什么？', '礼貌地说出饮品和偏好。', 'could I get · oat milk', 'Could I get a small latte with oat milk, please?', '请给我一小杯燕麦奶拿铁，可以吗？'),
@@ -28,7 +38,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'classmate', title: '开学第一天认识同学', subtitle: '从专业聊到一起吃午饭', category: '学习', symbol: 'studentdesk',
     partner: 'Rowan', partnerRole: '坐在旁边的同学',
-    persona: '开朗外向，也是新生，很想交朋友',
+    label: '自来熟新生', persona: '开朗外向的新生，在加州长大，说话随意，爱用 "dude" "no way"，很想交朋友，会主动接你的话',
+    tags: ['campus', 'social', 'smalltalk'],
+    others: [
+      person('Ari', '慢热学霸', '安静慢热的转学生，礼貌但话很少，回答常常只有几个词，需要你多问几句才会打开话匣子'),
+      person('Bailey', '话题跳跃', '精力旺盛的交换生，一句话没说完就跳到下一个话题，语速快、爱开玩笑，偶尔会听岔你的意思'),
+    ],
     setting: '新学期第一节英语课，你刚坐下，旁边是一位不认识的同学。离上课还有几分钟，你想和对方认识一下，聊聊各自的专业，再约着下课后一起去食堂吃午饭。',
     steps: [
       step('greet', '打个招呼', 'Hi! I don\'t think we\'ve met. Is this your first class here too?', '嗨！我们好像没见过。你也是第一次上这门课吗？', '说是的，再介绍一下你的名字。', 'yes, it is · I\'m · nice to meet you', 'Yes, it is. I\'m Lin. Nice to meet you!', '是的。我叫林，很高兴认识你！'),
@@ -39,7 +54,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'return', title: '衣服尺码不合适', subtitle: '拿着小票去换一件', category: '日常', symbol: 'bag',
     partner: 'Robin', partnerRole: '服装店店员',
-    persona: '礼貌但按规矩办事，会先确认小票和衣服状况',
+    label: '按规矩办事', persona: '三十岁左右的店员，客气但一板一眼：先看小票，再检查吊牌和衣服状况，规定以外的事不松口',
+    tags: ['travel', 'living', 'asking'],
+    others: [
+      person('Frankie', '敷衍的兼职', '快下班的兼职店员，心不在焉，回答含糊，想用"下次再来"把你打发走，你说得具体他才肯动'),
+      person('Gray', '爱推销', '业绩压力大的店员，不想给你退款，一直劝你换别的款或拿积分，嘴甜但很会绕'),
+    ],
     setting: '你上周在商场买了一件外套，回家试穿才发现袖子太长。你带着小票回到店里，想换小一号；如果没有合适的尺码，就改成退款。',
     steps: [
       step('explain', '说明来意', 'Hi there! How can I help you today?', '你好！今天有什么可以帮你的？', '说你上周买了这件外套，但是不合身。', 'bought this last week · doesn\'t fit · too long', 'I bought this jacket last week, but it doesn\'t fit. The sleeves are too long.', '我上周买了这件外套，但是不合身，袖子太长了。'),
@@ -50,7 +70,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'neighbor', title: '和新邻居聊几句', subtitle: '从打招呼到约早餐', category: '社交', symbol: 'house',
     partner: 'Avery', partnerRole: '刚搬来的邻居',
-    persona: '热情健谈，对周边还不熟，乐意接受邀请',
+    label: '热情健谈', persona: '刚从外地搬来的年轻人，热情健谈，对周边一无所知，说话爱用感叹句，乐意接受邀请',
+    tags: ['social', 'living', 'smalltalk'],
+    others: [
+      person('Pat', '爱唠叨的退休邻居', '刚搬来的退休老人，说话慢、爱讲当年，喜欢跟你确认细节，对早餐很挑剔，问东问西'),
+      person('Jules', '客气但保持距离', '刚搬来的上班族，礼貌但有点戒备，回答简短，不想太快和邻居走近，邀请得说得自然才会答应'),
+    ],
     setting: '周六上午，你在电梯里遇到刚搬到隔壁的 Avery。你想打个招呼、简单介绍自己（你在这里住了两年），推荐街角那家早餐店，再约对方明天一起去。',
     steps: [
       step('hello', '打个招呼', 'Hi! I think I just moved in next door. I\'m Avery.', '你好！我好像刚搬到你隔壁。我叫 Avery。', '欢迎对方，说你的名字和在这里住了多久。', 'welcome to the building · I\'ve lived here for', 'Welcome to the building! I\'m Lin, and I\'ve lived here for about two years.', '欢迎入住！我叫林，在这里住了大概两年。'),
@@ -61,7 +86,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'extension', title: '找老师申请延期', subtitle: '说明原因，给出新日期', category: '学习', symbol: 'calendar.badge.clock',
     partner: 'Emerson', partnerRole: '你的写作课老师',
-    persona: '严格讲原则，会追问原因和完成了多少，但讲道理',
+    label: '严格讲道理', persona: '教了二十年写作的老师，严格讲原则，会追问原因和你写了多少，说话干脆，但讲道理',
+    tags: ['campus', 'asking'],
+    others: [
+      person('Logan', '不轻易松口', '刚被学生的借口坑过的老师，对延期很警惕，语气冷淡，先说不行，要你拿出具体进度和新日期才考虑'),
+      person('Sage', '没主意的助教', '年轻的助教，好说话但没有决定权，有点紧张，总说要请示教授，需要你帮他把理由理清楚'),
+    ],
     setting: '写作课的论文周五要交。这周你发烧请了两天病假，现在只写完一半。课后你去老师办公室，想说明情况，申请延期到下周一，并主动先把提纲和写好的部分发给老师。',
     steps: [
       step('reason', '说明原因', 'Hi, come on in. What can I do for you?', '你好，请进。有什么事吗？', '说你这周病了两天，论文还没写完。', 'I was sick · for two days · haven\'t finished', 'I was sick for two days this week, so I haven\'t finished my essay yet.', '我这周病了两天，所以论文还没写完。'),
@@ -72,7 +102,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'haircut', title: '跟理发师说清发型', subtitle: '剪短一点，但别太短', category: '日常', symbol: 'scissors',
     partner: 'Drew', partnerRole: '理发师',
-    persona: '手快话多，习惯按自己的想法剪，需要你说清楚',
+    label: '手快话多', persona: '手快话多的理发师，一边剪一边聊球赛，习惯按自己的想法剪，你不说清楚他就自作主张',
+    tags: ['living', 'travel', 'asking'],
+    others: [
+      person('Nico', '时髦造型师', '追潮流的年轻造型师，一直劝你试大胆的新发型，说话夸张，爱说 "trust me"，要你坚定说出想要的'),
+      person('Mel', '寡言老师傅', '干了三十年的老理发师，话少不爱解释，只问一句 "How short?"，你描述得含糊她就直接动剪子'),
+    ],
     setting: '你第一次来这家理发店。上次在别的店被剪得太短，这次你只想把头发修短一点、两边剪干净，上面留长一些，最后再问清楚一共多少钱。',
     steps: [
       step('want', '说想要的样子', 'Hi, have a seat! What are we doing today?', '你好，请坐！今天想怎么剪？', '说只想简单修一下，两边剪短一点。', 'just a trim · a little shorter · on the sides', 'Just a trim, please. A little shorter on the sides.', '简单修一下就好，两边剪短一点。'),
@@ -83,7 +118,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'roommate', title: '和室友商量安静时间', subtitle: '不伤和气地提要求', category: '社交', symbol: 'bed.double',
     partner: 'Charlie', partnerRole: '你的室友',
-    persona: '随和但有点自我，一开始觉得声音不大，会辩解两句',
+    label: '随和但自我', persona: '随和但有点自我的室友，正玩在兴头上，一开始觉得声音不大，会辩解两句，说话随意',
+    tags: ['campus', 'living', 'asking', 'pushback'],
+    others: [
+      person('Devon', '嬉皮笑脸', '爱开玩笑的室友，什么都不当回事，想用玩笑把你的请求糊弄过去，你得认真说第二遍他才明白'),
+      person('Tatum', '一点就炸', '最近考试不顺、压力很大的室友，一听意见就觉得被指责，语气冲，会反过来挑你的毛病'),
+    ],
     setting: '你和 Charlie 合住一间宿舍。最近对方过了晚上十二点还在外放打游戏，你第二天早上八点有课，已经好几天没睡好。今晚你们都在宿舍，你想找个轻松的时机商量一下。',
     steps: [
       step('open', '轻松开口', 'Hey! You look tired. Is everything okay?', '嘿！你看起来很累。还好吗？', '说你最近没睡好，因为晚上有点吵。', 'haven\'t been sleeping well · a bit noisy at night', 'I haven\'t been sleeping well lately. It\'s been a bit noisy at night.', '我最近一直没睡好，晚上有点吵。'),
@@ -94,7 +134,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'library', title: '在图书馆借书', subtitle: '书被借走了，先预约', category: '学习', symbol: 'books.vertical',
     partner: 'Reese', partnerRole: '图书馆员',
-    persona: '耐心专业，熟悉借阅规则',
+    label: '耐心专业', persona: '耐心专业的图书馆员，熟悉借阅规则，说话清楚，会顺手告诉你一些借书小技巧',
+    tags: ['campus'],
+    others: [
+      person('Kendall', '照章办事', '照章办事的老馆员，语气平淡，只回答你问的那一句，规则一条条念给你听，不主动多说'),
+      person('Stevie', '兼职学生', '在馆里打工的大二学生，热心但不太熟系统，说话快，满嘴 "like"，会查错，需要你确认'),
+    ],
     setting: '你要写一份关于气候变化的报告，老师推荐了一本书，可你在书架上没找到。你去服务台问图书馆员：书在哪儿，如果被借走了能不能预约，以及可以借多久。',
     steps: [
       step('look', '说明要找什么', 'Hi! What can I help you find?', '你好！需要找什么书？', '说你在找一本关于气候变化的书，但书架上没有。', 'I\'m looking for · climate change · couldn\'t find it', 'I\'m looking for a book about climate change, but I couldn\'t find it on the shelf.', '我在找一本关于气候变化的书，但在书架上没找到。'),
@@ -105,7 +150,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'parcel', title: '快递显示已送达', subtitle: '可我根本没收到', category: '日常', symbol: 'shippingbox',
     partner: 'Jesse', partnerRole: '快递公司客服',
-    persona: '照流程办事，先坚持系统显示已送达，要你自己再找找',
+    label: '机械照流程', persona: '照流程办事的客服，语调礼貌但机械，坚持系统显示已送达，反复让你自己再找找',
+    tags: ['living', 'pushback', 'asking'],
+    others: [
+      person('Shay', '疲惫的客服', '接了一整天投诉电话的客服，声音疲惫，爱叹气，只想快点挂电话，要你主动推进'),
+      person('Corey', '怀疑你的主管', '强硬的客服主管，坚持是家人或邻居代收了，不太相信你，要你拿出证据才肯立案'),
+    ],
     setting: '你网购的耳机显示昨天下午已经送达，但家门口和楼下的快递柜里都没有。你打电话给快递客服，想查清包裹在哪里，并留下联系方式等对方回复。',
     steps: [
       step('problem', '说明问题', 'Thanks for calling. How can I help you today?', '感谢来电。今天有什么可以帮您？', '说物流显示已经送达，但你没收到。', 'says it was delivered · haven\'t received it', 'The tracking says my package was delivered yesterday, but I haven\'t received it.', '物流显示我的包裹昨天已经送达，但我没有收到。'),
@@ -116,7 +166,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'weekend', title: '周末约朋友出去玩', subtitle: '时间对不上就换一天', category: '社交', symbol: 'figure.walk',
     partner: 'Hayden', partnerRole: '你的好朋友',
-    persona: '爱玩但时间紧，周六走不开，愿意改天',
+    label: '爱玩但时间紧', persona: '爱玩的好朋友，周六要打工走不开，说话随意爱开玩笑，愿意改天',
+    tags: ['social', 'smalltalk'],
+    others: [
+      person('Rory', '选择困难', '很好的朋友，但特别纠结，每个提议都说 "Hmm, maybe?"，又冒出新顾虑，要你来拿主意'),
+      person('Lane', '宅家派', '爱宅家的朋友，对看电影吃火锅都提不起劲，说话懒洋洋，只想在家打游戏，需要你说服'),
+    ],
     setting: '你想约好朋友 Hayden 周六去看新上映的电影，看完再一起吃火锅。可 Hayden 周六要打工，你们得商量一个两个人都有空的时间，再定好在哪里见面。',
     steps: [
       step('invite', '发出邀请', 'Hey! What\'s up?', '嘿！怎么啦？', '问对方周六有没有空，一起去看新电影。', 'are you free · on Saturday · the new movie', 'Are you free on Saturday? Do you want to see the new movie together?', '你周六有空吗？要不要一起去看那部新电影？'),
@@ -127,7 +182,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'groupwork', title: '小组作业怎么分工', subtitle: '主动认领你擅长的部分', category: '学习', symbol: 'person.3',
     partner: 'Parker', partnerRole: '小组同学',
-    persona: '积极有主见，希望每个人都上台讲一部分',
+    label: '积极有主见', persona: '积极有主见的组长，节奏快，已经想好怎么分工，希望每个人都上台讲一部分',
+    tags: ['campus', 'work', 'asking'],
+    others: [
+      person('Jaden', '想划水', '想划水的组员，什么都说 "Whatever works"，一问就说自己忙，想挑最轻松的部分，需要你把话说明白'),
+      person('Harper', '控制欲强', '成绩很好的组员，控制欲强，想自己包揽重要部分，会质疑你能不能做好'),
+    ],
     setting: '你们四个人两周后要做一次关于城市交通的课堂展示。第一次小组讨论时，Parker 想先把任务分一分。你擅长做幻灯片，也愿意查资料，但不想上台讲太久。',
     steps: [
       step('volunteer', '认领任务', 'Okay, let\'s split up the work. Which part would you like to take?', '好，我们来分一下工。你想负责哪部分？', '说你可以负责做幻灯片，你比较擅长设计。', 'I can take care of · the slides · good at design', 'I can take care of the slides. I\'m pretty good at design.', '我可以负责做幻灯片，我比较擅长设计。'),
@@ -138,7 +198,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'directions', title: '在路上问去地铁站的路', subtitle: '听懂左转右转', category: '日常', symbol: 'map',
     partner: 'Kai', partnerRole: '路过的行人',
-    persona: '友善但有点赶时间，说话快',
+    label: '赶时间的本地人', persona: '赶着上班的本地人，友善但脚步不停，说话很快、口语多，说完就想走',
+    tags: ['travel', 'fast'],
+    others: [
+      person('Toby', '热心话痨', '热心的大叔，不光指路，还讲附近哪家好吃，说话绕、地名一个接一个，要你抓住重点'),
+      person('Wren', '自己也不太熟', '刚来这座城市不久的路人，想帮忙但自己也不确定，说话犹豫，常说 "I think... maybe?"，需要你一起确认'),
+    ],
     setting: '你在一个不熟悉的街区，手机快没电了，想去最近的地铁站。你向一位路人问路，想把路线确认清楚，再问问走过去要多久。',
     steps: [
       step('ask', '礼貌开口', 'Oh, hi! Do you need some help?', '嗨！需要帮忙吗？', '先说不好意思，再问最近的地铁站怎么走。', 'excuse me · the nearest subway station', 'Excuse me, could you tell me how to get to the nearest subway station?', '不好意思，能告诉我最近的地铁站怎么走吗？'),
@@ -149,7 +214,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'officehours', title: '课后请老师再讲一遍', subtitle: '把没听懂的地方问清楚', category: '学习', symbol: 'questionmark.circle',
     partner: 'Ellis', partnerRole: '统计课老师',
-    persona: '耐心的老师，喜欢用生活里的例子讲',
+    label: '耐心举例', persona: '耐心的统计课老师，喜欢用生活里的例子讲，会反问你具体哪里没懂',
+    tags: ['campus', 'fast'],
+    others: [
+      person('Spencer', '满口术语', '学术腔很重的教授，满口术语，讲得很快，默认你都懂，需要你打断并请他换个说法'),
+      person('Noel', '赶着开会', '下一场会快开始的老师，有点心急，只给你五分钟，希望你问题问得具体'),
+    ],
     setting: '统计课上老师讲了“标准差”，你记了笔记，但还是不太明白它说明了什么。下课后你留下来问老师，想请老师举一个简单的例子，再问问有没有练习题可以做。',
     steps: [
       step('ask', '说哪里没懂', 'You look like you have a question. What\'s on your mind?', '你看起来有问题想问。想问什么？', '说你不太明白标准差，请老师再解释一下。', 'I didn\'t quite understand · standard deviation · explain it again', 'I didn\'t quite understand standard deviation. Could you explain it again?', '我不太懂标准差。您能再解释一下吗？'),
@@ -160,7 +230,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'pharmacy', title: '在药店说清症状', subtitle: '买到白天也能吃的药', category: '日常', symbol: 'cross.case',
     partner: 'Casey', partnerRole: '药剂师',
-    persona: '专业细心，会问清过敏史和正在吃的药',
+    label: '专业细心', persona: '专业细心的药剂师，会问清过敏史和正在吃的药，说话清楚，用词偏专业',
+    tags: ['travel', 'living'],
+    others: [
+      person('Dale', '公事公办', '后面排着长队，药剂师公事公办，问题像过清单一样一口气问完，语速快，不太等你'),
+      person('Phoenix', '热心过头', '热心过头的年轻药剂师，一下推荐好几种药和保健品，说话快，需要你说清只要白天不犯困的'),
+    ],
     setting: '你在国外出差，昨晚开始喉咙痛、有点发烧，今天白天还要开会。你走进酒店附近的药店，想说清症状，买到吃了不犯困的药，并问清楚怎么吃。',
     steps: [
       step('symptoms', '描述症状', 'Hi there, what can I help you with today?', '你好，今天需要什么帮助？', '说喉咙痛、有点发烧，从昨晚开始。', 'a sore throat · a slight fever · since last night', 'I\'ve had a sore throat and a slight fever since last night.', '我从昨晚开始喉咙痛，还有点发烧。'),
@@ -171,7 +246,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'repair', title: '请房东来修水龙头', subtitle: '约一个你在家的时间', category: '日常', symbol: 'wrench.and.screwdriver',
     partner: 'Morgan', partnerRole: '你的房东',
-    persona: '有点拖延，觉得滴水不急，想推到下周再说',
+    label: '拖延敷衍', persona: '有点拖延的房东，觉得滴水不急，说话敷衍，总想推到下周再说',
+    tags: ['living', 'asking'],
+    others: [
+      person('Terry', '想让你自己修', '精打细算的房东，怀疑是你用坏的，想让你自己找人修、自己付钱，语气不耐烦'),
+      person('Sidney', '好说话但健忘', '人很好但记性差的房东，满口答应，可时间总说不准，需要你把具体时间钉死'),
+    ],
     setting: '你租的公寓里，厨房水龙头已经漏水三天，晚上滴水声吵得你睡不好。你给房东 Morgan 打电话，想说明问题，请对方这周内派人维修，并约一个你在家的时间（你周四下午两点后在家）。',
     steps: [
       step('problem', '说明问题', 'Hi, it\'s Morgan. You said something needed fixing?', '你好，我是 Morgan。你说有东西需要修？', '说厨房水龙头漏水三天了，晚上还很吵。', 'the kitchen tap · has been leaking · keeps me up', 'Yes, the kitchen tap has been leaking for three days, and the dripping keeps me up at night.', '是的，厨房水龙头漏水三天了，晚上滴水声吵得我睡不着。'),
@@ -182,7 +262,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'nearmiss', title: '骑车差点被撞', subtitle: '对方违规还嘴硬', category: '日常', symbol: 'bicycle',
     partner: 'Blake', partnerRole: '违规掉头的司机',
-    persona: '觉得自己没错，嘴硬又不耐烦，反怪你骑太快没看路',
+    label: '嘴硬冲脾气', persona: '四十来岁、赶着送货的司机，嗓门大说话冲，觉得自己没错，嘴硬又不耐烦，反怪你骑太快没看路',
+    tags: ['pushback'],
+    others: [
+      person('Hunter', '冷处理', '冷冰冰的司机，不吵也不认错，只说 "You\'re fine, aren\'t you?"，想关窗走人，要你坚持讨个说法'),
+      person('Marley', '先发制人', '吓慌了的年轻司机，先大声指责你，说话又快又急，情绪一上来就打断你'),
+    ],
     setting: '你骑自行车在自己的车道上正常直行，对向一辆车突然跨过黄实线掉头，差点撞到你，你急刹车才没摔倒。司机 Blake 把车停在路边、摇下车窗。你很生气，想让对方承认是自己违规，并向你道歉。',
     steps: [
       step('confront', '指出违规', 'Whoa, what\'s your problem? You came out of nowhere!', '喂，你怎么回事？你突然就冒出来了！', '说清楚是对方跨过了黄实线。', 'you crossed · the solid yellow line · almost hit me', 'I didn\'t come out of nowhere. You crossed the solid yellow line and almost hit me!', '我可不是突然冒出来的。是你跨过黄实线，差点撞到我！'),
@@ -193,7 +278,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'deposit', title: '押金被乱扣', subtitle: '拿出证据，一分不让', category: '日常', symbol: 'banknote',
     partner: 'Cameron', partnerRole: '你的前房东',
-    persona: '精明强势，想多扣点钱，一口咬定是你弄坏的，不轻易松口',
+    label: '精明强势', persona: '精明强势的房东，想多扣点钱，一口咬定是你弄坏的，说话强硬，不轻易松口',
+    tags: ['living', 'pushback'],
+    others: [
+      person('Emery', '装可怜', '上了年纪的房东，不正面吵，一直说自己不容易、补墙很贵，想用同情心让你让步'),
+      person('Oakley', '圆滑拖延', '说话圆滑的中介，满口 "Don\'t worry" "Let\'s see"，拖着不给明确数字，想让你接受折中'),
+    ],
     setting: '你上周退租搬走了，走之前把房子打扫得很干净。房东 Cameron 却说墙上有划痕、地毯也脏了，要从 1500 美元押金里扣 600 美元。那几道划痕是你搬进来时就有的，入住当天你拍了照片。你想把押金全部要回来。',
     steps: [
       step('question', '质疑扣款', 'About your deposit: I\'m keeping six hundred for the scratches on the wall and the carpet.', '关于你的押金：墙上的划痕和地毯，我要扣六百。', '说那些划痕你入住时就有。', 'were already there · when I moved in', 'Those scratches were already there when I moved in. I shouldn\'t pay for them.', '那些划痕在我搬进来时就有了，我不应该为此付钱。'),
@@ -204,7 +294,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'queue', title: '有人插队还嘴硬', subtitle: '礼貌但坚决地请他排队', category: '日常', symbol: 'ticket',
     partner: 'Dakota', partnerRole: '插队的人',
-    persona: '假装没看见队伍，被指出后找借口，觉得你小题大做',
+    label: '装没看见', persona: '假装没看见队伍，被指出后找借口，嫌你小题大做，说话敷衍',
+    tags: ['pushback', 'asking'],
+    others: [
+      person('Kit', '理直气壮', '理直气壮的人，说朋友刚才帮他占了位置，语气不耐烦，还反过来说你斤斤计较'),
+      person('Ash', '装糊涂求通融', '笑眯眯地装糊涂，说 "Oh, is this the line?"，然后求你通融一下，说只买一张票'),
+    ],
     setting: '周六晚上你在电影院排了十分钟队买票，你的电影还有十五分钟开场。一个人直接站到了你前面。你想让对方去后面排队。',
     steps: [
       step('point', '指出插队', 'Sorry, I\'m in a hurry. My movie starts in ten minutes.', '抱歉，我赶时间。我的电影十分钟后就开始了。', '告诉对方大家都在排队，请他去队尾。', 'there\'s a line · the back of the line · we\'ve all been waiting', 'Excuse me, there\'s a line. We\'ve all been waiting, so please go to the back.', '不好意思，这里在排队。大家都等着呢，请到后面排。'),
@@ -215,7 +310,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'hotel', title: '入住出了点小状况', subtitle: '把问题变成可商量的方案', category: '旅行', symbol: 'suitcase.rolling',
     partner: 'Jamie', partnerRole: '酒店前台',
-    persona: '客气但手里没有空房，先强调已经按预订安排',
+    label: '客气但没房', persona: '客气但手里没有空房的前台，说话标准礼貌，先强调已经按你的预订安排',
+    tags: ['travel', 'asking'],
+    others: [
+      person('Val', '冷淡强硬', '值了一整晚夜班的前台，语气冷淡，坚持 "All our rooms are the same"，要你指出预订里写着安静'),
+      person('Billie', '慌张的新人', '上班第一周的前台，紧张又想帮忙，说话磕磕巴巴，老想去问经理，需要你耐心引导到具体方案'),
+    ],
     setting: '你提前预订了安静的房间，入住后却发现房间临街。现在回到前台，试着说明问题并商量一个解决方案。',
     steps: [
       step('issue', '说明问题', 'Welcome back! Is everything okay with your room?', '欢迎回来！房间还好吗？', '礼貌地描述问题，不必一开始就道歉。', 'a bit noisy · facing the street', 'The room is a bit noisy because it\'s facing the street.', '房间临街，所以有点吵。'),
@@ -226,7 +326,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'flight', title: '航班取消了', subtitle: '改签到明天最早一班', category: '旅行', symbol: 'airplane',
     partner: 'Jordan', partnerRole: '机场柜台工作人员',
-    persona: '忙了一晚有点疲惫，按航司政策办事，不会主动多给',
+    label: '疲惫照政策', persona: '忙了一晚的柜台员，有点疲惫，语速快，按航司政策办事，不会主动多给',
+    tags: ['travel', 'pushback', 'fast'],
+    others: [
+      person('Peyton', '背条款', '一字一句背政策的地勤，"Weather delays are not compensated"，说话冷硬，要你主动问清能争取什么'),
+      person('Indy', '乐观但敷衍', '乐观过头的地勤，一直说 "No worries, we\'ll sort it out"，却给不出具体航班和酒店，要你追问细节'),
+    ],
     setting: '晚上 8 点，你在机场得知飞往上海的航班因天气取消。你明早 10 点在上海有一个重要会议，想改签到明天最早的航班，并问清楚今晚的住宿怎么安排。',
     steps: [
       step('situation', '说明情况', 'Hi, how can I help you tonight?', '你好，今晚有什么可以帮你的？', '说航班取消了，你明天一早必须赶到上海。', 'was cancelled · need to be in Shanghai · tomorrow morning', 'My flight to Shanghai was cancelled, and I need to be there for a meeting at 10 tomorrow morning.', '我飞上海的航班取消了，我明早 10 点要在那边开会。'),
@@ -237,7 +342,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'restaurant', title: '点餐时说清过敏', subtitle: '确认菜里没有花生', category: '旅行', symbol: 'fork.knife',
     partner: 'Quinn', partnerRole: '餐厅服务员',
-    persona: '热情周到，对过敏很重视',
+    label: '热情周到', persona: '热情周到的服务员，对过敏很重视，爱推荐招牌菜，说话带笑',
+    tags: ['travel', 'asking'],
+    others: [
+      person('Lee', '不当回事', '忙到飞起的服务员，觉得"一点点花生没事"，说话随意，需要你强调有多严重'),
+      person('Eden', '不太确定', '刚来的服务员，对菜的配料不熟，常说 "I don\'t think so?"，需要你坚持请他去问厨房'),
+    ],
     setting: '你在伦敦的一家餐厅吃晚饭，你对花生过敏。你想请服务员推荐一道菜，确认里面没有花生，再请厨房把酱汁单独放。',
     steps: [
       step('order', '请对方推荐', 'Good evening! Are you ready to order?', '晚上好！可以点餐了吗？', '请服务员推荐一道招牌菜。', 'what would you recommend', 'Yes. What would you recommend today?', '可以了。今天有什么推荐的？'),
@@ -248,7 +358,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'deadline', title: '把延期说清楚', subtitle: '向同事争取两天时间', category: '职场', symbol: 'calendar',
     partner: 'Alex', partnerRole: '你的项目同事',
-    persona: '在意按期上线，会追问能不能先上一部分',
+    label: '盯着上线', persona: '在意按期上线的同事，语速快、讲效率，会追问能不能先上一部分',
+    tags: ['work', 'asking'],
+    others: [
+      person('Sutton', '强势负责人', '强势的项目负责人，听到延期第一反应是 "That\'s not an option"，会质疑你为什么现在才说'),
+      person('Winter', '怕担责', '好说话但怕担责的同事，嘴上同意，却一直问"老板那边怎么交代"，要你帮他想好说法'),
+    ],
     setting: '周三下午。你负责的新版注册页原定周五上线，页面已经做完，但今天测试发现部分安卓手机收不到验证码，修复加回归测试大约还要两天。你想和 Alex 把上线改到下周一，并承诺周五先给一个可以演示的版本。',
     steps: [
       step('explain', '说明情况', 'Hey, how is the sign-up page coming along? Are we still on track for Friday?', '注册页进展怎么样？周五还能按时上线吗？', '先说页面已经做完，再说测试发现了验证码的问题。', 'almost done · found a bug · verification code', 'The page is almost done, but testing found a bug: some Android users can\'t get the verification code.', '页面差不多做完了，但测试发现一个问题：部分安卓用户收不到验证码。'),
@@ -259,7 +374,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'introduction', title: '接住面试的追问', subtitle: '让经历有一个清楚的重点', category: '职场', symbol: 'person.crop.rectangle',
     partner: 'Taylor', partnerRole: '面试官',
-    persona: '专业友善，会追问细节和你具体做了什么',
+    label: '专业追问', persona: '专业友善的面试官，节奏稳，会追问细节和你具体做了什么',
+    tags: ['interview', 'work'],
+    others: [
+      person('Carter', '压力面试', '压力面试风格的面试官，表情冷淡，故意质疑 "So it was really the team\'s work?"，看你稳不稳'),
+      person('Zion', '爱闲聊', '随和爱闲聊的面试官，常跑题聊自己的经历，需要你把话题带回你的重点'),
+    ],
     setting: '一场轻松的练习面试，你要介绍一次团队合作。可以讲自己的真实经历，也可以用这个：去年你在 5 人小组里负责推进一个活动报名小程序，上线前两周需求突然变了，你把任务拆成小块、每天同步进度，最后按时上线。',
     steps: [
       step('intro', '介绍经历', 'Could you tell me about a project you enjoyed working on?', '能介绍一个你喜欢参与的项目吗？', '选择一件具体的事情，说明你的角色。', 'worked on · responsible for', 'I worked on a small team, and I was responsible for keeping the project on track.', '我在一个小团队里，负责确保项目按计划推进。'),
@@ -270,7 +390,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'meeting', title: '会上提出不同意见', subtitle: '礼貌地建议先小范围试用', category: '职场', symbol: 'person.2',
     partner: 'Riley', partnerRole: '产品经理',
-    persona: '急于推进，对自己的方案很自信，会先反驳你',
+    label: '急于推进', persona: '急于推进的产品经理，对自己的方案很自信，语速快，会先反驳你',
+    tags: ['work', 'pushback'],
+    others: [
+      person('Brooke', '用数据压人', '爱拿数据压人的产品经理，"Do you have data on that?" 挂在嘴边，语气冷静但咄咄逼人'),
+      person('Micah', '表面赞同', '嘴上点头、实际想照原计划推进的经理，说话客气但含糊，需要你要一个明确决定'),
+    ],
     setting: '周一的产品例会上，Riley 提议下个月把新功能直接推给所有用户。你担心还没做过小范围测试，出问题会影响很多人。你想礼貌地表达不同意见，建议先给 10% 的用户试用两周。',
     steps: [
       step('concern', '表达顾虑', 'So I\'m thinking we launch the new feature to all users next month. Any thoughts?', '我打算下个月把新功能推给所有用户。大家怎么看？', '先肯定这个想法，再说出还没测试过的担心。', 'I like the idea · a bit worried · haven\'t tested', 'I like the idea, but I\'m a bit worried because we haven\'t tested it with real users yet.', '我喜欢这个想法，但有点担心，因为我们还没让真实用户试过。'),
@@ -281,7 +406,12 @@ export const SCENARIO_CATALOG = Object.freeze([
   {
     id: 'blame', title: '被同事甩锅', subtitle: '拿出证据，把话说清楚', category: '职场', symbol: 'exclamationmark.bubble',
     partner: 'Skyler', partnerRole: '另一个组的同事',
-    persona: '爱面子、会推卸责任，先咬定是你的错，看到证据才松口',
+    label: '爱面子甩锅', persona: '爱面子、会推卸责任的同事，先咬定是你的错，语气强硬，看到证据才松口',
+    tags: ['work', 'pushback'],
+    others: [
+      person('Ray', '装无辜', '装无辜的同事，"I just used what you gave me"，语气委屈，让你显得在找茬'),
+      person('Jo', '激动反咬', '一被提到就激动的同事，声音拔高，翻旧账说你上次也出过错'),
+    ],
     setting: '周一的会上，给客户演示的数据出了错。Skyler 说是你给的数据有问题，可你周四就把正确的表格发到了群里，是 Skyler 用了旧版本。会后你去找 Skyler，想把事情说清楚，并定好以后怎么避免。',
     steps: [
       step('clarify', '说清事实', 'Hey, about the meeting. Your numbers were wrong, and the client noticed.', '嘿，说说会上的事。你的数据错了，客户都看出来了。', '说明你周四已经把正确表格发到群里。', 'sent the correct file · on Thursday · the group chat', 'Actually, I sent the correct file to the group chat on Thursday.', '其实我周四就把正确的文件发到群里了。'),
@@ -289,13 +419,20 @@ export const SCENARIO_CATALOG = Object.freeze([
       step('fix', '定下规则', 'Fine. But in the meeting it looked like your mistake.', '行吧。但在会上看起来就是你的错。', '请他跟经理澄清，并提议以后只用共享文件夹里的最新版。', 'clear this up with · the shared folder · the latest version', 'Then please clear this up with our manager. From now on, let\'s only use the latest version in the shared folder.', '那请你跟经理澄清一下。以后我们只用共享文件夹里的最新版吧。'),
     ],
   },
-])
+]
+
+// cast[0] is the default partner; the others are the same role played by someone else
+// (「换个人」 on the preparation page). Each name has its own Live voice in ../ios/live.js.
+export const SCENARIO_CATALOG = Object.freeze(ENTRIES.map(({ label, others, ...scenario }) =>
+  ({ ...scenario, cast: [{ partner: scenario.partner, label, persona: scenario.persona }, ...others] })))
 
 const field = max => z.string().trim().min(1).max(max)
 export const catalogScenarioSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9-]{1,39}$/).refine(id => !id.startsWith('custom-') && !id.startsWith('today-')),
   title: field(30), subtitle: field(60), category: z.enum(SCENARIO_CATEGORIES), symbol: field(60),
-  partner: field(40), partnerRole: field(40), persona: field(80), setting: field(400),
+  partner: field(40), partnerRole: field(40), persona: field(120), setting: field(400),
+  tags: z.array(interestIdSchema).min(1).max(4),
+  cast: z.array(z.object({ partner: field(40), label: field(8), persona: field(120) }).strict()).min(2).max(3),
   steps: z.array(z.object({
     id: field(40), goal: field(20), prompt: field(300), translation: field(300), hint: field(200),
     keywords: field(120), expression: field(300), meaning: field(300),

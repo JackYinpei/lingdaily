@@ -2,6 +2,7 @@ import 'server-only'
 
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { createServerGeminiClient, GEMINI_REQUEST_TIMEOUT_MS } from './geminiConfig'
+import { interestNotes } from '../ios/interests'
 import { resolveModel } from '../ios/models'
 import { recordUsage, tokensFromUsageMetadata } from './aiUsage'
 import { parseSentenceReview, SENTENCE_REVIEW_INSTRUCTION, SENTENCE_REVIEW_SCHEMA } from '../ios/review'
@@ -178,7 +179,7 @@ export async function generateSuggestion(body, userId) {
 }
 
 export async function generateIdeas(body, userId) {
-  const payload = { avoid: body.avoid }
+  const payload = { avoid: body.avoid, ...interestNotes(body.interests) }
   const { model, data } = await generateStructured({
     systemInstruction: IDEAS_INSTRUCTION, responseSchema: IDEAS_RESPONSE_SCHEMA,
     payload, retryPayload: { ...payload, formatReminder: 'Return exactly 3 ideas, each at most 30 Chinese characters.' },

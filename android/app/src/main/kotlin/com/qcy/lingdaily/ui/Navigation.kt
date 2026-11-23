@@ -9,6 +9,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import java.time.LocalDate
 import java.util.UUID
 import com.qcy.lingdaily.app.AppContainer
+import com.qcy.lingdaily.core.model.PartnerCharacter
 import com.qcy.lingdaily.core.model.PracticeScenario
 import com.qcy.lingdaily.core.model.PracticeSession
 import com.qcy.lingdaily.core.model.ReviewTarget
@@ -30,6 +31,9 @@ class PreparationState(scenario: PracticeScenario) {
     /** The partner's persona for this rehearsal; editing it never changes the saved scenario. */
     var persona by mutableStateOf(scenario.persona.orEmpty())
     var editsPersona by mutableStateOf(false)
+
+    /** Who plays the partner this time (「换个人」); null keeps the scenario's own partner. */
+    var player by mutableStateOf<PartnerCharacter?>(null)
 }
 
 class ComposerState {
@@ -74,6 +78,7 @@ sealed class Screen {
     class Review(val title: String, val cards: List<ReviewCard>, val recordsResults: Boolean) : Screen()
     class Summary(val session: PracticeSession) : Screen()
     class SignIn : Screen()
+    class Interests : Screen()
     class AccountData : Screen()
 }
 

@@ -11,6 +11,7 @@ import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.SerializationStrategy
+import kotlinx.serialization.json.JsonElement
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
@@ -26,7 +27,8 @@ import com.qcy.lingdaily.core.model.AIScenarioResponse
 import com.qcy.lingdaily.core.model.AppJson
 import com.qcy.lingdaily.core.model.PracticeScenario
 import com.qcy.lingdaily.core.model.PracticeSession
-import com.qcy.lingdaily.core.model.ScenarioCatalogResponse
+import com.qcy.lingdaily.core.model.ScenarioCatalog
+import com.qcy.lingdaily.core.model.parseScenarioCatalog
 import com.qcy.lingdaily.core.model.SentenceReviewRecord
 import com.qcy.lingdaily.core.model.SentenceReviewRequest
 import com.qcy.lingdaily.core.model.SentenceReviewResponse
@@ -72,7 +74,7 @@ interface PracticeServing {
     suspend fun translate(text: String): String
     suspend fun suggest(session: PracticeSession): LiveSuggestion
     suspend fun liveToken(session: PracticeSession): LiveToken
-    suspend fun scenarioIdeas(avoiding: List<String>): List<String>
+    suspend fun scenarioIdeas(avoiding: List<String>, interests: List<String>): List<String>
     suspend fun reportLiveUsage(report: LiveUsageReport)
     suspend fun usageSummary(): AIUsageSummary
     suspend fun modelCatalog(): AIModelCatalog
@@ -97,7 +99,7 @@ private data class TranslateResponse(val requestId: Uuid, val translation: Strin
 private data class SuggestResponse(val requestId: Uuid, val suggestion: LiveSuggestion)
 
 @Serializable
-private data class IdeasRequest(val requestId: Uuid, val avoid: List<String>)
+private data class IdeasRequest(val requestId: Uuid, val avoid: List<String>, val interests: List<String>? = null)
 
 @Serializable
 private data class IdeasResponse(val requestId: Uuid, val ideas: List<String>)
@@ -212,8 +214,8 @@ class PracticeApiClient(
     }
 
     /** "换一批": three fresh one-line scenario ideas, avoiding ones already shown. */
-    override suspend fun scenarioIdeas(avoiding: List<String>): List<String> {
-        val body = IdeasRequest(UUID.randomUUID(), avoiding.takeLast(30).map { it.prefix(120) })
+    override suspend fun scenarioIdeas(avoiding: List<String>, interests: List<String>): List<String> {
+        val body = IdeasRequest(UUID.randomUUID(), avoiding.takeLast(30).map { it.prefix(120) }, interests.take(12).ifEmpty { null })
         val result = post("api/ios/scenario-ideas", encode(IdeasRequest.serializer(), body), IdeasResponse.serializer())
         if (result.requestId != body.requestId || result.ideas.size != 3) throw PracticeNetworkException.invalidReply()
         return result.ideas
@@ -249,9 +251,11 @@ class PracticeApiClient(
         post("api/ios/podcasts", null, PodcastList.serializer(), maxBytes = 512 * 1024, requiresAccount = false).episodes
 
     /** Built-in scenarios. Public editorial content, so it also loads before signing in. */
-    suspend fun scenarioCatalog(): List<PracticeScenario> {
-        val response = post("api/ios/scenarios", null, ScenarioCatalogResponse.serializer(), maxBytes = 512 * 1024, requiresAccount = false)
-        return response.validScenarios.ifEmpty { throw PracticeNetworkException.invalidReply() }
+    suspend fun scenarioCatalog(): ScenarioCatalog {
+        val response = post("api/ios/scenarios", null, JsonElement.serializer(), maxBytes = 512 * 1024, requiresAccount = false)
+        val catalog = parseScenarioCatalog(response.toString())
+        if (catalog.scenarios.isEmpty()) throw PracticeNetworkException.invalidReply()
+        return catalog
     }
 
     /** The latest daily podcast and a rehearsal about it; null when there is no recent episode. */

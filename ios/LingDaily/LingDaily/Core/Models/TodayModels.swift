@@ -35,6 +35,24 @@ struct TodayResponse: Decodable {
 struct ScenarioCatalogResponse: Decodable {
     let version: Int
     let scenarios: [PracticeScenario]
+    /// Interest tags and the alternate cast, read from the same entries; kept out of `PracticeScenario`
+    /// so they never become part of a synced rehearsal.
+    let extras: [ScenarioExtras]
+
+    private enum CodingKeys: String, CodingKey { case version, scenarios }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        scenarios = try container.decode([PracticeScenario].self, forKey: .scenarios)
+        extras = (try? container.decode([ScenarioExtras].self, forKey: .scenarios)) ?? []
+    }
+
+    /// Extras of the valid scenarios, by scenario id.
+    var validExtras: [String: ScenarioExtras] {
+        let ids = Set(validScenarios.map(\.id))
+        return Dictionary(extras.filter { ids.contains($0.id) }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
 
     /// Entries the app can practise: three filled-in steps and an id no learner or daily scenario uses.
     var validScenarios: [PracticeScenario] {

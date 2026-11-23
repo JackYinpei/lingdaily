@@ -188,6 +188,15 @@ fun SettingsScreen() {
                         onSelect = { settings.livePauseMs = it }, modifier = Modifier.testTag("live-pause"))
                 }
             }
+            SurfaceCard(Modifier.clickable(role = Role.Button) { navigator.push(Screen.Interests()) }.testTag("edit-interests")) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("练习偏好", style = Type.subheadline, color = colors.ink)
+                        Text(interestSummary(settings.learnerInterests), style = Type.caption, color = colors.secondary, maxLines = 2)
+                    }
+                    Icon(AppIcons.ChevronRight, null, Modifier.size(18.dp), tint = colors.secondary)
+                }
+            }
             ReminderCard()
             if (account.canPractice) AIModelCard()
             if (account.session != null && !account.usesLocalDevelopment) UsageCard()

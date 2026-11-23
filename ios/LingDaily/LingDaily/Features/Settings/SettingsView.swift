@@ -13,6 +13,15 @@ struct SettingsView: View {
     @State private var signingOut = false
     @State private var unsyncedOnSignOut = false
     @State private var showingAccountData = false
+    @State private var editingInterests = false
+    @AppStorage(LearnerInterests.key) private var interestsRaw = ""
+
+    /// The picked labels, or what choosing does.
+    private var interestSummary: String {
+        let picks = Set(LearnerInterests.picks(from: interestsRaw))
+        let labels = (LearnerInterest.goals + LearnerInterest.fears).filter { picks.contains($0.id) }.map(\.label)
+        return labels.isEmpty ? "选一选你想练的场合，首页按它排序" : labels.joined(separator: " · ")
+    }
 
     var body: some View {
         ZStack {
@@ -51,6 +60,18 @@ struct SettingsView: View {
                             .accessibilityIdentifier("live-pause")
                         }
                     }.surfaceCard()
+                    Button { editingInterests = true } label: {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("练习偏好").font(.subheadline).foregroundColor(Brand.ink)
+                                Text(interestSummary).font(.caption).foregroundColor(Brand.secondary).lineLimit(2)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundColor(Brand.secondary)
+                        }.frame(minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).surfaceCard()
+                    .accessibilityIdentifier("edit-interests")
                     ReminderCard()
                     if account.canPractice { AIModelCard() }
                     if account.session != nil && !account.usesLocalDevelopment { UsageCard() }
@@ -77,6 +98,7 @@ struct SettingsView: View {
                 .readableColumn()
             }
         }
+        .pushDestination(isPresented: $editingInterests) { InterestOnboardingView(editing: true) }
         .alert("还有内容没同步", isPresented: $unsyncedOnSignOut) {
             Button("仍然退出", role: .destructive) { finishSignOut() }
             Button("取消", role: .cancel) {}

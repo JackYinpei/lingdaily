@@ -104,7 +104,7 @@ protocol PracticeServing {
     func translate(_ text: String) async throws -> String
     func suggest(for session: PracticeSession) async throws -> LiveSuggestion
     func liveToken(for session: PracticeSession) async throws -> LiveToken
-    func scenarioIdeas(avoiding shown: [String]) async throws -> [String]
+    func scenarioIdeas(avoiding shown: [String], interests: [String]) async throws -> [String]
     func reportLiveUsage(_ report: LiveUsageReport) async throws
     func usageSummary() async throws -> AIUsageSummary
     func modelCatalog() async throws -> AIModelCatalog
@@ -234,10 +234,11 @@ final class PracticeAPIClient: PracticeServing {
     }
 
     /// "换一批": three fresh one-line scenario ideas, avoiding ones already shown.
-    func scenarioIdeas(avoiding shown: [String]) async throws -> [String] {
-        struct Request: Encodable { let requestId: UUID; let avoid: [String] }
+    func scenarioIdeas(avoiding shown: [String], interests: [String]) async throws -> [String] {
+        struct Request: Encodable { let requestId: UUID; let avoid: [String]; let interests: [String]? }
         struct Response: Decodable { let requestId: UUID; let ideas: [String] }
-        let request = Request(requestId: UUID(), avoid: Array(shown.suffix(30)).map { String($0.prefix(120)) })
+        let request = Request(requestId: UUID(), avoid: Array(shown.suffix(30)).map { String($0.prefix(120)) },
+                              interests: interests.isEmpty ? nil : Array(interests.prefix(12)))
         let result: Response = try await post("api/ios/scenario-ideas", request)
         guard result.requestId == request.requestId, result.ideas.count == 3 else { throw PracticeNetworkError.invalidReply }
         return result.ideas
@@ -260,12 +261,12 @@ final class PracticeAPIClient: PracticeServing {
     }
 
     /// Built-in scenarios. Public editorial content, so it also loads before signing in.
-    func scenarioCatalog() async throws -> [PracticeScenario] {
+    func scenarioCatalog() async throws -> (scenarios: [PracticeScenario], extras: [String: ScenarioExtras]) {
         let response: ScenarioCatalogResponse = try await post("api/ios/scenarios", Optional<String>.none, method: "GET",
                                                                maxBytes: 512 * 1024, requiresAccount: false)
         let scenarios = response.validScenarios
         guard !scenarios.isEmpty else { throw PracticeNetworkError.invalidReply }
-        return scenarios
+        return (scenarios, response.validExtras)
     }
 
     /// The latest daily podcast and a rehearsal about it; nil when there is no recent episode.

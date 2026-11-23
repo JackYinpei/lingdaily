@@ -9,7 +9,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import com.qcy.lingdaily.core.model.AppJson
+import com.qcy.lingdaily.core.model.PartnerCharacter
 import com.qcy.lingdaily.core.model.PracticeScenario
+import com.qcy.lingdaily.core.model.ScenarioExtras
 import com.qcy.lingdaily.core.model.TodayEpisode
 import com.qcy.lingdaily.core.model.nowMillis
 import com.qcy.lingdaily.core.network.PracticeApiClient
@@ -23,10 +25,18 @@ import com.qcy.lingdaily.core.persistence.writeAtomically
 class ScenarioCatalogStore(private val file: File, private val api: PracticeApiClient) {
     var scenarios by mutableStateOf(cached() ?: ScenarioLibrary.all)
         private set
+
+    /** Interest tags and alternate cast by scenario id; empty for the bundled fallback. */
+    var extras by mutableStateOf(if (cached() != null) cachedExtras() else emptyMap())
+        private set
+    private val extrasFile = File(file.parentFile, "scenario-catalog-extras.json")
     private var refreshing = false
     private var refreshedAt: Long? = null
 
     fun scenario(id: String): PracticeScenario? = scenarios.firstOrNull { it.id == id }
+
+    /** Who can play this scenario's partner; empty when there is no choice. */
+    fun cast(scenarioID: String): List<PartnerCharacter> = extras[scenarioID]?.cast.orEmpty()
 
     suspend fun refresh() {
         // The server marks the catalog fresh for 10 minutes; launch and return-to-app both ask for it.
@@ -41,10 +51,14 @@ class ScenarioCatalogStore(private val file: File, private val api: PracticeApiC
                 return
             }
             refreshedAt = nowMillis()
-            if (fresh == scenarios) return
-            scenarios = fresh
+            if (fresh.scenarios == scenarios && fresh.extras == extras) return
+            scenarios = fresh.scenarios
+            extras = fresh.extras
             withContext(Dispatchers.IO) {
-                runCatching { file.writeAtomically(AppJson.encodeToString(ListSerializer(PracticeScenario.serializer()), fresh)) }
+                runCatching { file.writeAtomically(AppJson.encodeToString(ListSerializer(PracticeScenario.serializer()), fresh.scenarios)) }
+                runCatching {
+                    extrasFile.writeAtomically(AppJson.encodeToString(ListSerializer(ScenarioExtras.serializer()), fresh.extras.values.toList()))
+                }
             }
         } finally {
             refreshing = false
@@ -54,6 +68,10 @@ class ScenarioCatalogStore(private val file: File, private val api: PracticeApiC
     private fun cached(): List<PracticeScenario>? = runCatching {
         AppJson.decodeFromString(ListSerializer(PracticeScenario.serializer()), file.readText())
     }.getOrNull()?.takeIf { it.isNotEmpty() }
+
+    private fun cachedExtras(): Map<String, ScenarioExtras> = runCatching {
+        AppJson.decodeFromString(ListSerializer(ScenarioExtras.serializer()), File(file.parentFile, "scenario-catalog-extras.json").readText())
+    }.getOrDefault(emptyList()).associate { it.id to it.cleaned() }
 }
 
 /** 「今日」: the latest daily podcast and its rehearsal. Kept in memory; refreshed on return to the app. */

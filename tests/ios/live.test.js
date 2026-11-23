@@ -197,6 +197,8 @@ describe('iOS Live development token', () => {
     expect(natural).toContain('not a helpful assistant')
     expect(natural).toContain('greet only if they would')
     expect(natural).toContain('BOUNDARIES')
+    expect(natural).toContain('VOICE:')
+    expect(natural).toContain("Your voice is this person's voice")
     expect(natural).not.toContain('Speak warmly')
     expect(natural).not.toContain('Start with a brief greeting')
     expect(natural).not.toContain('ATTITUDE')

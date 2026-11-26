@@ -46,7 +46,8 @@
     "productionBuild": "Passed locally and on GitHub Actions",
     "serverDeploy": "NOT deployed: deploy job of 822327e failed at 'Deploy to server' (SSH step, 6 s), same as 66ba1d8 on 2026-11-23. Production still runs 906dab4.",
     "deviceArchiveAndDistributionUpload": "Passed",
-    "releaseBundle": "2.0 (35), iOS 15+, privacy manifest present, ScenarioCatalog.json bundled, no AIConnection.json, non-exempt encryption false; binary has no server AI endpoint or relay domain"
+    "releaseBundle": "2.0 (35), iOS 15+, privacy manifest present, ScenarioCatalog.json bundled, no AIConnection.json, non-exempt encryption false; binary has no server AI endpoint or relay domain",
+    "productionMigration": "202611260001_user_ai_settings applied 2026-11-26; postflight 19 PASS / 0 non-PASS, row counts match preflight"
   },
   "notes": [
     "2.0 (35) uploaded from the local Mac on 2026-11-26; build selection and submission in App Store Connect are still manual.",
@@ -104,5 +105,6 @@
       "status": "Uploaded, superseded by 2.0"
     }
   ],
-  "privacyNote": "2.0 is bring-your-own-key: microphone audio and AI request content go from the device straight to the learner's own Gemini/OpenAI endpoint, not to the developer, so AudioData is no longer collected by the developer. Signed-in accounts store the learner's API settings encrypted (user_ai_settings). Update the App Privacy answers in App Store Connect before submitting 2.0."
+  "privacyNote": "2.0 is bring-your-own-key: microphone audio and AI request content go from the device straight to the learner's own Gemini/OpenAI endpoint, not to the developer, so AudioData is no longer collected by the developer. Signed-in accounts store the learner's API settings encrypted (user_ai_settings). Update the App Privacy answers in App Store Connect before submitting 2.0.",
+  "reviewNotes": "ios/AppStore/REVIEW_NOTES.md (needs a quota-limited test Gemini key)"
 }

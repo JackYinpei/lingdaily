@@ -80,7 +80,7 @@ with metrics as (
     (
       select count(*)
       from public.chat_history
-      where source_type not in ('news', 'scenario')
+      where source_type not in ('news', 'scenario', 'practice')
     ) as chat_invalid_sources,
     (
       select count(*)

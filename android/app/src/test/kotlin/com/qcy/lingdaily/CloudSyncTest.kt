@@ -13,6 +13,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -23,6 +25,9 @@ import com.qcy.lingdaily.core.model.PracticeSession
 import com.qcy.lingdaily.core.model.PracticeStep
 import com.qcy.lingdaily.core.model.SavedExpression
 import com.qcy.lingdaily.core.model.summaryLines
+import com.qcy.lingdaily.core.network.AIProviderConfiguration
+import com.qcy.lingdaily.core.network.AIProviderKind
+import com.qcy.lingdaily.core.network.AISettings
 import com.qcy.lingdaily.core.persistence.SyncBatchLimits
 import com.qcy.lingdaily.core.persistence.SyncChanges
 import com.qcy.lingdaily.core.persistence.SyncLedger
@@ -133,7 +138,7 @@ class CloudSyncTest {
         var ledger = SyncLedger.adopting("user-a", archive)
         val uploaded = mutableListOf<PracticeSession>()
         for (round in 1..3) {
-            val changes = ledger.changes(archive, SyncBatchLimits(sessions = 2))
+            val changes = ledger.changes(archive, limits = SyncBatchLimits(sessions = 2))
             assertEquals(if (round < 3) 2 else 1, changes.sessions.upsert.size)
             uploaded += changes.sessions.upsert
             ledger.merge(snapshot(uploaded), changes, archive).let { ledger = it.ledger; archive = it.archive }
@@ -143,10 +148,10 @@ class CloudSyncTest {
         assertEquals(archive.sessions.map { it.id }.toSet(), uploaded.map { it.id }.toSet())
 
         val again = SyncLedger.adopting("user-a", archive)
-        assertEquals("An oversized session still goes alone", 1, again.changes(archive, SyncBatchLimits(sessionBytes = 1)).sessions.upsert.size)
+        assertEquals("An oversized session still goes alone", 1, again.changes(archive, limits = SyncBatchLimits(sessionBytes = 1)).sessions.upsert.size)
         assertEquals("Only the newest versions are listed",
             archive.sessions.take(2).map { SyncLedger.sessionKey(it.id) }.toSet(),
-            again.changes(archive, SyncBatchLimits(knownSessions = 2)).knownSessions?.keys)
+            again.changes(archive, limits = SyncBatchLimits(knownSessions = 2)).knownSessions?.keys)
     }
 
     @Test
@@ -264,5 +269,98 @@ class CloudSyncTest {
         assertEquals(listOf(null, "word"), changes.expressions.upsert.map { it.kind })
         assertEquals("觉得自己没错，嘴硬", changes.scenarios.upsert.single().persona)
         assertEquals(setOf(text.updatedAt, live.updatedAt), changes.knownSessions?.values?.toSet())
+    }
+
+    @Test
+    fun aiSettingsResolutionFollowsSelectedProviderWithFallbackAndEmptyFreshInstall() {
+        val fresh = AISettings()
+        assertEquals("", fresh.gemini.apiKey)
+        assertEquals("", fresh.gemini.baseURL)
+        assertEquals("", fresh.gemini.textModel)
+        assertEquals("", fresh.gemini.liveModel)
+        assertEquals("", fresh.openai.apiKey)
+        assertEquals("", fresh.openai.baseURL)
+        assertEquals("", fresh.openai.textModel)
+        assertEquals("", fresh.openai.liveModel)
+        assertFalse(fresh.hasAnyValue)
+        assertFalse(fresh.isAnyConfigured)
+        assertNull(fresh.resolvedText)
+        assertNull(fresh.resolvedVoice)
+
+        val openaiOnly = AISettings(
+            updatedAt = base,
+            textProvider = AIProviderKind.GEMINI,
+            voiceProvider = AIProviderKind.GEMINI,
+            openai = AIProviderConfiguration(
+                apiKey = " sk-test ",
+                baseURL = " https://api.openai.com ",
+                textModel = " gpt-4o-mini ",
+                liveModel = " gpt-4o-realtime-preview ",
+            ),
+        )
+        assertTrue(openaiOnly.hasAnyValue)
+        assertTrue(openaiOnly.isAnyConfigured)
+        assertEquals(AIProviderKind.OPENAI, openaiOnly.resolvedText?.provider)
+        assertEquals("gpt-4o-mini", openaiOnly.resolvedText?.textModel)
+        assertEquals(AIProviderKind.OPENAI, openaiOnly.resolvedVoice?.provider)
+        assertEquals("gpt-4o-realtime-preview", openaiOnly.resolvedVoice?.liveModel)
+
+        val split = openaiOnly.copy(
+            textProvider = AIProviderKind.GEMINI,
+            voiceProvider = AIProviderKind.OPENAI,
+            gemini = AIProviderConfiguration(apiKey = "AIza-test", textModel = "gemini-2.5-flash"),
+        )
+        assertEquals(AIProviderKind.GEMINI, split.resolvedText?.provider)
+        assertEquals("gemini-2.5-flash", split.resolvedText?.textModel)
+        assertEquals(AIProviderKind.OPENAI, split.resolvedVoice?.provider)
+    }
+
+    @Test
+    fun aiSettingsSyncEncodesIsoTimestampOmitsWhenCleanAndMergesByTimestamp() {
+        val archive = PracticeArchive()
+        val cleanChangesJson = AppJson.encodeToJsonElement(SyncChanges.serializer(), SyncLedger.adopting("u", archive).changes(archive)).jsonObject
+        assertFalse("aiSettings must be omitted when not dirty", "aiSettings" in cleanChangesJson)
+
+        val localAI = AISettings(
+            updatedAt = base,
+            textProvider = AIProviderKind.OPENAI,
+            voiceProvider = AIProviderKind.GEMINI,
+            gemini = AIProviderConfiguration(apiKey = "g-key", liveModel = "gemini-2.5-flash-native-audio-latest"),
+            openai = AIProviderConfiguration(apiKey = "o-key", textModel = "gpt-4o-mini"),
+        )
+        var ledger = SyncLedger.adopting("u", archive, hasAISettings = localAI.hasAnyValue)
+        assertTrue(ledger.aiSettingsDirty)
+        assertEquals(1, ledger.pendingCount)
+
+        val changes = ledger.changes(archive, localAI)
+        assertFalse(changes.isEmpty)
+        val wireJson = AppJson.encodeToJsonElement(SyncChanges.serializer(), changes).jsonObject
+        val aiObj = wireJson.getValue("aiSettings").jsonObject
+        val updatedAtPrimitive = aiObj.getValue("updatedAt").jsonPrimitive
+        assertTrue("updatedAt must be an ISO-8601 string, never a number", updatedAtPrimitive.isString)
+        assertTrue(updatedAtPrimitive.content.endsWith("Z") && updatedAtPrimitive.content.contains("T"))
+
+        // Round-trip: upload completes without concurrent edit -> dirty cleared.
+        val snapSame = AppJson.decodeFromString<SyncSnapshot>(AppJson.encodeToString(SyncSnapshot(aiSettings = localAI)))
+        val mergedSame = ledger.merge(snapSame, changes, archive, localAISettings = localAI, now = base + 1000)
+        assertFalse(mergedSame.ledger.aiSettingsDirty)
+        assertEquals(0, mergedSame.ledger.pendingCount)
+        assertEquals(localAI, mergedSame.remoteAISettings)
+
+        // Concurrent local edit while upload in flight -> stays dirty unless remote is newer.
+        ledger = mergedSame.ledger.aiSettingsChanged()
+        val inFlight = ledger.changes(archive, localAI)
+        val editedLater = localAI.copy(updatedAt = base + 5_000, openai = localAI.openai.copy(textModel = "gpt-4.1-mini"))
+        val afterEdit = ledger.merge(snapSame, inFlight, archive, localAISettings = editedLater, now = base + 6_000)
+        assertTrue(afterEdit.ledger.aiSettingsDirty)
+        assertNull("Older cloud snapshot must not overwrite newer local edit", afterEdit.remoteAISettings)
+
+        // Newer cloud snapshot from another device wins and clears dirty.
+        val newerRemote = localAI.copy(updatedAt = base + 20_000, gemini = localAI.gemini.copy(textModel = "gemini-2.5-pro"))
+        val snapNewer = AppJson.decodeFromString<SyncSnapshot>(AppJson.encodeToString(SyncSnapshot(aiSettings = newerRemote)))
+        val adoptedNewer = afterEdit.ledger.merge(snapNewer, SyncChanges(), archive, localAISettings = editedLater, now = base + 21_000)
+        assertFalse(adoptedNewer.ledger.aiSettingsDirty)
+        assertNotNull(adoptedNewer.remoteAISettings)
+        assertEquals("gemini-2.5-pro", adoptedNewer.remoteAISettings?.gemini?.textModel)
     }
 }

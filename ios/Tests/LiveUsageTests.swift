@@ -15,15 +15,9 @@ final class LiveUsageTests: XCTestCase {
             }
         }
         XCTAssertEqual(total, LiveUsage(input: 397, output: 113, inputAudio: 42, outputAudio: 113, total: 510))
-        let report = try XCTUnwrap(LiveUsageReport(reportId: UUID(), model: "gemini-3.1-flash-live-preview", usage: total))
-        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(report)) as? [String: Any]
-        XCTAssertEqual(Set(json?.keys.map { $0 } ?? []),
-                       ["reportId", "model", "inputTokens", "outputTokens", "inputAudioTokens", "outputAudioTokens", "totalTokens"],
-                       "Matches the server's strict schema")
     }
 
-    func testNothingToReportForAnEmptyConnection() {
-        XCTAssertNil(LiveUsageReport(reportId: UUID(), model: "m", usage: LiveUsage()))
+    func testEmptyMetadataIsNotUsage() {
         XCTAssertNil(LiveUsage(metadata: [:]))
     }
 }

@@ -3,13 +3,14 @@ import SwiftUI
 
 struct PracticeHomeView: View {
     @EnvironmentObject private var store: PracticeStore
-    @EnvironmentObject private var account: AccountStore
+    @EnvironmentObject private var aiSettings: AISettingsStore
     @EnvironmentObject private var catalog: ScenarioCatalogStore
     @EnvironmentObject private var today: TodayStore
     @EnvironmentObject private var reminders: ReminderCenter
     @State private var selectedScenario: PracticeScenario?
     @State private var resumed: PracticeSession?
     @State private var composing = false
+    @State private var showingAPISettings = false
     @State private var created: PracticeScenario?
     /// Home filter; "" shows every category. Kept across launches.
     @AppStorage("homeScenarioCategory") private var category = ""
@@ -69,7 +70,7 @@ struct PracticeHomeView: View {
                             }.accessibilityIdentifier("create-scenario")
                         }
                     }
-                    if !account.canPractice { signInCard }
+                    if !aiSettings.settings.isAnyConfigured { apiSetupCard }
                     if let unfinished { continueCard(unfinished) }
                     if categories.count > 1 { categoryFilter }
                     VStack(spacing: 14) {
@@ -106,6 +107,7 @@ struct PracticeHomeView: View {
                 .readableColumn()
             }
         }
+        .pushDestination(isPresented: $showingAPISettings) { APISettingsView() }
         .pushDestination(isPresented: $composing) {
             if let created {
                 PreparationFlowView(scenario: created)
@@ -120,20 +122,15 @@ struct PracticeHomeView: View {
         .task {
             // Independent requests: 「今日」 (also used by the 播客 tab) does not wait for the catalog.
             async let catalogRefresh: Void = catalog.refresh()
-            if account.canPractice { await today.refresh() }
-            await catalogRefresh
+            async let todayRefresh: Void = today.refresh()
+            _ = await (catalogRefresh, todayRefresh)
             #if DEBUG
             if !DebugLaunch.route.isEmpty {
-                // Programmatic pushes during the first layout are dropped; also wait for the launch refresh.
-                for _ in 0..<20 where today.episode == nil { try? await Task.sleep(nanoseconds: 250_000_000) }
                 try? await Task.sleep(nanoseconds: 600_000_000)
             }
-            if DebugLaunch.take("prep") { selectedScenario = catalog.scenario(id: DebugLaunch.argument) ?? today.episode?.practiceScenario }
+            if DebugLaunch.take("prep") { selectedScenario = catalog.scenario(id: DebugLaunch.argument) ?? catalog.scenarios.first }
             if DebugLaunch.take("compose") { created = nil; composing = true }
             #endif
-        }
-        .onChange(of: account.canPractice) { canPractice in
-            if canPractice { Task { await today.refresh(force: true) } } else { today.clear() }
         }
         .onReceive(reminders.$pendingScenarioID.compactMap { $0 }) { id in
             reminders.pendingScenarioID = nil
@@ -212,14 +209,18 @@ struct PracticeHomeView: View {
             SceneCard(scenario: scenario, isCustom: isCustom, eventDay: isCustom ? reminders.eventDay(for: scenario.id) : nil,
                       recommended: !isCustom && recommended.contains(scenario.id))
         }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("scene-\(scenario.id)")
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("scene-\(scenario.id)")
     }
 
-    private var signInCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("先登录，再开口").font(.headline).foregroundColor(Brand.ink)
-            AppleSignInButton()
+    private var apiSetupCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("先配置模型接口").font(.headline).foregroundColor(Brand.ink)
+            Text("填入 Google Gemini 或 OpenAI 的 API Key 与模型名称即可开始对话。")
+                .font(.subheadline).foregroundColor(Brand.secondary).lineSpacing(3)
+            Button("配置接口") { showingAPISettings = true }
+                .buttonStyle(SolidButtonStyle())
+                .accessibilityIdentifier("open-api-settings")
         }.surfaceCard()
     }
 

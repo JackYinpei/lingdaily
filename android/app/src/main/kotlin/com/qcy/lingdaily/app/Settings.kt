@@ -2,7 +2,6 @@ package com.qcy.lingdaily.app
 
 import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlin.properties.ReadWriteProperty
@@ -13,9 +12,6 @@ import com.qcy.lingdaily.core.model.LearnerInterests
 import com.qcy.lingdaily.core.model.PracticeLevel
 import com.qcy.lingdaily.core.model.ReviewLog
 import com.qcy.lingdaily.core.model.ReviewPicker
-import com.qcy.lingdaily.core.model.nowMillis
-import com.qcy.lingdaily.core.network.AIDataConsent
-import com.qcy.lingdaily.core.network.AIModelFeature
 import com.qcy.lingdaily.core.persistence.SyncLedgerFile
 import com.qcy.lingdaily.core.realtime.LivePause
 
@@ -59,31 +55,6 @@ class Settings(private val preferences: SharedPreferences) {
     var dailyReminderEnabled by boolean("dailyReminderEnabled", false)
     var dailyReminderHour by int("dailyReminderHour", 21)
     var dailyReminderMinute by int("dailyReminderMinute", 0)
-
-    private var aiConsentVersion by string(AIDataConsent.KEY, "")
-    val aiConsentGranted: Boolean get() = aiConsentVersion == AIDataConsent.VERSION
-
-    fun grantAIConsent() {
-        preferences.edit().putLong(AIDataConsent.DATE_KEY, nowMillis()).apply()
-        aiConsentVersion = AIDataConsent.VERSION
-    }
-
-    fun revokeAIConsent() {
-        preferences.edit().remove(AIDataConsent.DATE_KEY).apply()
-        aiConsentVersion = ""
-    }
-
-    private val models = mutableStateMapOf<AIModelFeature, String>().apply {
-        for (feature in AIModelFeature.entries) preferences.getString(feature.key, null)?.let { put(feature, it) }
-    }
-
-    /** null means "use the server default". */
-    fun model(feature: AIModelFeature): String? = models[feature]?.takeIf { it.isNotEmpty() && it.length <= 100 }
-
-    fun setModel(feature: AIModelFeature, model: String?) {
-        if (model.isNullOrEmpty()) models.remove(feature) else models[feature] = model
-        preferences.edit().apply { if (model.isNullOrEmpty()) remove(feature.key) else putString(feature.key, model) }.apply()
-    }
 
     /** When each 词库 item was last reviewed here. Another account's history must not carry over. */
     var reviewLog: ReviewLog

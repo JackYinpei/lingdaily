@@ -9,17 +9,11 @@ import com.qcy.lingdaily.core.network.PracticeApiClient
 import com.qcy.lingdaily.core.network.SessionVault
 
 /**
- * Signed-in state for the production service. The session token lives encrypted on this
- * device; practice data syncs to this account through `SyncEngine`.
- *
- * Android signs in with the email and password of the LingDaily web account (the iOS app
- * uses Sign in with Apple); both receive the same kind of app session from the server.
+ * Optional signed-in state for multi-device cloud sync. The session token lives encrypted
+ * on this device; practice records, vocabulary, custom scenarios and encrypted API settings
+ * sync to this account through `SyncEngine`.
  */
-class AccountStore(
-    private val vault: SessionVault,
-    /** Debug builds paired with `npm run ios:dev` need no account. */
-    val usesLocalDevelopment: Boolean,
-) {
+class AccountStore(private val vault: SessionVault) {
     enum class Registration { SIGNED_IN, CONFIRM_EMAIL, FAILED }
 
     var session by mutableStateOf(vault.load()?.takeIf { it.isUsable() })
@@ -29,8 +23,6 @@ class AccountStore(
     var errorMessage by mutableStateOf<String?>(null)
 
     lateinit var api: PracticeApiClient
-
-    val canPractice: Boolean get() = usesLocalDevelopment || session != null
 
     suspend fun signIn(email: String, password: String): Boolean = attempt { api.signIn(email, password) } != null
 

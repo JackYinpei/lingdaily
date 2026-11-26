@@ -2,11 +2,12 @@ import SwiftUI
 
 struct PreparationFlowView: View {
     let scenario: PracticeScenario
-    @EnvironmentObject private var account: AccountStore
+    @EnvironmentObject private var aiSettings: AISettingsStore
     @EnvironmentObject private var store: PracticeStore
     @EnvironmentObject private var catalog: ScenarioCatalogStore
     @Environment(\.dismiss) private var dismiss
     @State private var session: PracticeSession?
+    @State private var showingAPISettings = false
     @State private var goal = ""
     @State private var context = ""
     @State private var addsContext = false
@@ -74,21 +75,40 @@ struct PreparationFlowView: View {
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 10) {
-                    if account.canPractice {
+                    if aiSettings.settings.isAnyConfigured {
                         HStack(spacing: 12) {
-                            Button { start(voice: false) } label: { Text("文字对话") }
-                                .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("start-text")
-                            Button { start(voice: true) } label: { Text("语音通话") }
-                                .buttonStyle(SolidButtonStyle()).accessibilityIdentifier("start-voice")
+                            Button {
+                                if aiSettings.settings.resolvedText != nil {
+                                    start(voice: false)
+                                } else {
+                                    showingAPISettings = true
+                                }
+                            } label: { Text("文字对话") }
+                                .buttonStyle(SolidButtonStyle(secondary: aiSettings.settings.resolvedText == nil))
+                                .accessibilityIdentifier("start-text")
+                            Button {
+                                if aiSettings.settings.resolvedVoice != nil {
+                                    start(voice: true)
+                                } else {
+                                    showingAPISettings = true
+                                }
+                            } label: { Text("语音通话") }
+                                .buttonStyle(SolidButtonStyle(secondary: aiSettings.settings.resolvedVoice == nil))
+                                .accessibilityIdentifier("start-voice")
                         }
                     } else {
-                        // Signing in here keeps the learner on this scenario instead of sending them to 我的.
-                        AppleSignInButton()
+                        Button("配置 API Key 开始练习") {
+                            fieldFocused = false
+                            showingAPISettings = true
+                        }
+                        .buttonStyle(SolidButtonStyle())
+                        .accessibilityIdentifier("configure-api-to-start")
                     }
                 }
                 .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8)
                 .readableColumn().background(Brand.page)
             }
+            .pushDestination(isPresented: $showingAPISettings) { APISettingsView() }
             .navigationBack(title: "准备对话") { dismiss() }
             .onAppear { if reviewItems.isEmpty { reviewItems = ReviewPicker.pick(from: store.archive, for: scenario) } }
         }
@@ -192,7 +212,7 @@ struct PreparationFlowView: View {
                 }
             }
             Text(scenario.title).font(.title.bold()).foregroundColor(Brand.ink)
-            Text(scenario.setting).font(.body).foregroundColor(Brand.inkOnTone).lineSpacing(5)
+            Text(current.setting).font(.body).foregroundColor(Brand.inkOnTone).lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
             if let shown = PracticeScenario.cleanPersona(persona) {
                 Text("\(current.partner)：\(shown)").font(.subheadline).foregroundColor(Brand.inkOnTone)

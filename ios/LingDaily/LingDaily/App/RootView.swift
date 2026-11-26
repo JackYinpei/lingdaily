@@ -2,12 +2,11 @@ import Combine
 import SwiftUI
 
 struct RootView: View {
-    @EnvironmentObject private var account: AccountStore
     @EnvironmentObject private var reminders: ReminderCenter
-    @State private var showsAIConsent = false
     @AppStorage(LearnerInterests.askedKey) private var interestsAsked = false
     @State private var showsInterests = false
     @State private var tab = 0
+
     var body: some View {
         Group {
             if #available(iOS 16.0, *) {
@@ -18,23 +17,14 @@ struct RootView: View {
         }
         .tint(Brand.accent)
         .accentColor(Brand.accent)
-        .sheet(isPresented: $showsAIConsent) { AIDataConsentView() }
-        // First run asks what the learner wants to practise; the AI consent waits until it is done.
-        .fullScreenCover(isPresented: $showsInterests) { InterestOnboardingView(onFinish: offerAIConsent) }
+        .fullScreenCover(isPresented: $showsInterests) { InterestOnboardingView() }
         .onAppear {
             showsInterests = !interestsAsked
             #if DEBUG
             if !DebugLaunch.route.isEmpty { showsInterests = false }
-            #endif
-            offerAIConsent()
-            #if DEBUG
             if DebugLaunch.opensLearning { tab = 2 }
             if DebugLaunch.opensPodcast { tab = 1 }
             #endif
-        }
-        .onChange(of: account.canPractice) { _ in offerAIConsent() }
-        .onReceive(NotificationCenter.default.publisher(for: AIDataConsent.requested).receive(on: RunLoop.main)) { _ in
-            showsAIConsent = true
         }
     }
 
@@ -53,10 +43,5 @@ struct RootView: View {
         .onReceive(reminders.$pendingScenarioID) { if $0 != nil { tab = 0 } }
         .navigationBarHidden(true)
         .safeAreaInset(edge: .top, spacing: 0) { StorageBanner() }
-    }
-
-    private func offerAIConsent() {
-        guard !showsInterests else { return }
-        if account.canPractice && !AIDataConsent.isGranted() { showsAIConsent = true }
     }
 }

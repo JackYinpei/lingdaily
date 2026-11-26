@@ -271,12 +271,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = LingDaily.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 35;
 				DEVELOPMENT_TEAM = 8AJ84729BZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DebugAppInfo.plist;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于英语听写或实时语音通话。通话语音发送给 Gemini，原始录音不会保存。";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于英语听写或实时语音通话。通话语音直连你配置的模型接口，原始录音不会保存。";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "用于设备端英语听写。也可以不授权，直接打字练习。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -287,7 +287,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.qcy.LingDaily;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -306,12 +306,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = LingDaily.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 35;
 				DEVELOPMENT_TEAM = 8AJ84729BZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AppInfo.plist;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于英语听写或实时语音通话。通话语音发送给 Gemini，原始录音不会保存。";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于英语听写或实时语音通话。通话语音直连你配置的模型接口，原始录音不会保存。";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "用于设备端英语听写。也可以不授权，直接打字练习。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -322,7 +322,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.qcy.LingDaily;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

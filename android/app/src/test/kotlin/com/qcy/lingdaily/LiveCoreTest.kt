@@ -1,5 +1,7 @@
 package com.qcy.lingdaily
 
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.Base64
 import java.util.UUID
 import kotlinx.serialization.json.Json
@@ -7,6 +9,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -22,12 +26,13 @@ import org.junit.Test
 import com.qcy.lingdaily.core.model.AIFeedback
 import com.qcy.lingdaily.core.model.AIPracticeAction
 import com.qcy.lingdaily.core.model.AppJson
-import com.qcy.lingdaily.core.model.IsoMillisSerializer
 import com.qcy.lingdaily.core.model.PracticeArchive
 import com.qcy.lingdaily.core.model.PracticeMessage.Role
 import com.qcy.lingdaily.core.model.PracticeSession
 import com.qcy.lingdaily.core.model.PracticeSession.Phase
+import com.qcy.lingdaily.core.network.AIProviderKind
 import com.qcy.lingdaily.core.realtime.LiveCodec
+import com.qcy.lingdaily.core.realtime.LiveConnectionConfig
 import com.qcy.lingdaily.core.realtime.LiveEchoGate
 import com.qcy.lingdaily.core.realtime.LiveEvent
 import com.qcy.lingdaily.core.realtime.LiveInputBuffer
@@ -39,13 +44,13 @@ import com.qcy.lingdaily.core.realtime.LivePlaybackBuffer
 import com.qcy.lingdaily.core.realtime.LiveProtocolException
 import com.qcy.lingdaily.core.realtime.LiveStuckPolicy
 import com.qcy.lingdaily.core.realtime.LiveSuggestionRequest
-import com.qcy.lingdaily.core.realtime.LiveToken
 import com.qcy.lingdaily.core.realtime.LiveTokenRequest
 import com.qcy.lingdaily.core.realtime.LiveToolCall
 import com.qcy.lingdaily.core.realtime.LiveTranscriptReducer
 import com.qcy.lingdaily.core.realtime.LiveUploadBatch
 import com.qcy.lingdaily.core.realtime.LiveUsage
-import com.qcy.lingdaily.core.realtime.LiveUsageReport
+import com.qcy.lingdaily.core.realtime.OpenAIRealtimeCodec
+import com.qcy.lingdaily.core.realtime.Pcm16Resampler16To24
 
 class LiveCoreTest {
     private val scenario = testScenario(steps = 3, id = "live-test")
@@ -54,12 +59,27 @@ class LiveCoreTest {
     private fun completion(id: String, index: Int) = call("mark_task_complete", buildJsonObject { put("taskIndex", index) }, id)
     private fun liveSession() = PracticeSession.start(scenario, useAI = true).beginLive()
 
-    // ---- Wire format ----
+    // ---- Gemini Live & OpenAI Realtime wire format ----
 
+    // ---- Wire format ----
     @Test
-    fun setupDoesNotSendClientSystemInstruction() {
-        val setup = parse(LiveCodec.setup("test-model")).getValue("setup").jsonObject
-        assertEquals(mapOf("model" to JsonPrimitive("models/test-model")), setup)
+    fun geminiDirectSetupCarriesFullSystemInstructionVoiceToolsAndVad() {
+        val setup = parse(LiveCodec.setup("models/gemini-2.5-flash-native-audio-latest", "Play Alex.", "Puck", 2500))
+            .getValue("setup").jsonObject
+        assertEquals("models/gemini-2.5-flash-native-audio-latest", setup.getValue("model").jsonPrimitive.content)
+        val genConfig = setup.getValue("generationConfig").jsonObject
+        assertEquals(listOf("AUDIO"), genConfig.getValue("responseModalities").jsonArray.map { it.jsonPrimitive.content })
+        assertEquals("Puck", genConfig.getValue("speechConfig").jsonObject.getValue("voiceConfig").jsonObject
+            .getValue("prebuiltVoiceConfig").jsonObject.getValue("voiceName").jsonPrimitive.content)
+        assertEquals("Play Alex.", setup.getValue("systemInstruction").jsonObject.getValue("parts").jsonArray[0]
+            .jsonObject.getValue("text").jsonPrimitive.content)
+        val declarations = setup.getValue("tools").jsonArray[0].jsonObject.getValue("functionDeclarations").jsonArray
+        assertEquals(setOf("record_language_correction", "record_unfamiliar_learning_items", "mark_task_complete"),
+            declarations.map { it.jsonObject.getValue("name").jsonPrimitive.content }.toSet())
+        assertTrue("inputAudioTranscription" in setup && "outputAudioTranscription" in setup)
+        val aad = setup.getValue("realtimeInputConfig").jsonObject.getValue("automaticActivityDetection").jsonObject
+        assertEquals(2500, aad.getValue("silenceDurationMs").jsonPrimitive.int)
+
         val payload = parse(LiveCodec.audio(byteArrayOf(0, 1))).getValue("realtimeInput").jsonObject.getValue("audio").jsonObject
         assertEquals("audio/pcm;rate=16000", payload.getValue("mimeType").jsonPrimitive.content)
         assertArrayEquals(byteArrayOf(0, 1), Base64.getDecoder().decode(payload.getValue("data").jsonPrimitive.content))
@@ -68,6 +88,149 @@ class LiveCoreTest {
         assertEquals("""{"realtimeInput":{"audioStreamEnd":true}}""", LiveCodec.audioEnd())
         assertEquals("""{"clientContent":{"turns":[{"role":"user","parts":[{"text":"Hi \"there\""}]}],"turnComplete":true}}""",
             LiveCodec.text("Hi \"there\""))
+    }
+
+    @Test
+    fun openAIRealtimeSessionUpdateAudioKickoffAndEventsFollowProtocol() {
+        val update = parse(OpenAIRealtimeCodec.sessionUpdate("Play Sam.", "shimmer", 1500))
+        assertEquals("session.update", update.getValue("type").jsonPrimitive.content)
+        val sessionObj = update.getValue("session").jsonObject
+        // GA Realtime shape; the beta interface (flat audio fields, `modalities`) was shut down on 2026-05-12.
+        assertEquals("realtime", sessionObj.getValue("type").jsonPrimitive.content)
+        assertEquals(listOf("audio"), sessionObj.getValue("output_modalities").jsonArray.map { it.jsonPrimitive.content })
+        for (betaField in listOf("modalities", "voice", "input_audio_format", "output_audio_format", "input_audio_transcription", "turn_detection")) {
+            assertFalse("Beta field $betaField must not be sent", betaField in sessionObj)
+        }
+        assertEquals("Play Sam.", sessionObj.getValue("instructions").jsonPrimitive.content)
+        val audio = sessionObj.getValue("audio").jsonObject
+        val input = audio.getValue("input").jsonObject
+        val output = audio.getValue("output").jsonObject
+        assertEquals("shimmer", output.getValue("voice").jsonPrimitive.content)
+        for (format in listOf(input.getValue("format").jsonObject, output.getValue("format").jsonObject)) {
+            assertEquals("audio/pcm", format.getValue("type").jsonPrimitive.content)
+            assertEquals(24000, format.getValue("rate").jsonPrimitive.int)
+        }
+        assertEquals(OpenAIRealtimeCodec.TRANSCRIPTION_MODEL, input.getValue("transcription").jsonObject.getValue("model").jsonPrimitive.content)
+        val vad = input.getValue("turn_detection").jsonObject
+        assertEquals("server_vad", vad.getValue("type").jsonPrimitive.content)
+        assertEquals(1500, vad.getValue("silence_duration_ms").jsonPrimitive.int)
+        assertEquals(3, sessionObj.getValue("tools").jsonArray.size)
+        assertEquals("auto", sessionObj.getValue("tool_choice").jsonPrimitive.content)
+
+        val kickoff = OpenAIRealtimeCodec.textMessages("Hello!")
+        assertEquals(2, kickoff.size)
+        assertEquals("conversation.item.create", parse(kickoff[0]).getValue("type").jsonPrimitive.content)
+        assertEquals("response.create", parse(kickoff[1]).getValue("type").jsonPrimitive.content)
+
+        assertEquals(listOf(LiveEvent.SetupComplete), OpenAIRealtimeCodec.parse("""{"type":"session.updated"}"""))
+        assertEquals(listOf(LiveEvent.Interrupted), OpenAIRealtimeCodec.parse("""{"type":"input_audio_buffer.speech_started"}"""))
+
+        val audioEvents = OpenAIRealtimeCodec.parse("""{"type":"response.audio.delta","delta":"AQA="}""")
+        assertArrayEquals(byteArrayOf(1, 0), (audioEvents.single() as LiveEvent.Audio).pcm)
+        val outputAudioEvents = OpenAIRealtimeCodec.parse("""{"type":"response.output_audio.delta","delta":"AgA="}""")
+        assertArrayEquals(byteArrayOf(2, 0), (outputAudioEvents.single() as LiveEvent.Audio).pcm)
+
+        // Streaming delta + completed snapshot must replace cleanly without duplicating text.
+        val reducer = LiveTranscriptReducer()
+        val uDelta = OpenAIRealtimeCodec.parse("""{"type":"conversation.item.input_audio_transcription.delta","delta":"i need "}""").single() as LiveEvent.Transcription
+        val uDone = OpenAIRealtimeCodec.parse("""{"type":"conversation.item.input_audio_transcription.completed","transcript":"I need two days.\n"}""").single() as LiveEvent.Transcription
+        val s1 = reducer.update(uDelta.role, uDelta.text, uDelta.finished, uDelta.replace)
+        val s2 = reducer.update(uDone.role, uDone.text, uDone.finished, uDone.replace)
+        assertEquals(s1.id, s2.id)
+        assertEquals("I need two days.", s2.text)
+        assertTrue(s2.finalized)
+
+        // Function call + response.done continuation vs message TurnComplete.
+        val callNames = mutableMapOf<String, String>()
+        OpenAIRealtimeCodec.parse("""{"type":"response.output_item.added","item":{"type":"function_call","call_id":"call_1","name":"mark_task_complete"}}""", callNames)
+        val toolEvent = OpenAIRealtimeCodec.parse("""{"type":"response.function_call_arguments.done","call_id":"call_1","arguments":"{\"taskIndex\":0}"}""", callNames).single() as LiveEvent.Tool
+        assertNotNull(toolEvent.call.validated())
+        val ack = parse(OpenAIRealtimeCodec.toolResponse(toolEvent.call, accepted = true))
+        assertEquals("conversation.item.create", ack.getValue("type").jsonPrimitive.content)
+        assertEquals("function_call_output", ack.getValue("item").jsonObject.getValue("type").jsonPrimitive.content)
+        assertEquals("""{"status":"accepted"}""", ack.getValue("item").jsonObject.getValue("output").jsonPrimitive.content)
+
+        assertEquals(listOf(LiveEvent.RequestContinuation),
+            OpenAIRealtimeCodec.parse("""{"type":"response.done","response":{"output":[{"type":"function_call","call_id":"call_1"}]}}"""))
+        assertEquals(listOf(LiveEvent.TurnComplete),
+            OpenAIRealtimeCodec.parse("""{"type":"response.done","response":{"output":[{"type":"function_call","call_id":"call_1"},{"type":"message"}]}}"""))
+        assertEquals(listOf(LiveEvent.TurnComplete),
+            OpenAIRealtimeCodec.parse("""{"type":"response.done","response":{"output":[{"type":"message"}]}}"""))
+
+        // Benign VAD/cancel errors are ignored; real errors fail cleanly.
+        assertTrue(OpenAIRealtimeCodec.parse("""{"type":"error","error":{"code":"input_audio_buffer_commit_empty"}}""").isEmpty())
+        assertTrue(OpenAIRealtimeCodec.parse("""{"type":"error","error":{"code":"response_cancel_not_active"}}""").isEmpty())
+        assertThrows(LiveProtocolException::class.java) {
+            OpenAIRealtimeCodec.parse("""{"type":"error","error":{"code":"invalid_api_key"}}""")
+        }
+    }
+
+    @Test
+    fun resampler16To24Converts320To480SamplesSeamlesslyAcrossFrameBoundaries() {
+        val resampler = Pcm16Resampler16To24()
+        // Single 20 ms 16 kHz frame (320 samples = 640 bytes) -> 480 samples = 960 bytes at 24 kHz.
+        val oneFrame = ByteArray(640)
+        val resampled = resampler.resample(oneFrame)
+        assertEquals(960, resampled.size)
+        OpenAIRealtimeCodec.audioAppend(resampled)
+
+        // Batched 5 frames (3200 bytes) -> 4800 bytes.
+        assertEquals(4800, resampler.resample(ByteArray(3200)).size)
+
+        // Exact linear ramp `s[n] = 3 * n` across two frames: output must have constant step `2` after sample 0.
+        resampler.reset()
+        fun shortsToBytes(samples: IntArray): ByteArray {
+            val buf = ByteBuffer.allocate(samples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+            for (s in samples) buf.putShort(s.toShort())
+            return buf.array()
+        }
+        fun bytesToShorts(bytes: ByteArray): IntArray {
+            val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+            return IntArray(bytes.size / 2) { buf.short.toInt() }
+        }
+        val frameA = shortsToBytes(IntArray(320) { it * 3 })
+        val frameB = shortsToBytes(IntArray(320) { (320 + it) * 3 })
+        val outA = bytesToShorts(resampler.resample(frameA))
+        val outB = bytesToShorts(resampler.resample(frameB))
+        assertEquals(480, outA.size)
+        assertEquals(480, outB.size)
+        val combined = outA + outB
+        for (i in 2 until combined.size) {
+            assertEquals("Continuous linear slope across frame boundary at index $i", 2, combined[i] - combined[i - 1])
+        }
+    }
+
+    @Test
+    fun connectionConfigBuildsDirectProviderWebSocketURLs() {
+        val gemini = LiveConnectionConfig(
+            provider = AIProviderKind.GEMINI,
+            apiKey = "key+1/2",
+            baseURL = "",
+            model = "gemini-2.5-flash-native-audio-latest",
+            systemInstruction = "inst",
+            geminiVoice = "Aoede",
+            openAIVoice = "coral",
+            pauseMs = 1500,
+        )
+        assertEquals(
+            "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key%2B1%2F2",
+            gemini.webSocketURL(),
+        )
+
+        val openai = gemini.copy(
+            provider = AIProviderKind.OPENAI,
+            apiKey = "sk-test",
+            baseURL = "https://my-proxy.example.com",
+            model = "gpt-4o-realtime-preview",
+        )
+        assertEquals(
+            "wss://my-proxy.example.com/v1/realtime?model=gpt-4o-realtime-preview",
+            openai.webSocketURL(),
+        )
+
+        assertThrows(LiveProtocolException::class.java) {
+            gemini.copy(baseURL = "http://public.example.com").webSocketURL()
+        }
     }
 
     @Test
@@ -136,27 +299,6 @@ class LiveCoreTest {
     }
 
     @Test
-    fun clientAllowsOnlyExactEndpointsAndEncodesCredentialSeparately() {
-        val expiry = IsoMillisSerializer.format(System.currentTimeMillis() + 60_000)
-        assertThrows(LiveProtocolException::class.java) { LiveToken("synthetic", "test", "wss://evil.test", expiry).connectionURL() }
-        assertThrows(LiveProtocolException::class.java) {
-            LiveToken("synthetic", "test", LiveToken.ENDPOINT, "2000-01-01T00:00:00Z").connectionURL()
-        }
-        for (endpoint in listOf(LiveToken.ENDPOINT, LiveToken.RELAY_ENDPOINT, LiveToken.LEGACY_RELAY_ENDPOINT)) {
-            val url = LiveToken("synthetic/value+&", "test", endpoint, expiry).connectionURL()
-            assertEquals("$endpoint?access_token=synthetic%2Fvalue%2B%26", url)
-        }
-        for (endpoint in listOf(LiveToken.RELAY_ENDPOINT + "?extra=1", LiveToken.RELAY_ENDPOINT + "#fragment",
-            LiveToken.RELAY_ENDPOINT.replace("wss:", "ws:"), LiveToken.RELAY_ENDPOINT.replace("yasobi.xyz", "yasobi.xyz.evil.test"),
-            LiveToken.RELAY_ENDPOINT.replace("wss://", "wss://user@"), LiveToken.RELAY_ENDPOINT.replace("/ws/", ":8443/ws/"))) {
-            assertThrows(LiveProtocolException::class.java) { LiveToken("synthetic", "test", endpoint, expiry).connectionURL() }
-        }
-        // The same endpoints the server may hand out (app/lib/ios/liveEndpoint.mjs).
-        assertEquals("wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained",
-            LiveToken.ENDPOINT)
-    }
-
-    @Test
     fun usageIsParsedPerTurnAndSummedForAConnection() {
         // Captured shape from a real two-turn Gemini Live session.
         val first = """{"usageMetadata":{"promptTokenCount":162,"responseTokenCount":42,"totalTokenCount":204,"promptTokensDetails":[{"modality":"TEXT","tokenCount":139}],"responseTokensDetails":[{"modality":"AUDIO","tokenCount":42}]}}"""
@@ -164,11 +306,6 @@ class LiveCoreTest {
         var total = LiveUsage()
         for (raw in listOf(first, second)) for (event in LiveCodec.parse(raw)) total += (event as LiveEvent.Usage).usage
         assertEquals(LiveUsage(input = 397, output = 113, inputAudio = 42, outputAudio = 113, total = 510), total)
-        val report = LiveUsageReport.create(UUID.randomUUID(), "gemini-3.1-flash-live-preview", total)!!
-        assertEquals("Matches the server's strict schema",
-            setOf("reportId", "model", "inputTokens", "outputTokens", "inputAudioTokens", "outputAudioTokens", "totalTokens"),
-            AppJson.encodeToJsonElement(LiveUsageReport.serializer(), report).jsonObject.keys)
-        assertNull(LiveUsageReport.create(UUID.randomUUID(), "m", LiveUsage()))
         assertNull(LiveUsage.from(JsonObject(emptyMap())))
     }
 
@@ -186,7 +323,7 @@ class LiveCoreTest {
         val messages = LiveUploadBatch.messages(frames)
         assertEquals(listOf(5, 5, 2), messages.map { it.second })
         assertArrayEquals(frames.fold(ByteArray(0)) { all, frame -> all + frame }, messages.fold(ByteArray(0)) { all, part -> all + part.first })
-        for ((pcm, _) in messages) LiveCodec.audio(pcm) // every message fits the codec's 100 ms limit
+        for ((pcm, _) in messages) LiveCodec.audio(pcm)
         assertEquals(listOf(1), LiveUploadBatch.messages(listOf(frames[0])).map { it.second })
     }
 
@@ -333,7 +470,7 @@ class LiveCoreTest {
         reducer.update(Role.PARTNER, "Let me explain", false)
         val user = reducer.update(Role.USER, " very", false)
         reducer.finishPartner()
-        reducer.finishTurn() // End of the cancelled partner response, not of this user sentence.
+        reducer.finishTurn()
         val next = reducer.update(Role.USER, " very important", false)
         assertEquals(user.id, next.id)
         assertEquals(" very very important", next.text)
@@ -453,7 +590,7 @@ class LiveCoreTest {
         assertEquals(LiveKickoff.fresh(scenario), LiveKickoff.text(fresh))
         assertTrue(LiveKickoff.text(fresh)!!.contains("You are Alex (Colleague); I am the learner"))
         assertNull(LiveStuckPolicy.awaitedLine(fresh))
-        val scripted = PracticeSession.start(scenario) // opens with the partner's prompt
+        val scripted = PracticeSession.start(scenario)
         assertNull("An unanswered partner line is not asked again", LiveKickoff.text(scripted))
         assertEquals(scripted.messages[0].id, LiveStuckPolicy.awaitedLine(scripted))
         val answered = scripted.submit("I need two more days.").must()

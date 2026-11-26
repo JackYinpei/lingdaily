@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { createHash } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import { PracticeAPIError } from './iosPractice'
 import { getHistoryDatabaseConfig, historyDatabaseRequest } from '../history/server'
@@ -66,12 +66,67 @@ const knownSessionsSchema = z.record(z.string(), z.number().finite())
   .refine(value => Object.keys(value).length <= SESSION_LIMIT * 2, 'size')
   .transform(value => new Map(Object.entries(value).map(([id, ms]) => [id.toLowerCase(), ms])))
 
+const aiProviderConfigSchema = z.object({
+  apiKey: text(512).default(''),
+  baseURL: text(512).default(''),
+  textModel: text(120).default(''),
+  liveModel: text(120).default(''),
+}).strict()
+
+export const aiSettingsSchema = z.object({
+  updatedAt: isoDate,
+  textProvider: z.enum(['gemini', 'openai']).default('gemini'),
+  voiceProvider: z.enum(['gemini', 'openai']).default('gemini'),
+  gemini: aiProviderConfigSchema.default({}),
+  openai: aiProviderConfigSchema.default({}),
+}).strict()
+
 export const syncRequestSchema = z.object({
   knownSessions: knownSessionsSchema.optional(),
+  aiSettings: aiSettingsSchema.optional(),
   sessions: z.object({ upsert: z.array(z.unknown()).max(100).default([]), delete: z.array(uuidText).max(200).default([]) }).strict().default({}),
   expressions: z.object({ upsert: z.array(expressionSchema).max(500).default([]), delete: z.array(text(200)).max(500).default([]) }).strict().default({}),
   scenarios: z.object({ upsert: z.array(scenarioSchema).max(50).default([]), delete: z.array(z.string().regex(/^custom-[0-9A-Fa-f-]{36}$/)).max(50).default([]) }).strict().default({}),
 }).strict()
+
+function aiSettingsKey(userId, env = process.env) {
+  const secret = env.AUTH_SECRET?.trim()
+  if (!secret) throw new PracticeAPIError(503, 'NOT_CONFIGURED', '服务端尚未配置密钥加密。')
+  return Buffer.from(hkdfSync('sha256', secret, `lingdaily-ai-user:${userId.toLowerCase()}`, 'lingdaily-ai-settings-v1', 32))
+}
+
+export function encryptAISettings(userId, settings, env = process.env) {
+  const key = aiSettingsKey(userId, env)
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', key, iv)
+  const plaintext = Buffer.from(JSON.stringify(settings), 'utf8')
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()])
+  const tag = cipher.getAuthTag()
+  return `v1:${iv.toString('base64')}:${tag.toString('base64')}:${ciphertext.toString('base64')}`
+}
+
+export function decryptAISettings(userId, packed, env = process.env) {
+  if (typeof packed !== 'string' || !packed.startsWith('v1:')) return null
+  const parts = packed.split(':')
+  if (parts.length !== 4) return null
+  try {
+    const key = aiSettingsKey(userId, env)
+    const iv = Buffer.from(parts[1], 'base64')
+    const tag = Buffer.from(parts[2], 'base64')
+    const ciphertext = Buffer.from(parts[3], 'base64')
+    if (iv.length !== 12 || tag.length !== 16) return null
+    const decipher = createDecipheriv('aes-256-gcm', key, iv)
+    decipher.setAuthTag(tag)
+    const json = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8')
+    const parsed = aiSettingsSchema.safeParse(JSON.parse(json))
+    return parsed.success ? parsed.data : null
+  } catch {
+    return null
+  }
+}
+
+const isMissingTable = result =>
+  result?.status === 404 || ['42P01', 'PGRST205'].includes(result?.data?.code)
 
 export const expressionKey = value => value.trim().toLowerCase()
 
@@ -195,14 +250,62 @@ async function loadScenarios(config, userId) {
   return rows.map(row => row.practice_plan).filter(plan => plan && typeof plan === 'object')
 }
 
+async function loadAISettings(config, userId) {
+  const params = new URLSearchParams({
+    user_id: `eq.${userId}`, select: 'encrypted_config,updated_at',
+  })
+  const result = await historyDatabaseRequest(config, 'user_ai_settings', { params })
+  if (!result.ok) {
+    if (isMissingTable(result)) return undefined
+    console.error('[ios-sync] load aiSettings failed', { status: result.status, code: result.data?.code })
+    throw new PracticeAPIError(502, 'SYNC_UNAVAILABLE', '云同步暂时不可用，内容已保留在本机，稍后会自动重试。')
+  }
+  const [row] = result.data || []
+  if (!row?.encrypted_config) return undefined
+  return decryptAISettings(userId, row.encrypted_config) || undefined
+}
+
+async function upsertAISettings(config, userId, aiSettings) {
+  const params = new URLSearchParams({ user_id: `eq.${userId}`, select: 'updated_at' })
+  const read = await historyDatabaseRequest(config, 'user_ai_settings', { params })
+  if (!read.ok) {
+    if (isMissingTable(read)) return
+    console.error('[ios-sync] read aiSettings failed', { status: read.status, code: read.data?.code })
+    throw new PracticeAPIError(502, 'SYNC_UNAVAILABLE', '云同步暂时不可用，内容已保留在本机，稍后会自动重试。')
+  }
+  const [existing] = read.data || []
+  const incomingMs = Date.parse(aiSettings.updatedAt)
+  const existingMs = Date.parse(existing?.updated_at || '')
+  if (existing && Number.isFinite(existingMs) && existingMs > incomingMs + 1) return
+  const normalized = { ...aiSettings, updatedAt: new Date(incomingMs).toISOString() }
+  const fields = {
+    encrypted_config: encryptAISettings(userId, normalized),
+    updated_at: normalized.updatedAt,
+  }
+  const write = existing
+    ? await historyDatabaseRequest(config, 'user_ai_settings', {
+      method: 'PATCH', params: new URLSearchParams({ user_id: `eq.${userId}` }), body: fields, prefer: 'return=minimal',
+    })
+    : await historyDatabaseRequest(config, 'user_ai_settings', {
+      method: 'POST', body: { user_id: userId, ...fields }, prefer: 'return=minimal',
+    })
+  if (!write.ok && !isMissingTable(write)) {
+    console.error('[ios-sync] save aiSettings failed', { status: write.status, code: write.data?.code })
+    throw new PracticeAPIError(502, 'SYNC_UNAVAILABLE', '云同步暂时不可用，内容已保留在本机，稍后会自动重试。')
+  }
+}
+
 export async function loadSnapshot(userId, knownSessions) {
   const config = databaseConfig()
-  const [sessions, rows, scenarios] = await Promise.all([
+  const [sessions, rows, scenarios, aiSettings] = await Promise.all([
     knownSessions ? loadChangedSessions(config, userId, knownSessions) : loadSessions(config, userId),
-    loadExpressionRows(config, userId), loadScenarios(config, userId),
+    loadExpressionRows(config, userId), loadScenarios(config, userId), loadAISettings(config, userId),
   ])
   const sessionPart = knownSessions ? sessions : { sessions }
-  return { ...sessionPart, expressions: expressionsFromRows(rows), scenarios }
+  return {
+    ...sessionPart, expressions: expressionsFromRows(rows), scenarios,
+    ...(aiSettings ? { aiSettings } : {}),
+  }
 }
 
 /** Returns false when this one session can never be stored, so the client stops retrying it. */
@@ -319,6 +422,7 @@ export async function applySync(userId, changes) {
       id: `eq.${scenarioRowId(id)}`, user_id: `eq.${userId}`, practice_plan: 'not.is.null',
     }), 'delete scenario')
   }
+  if (changes.aiSettings) await upsertAISettings(config, userId, changes.aiSettings)
   return { ...await loadSnapshot(userId, changes.knownSessions), rejectedSessions }
 }
 
@@ -328,5 +432,10 @@ export async function deleteAccountData(userId) {
   const owned = new URLSearchParams({ user_id: `eq.${userId}` })
   for (const table of ['chat_history', 'unfamiliar_english', 'scenarios', 'user_preferences', 'ai_usage']) {
     await deleteRows(config, table, owned, `delete ${table}`)
+  }
+  const aiRes = await historyDatabaseRequest(config, 'user_ai_settings', { method: 'DELETE', params: owned, prefer: 'return=minimal' })
+  if (!aiRes.ok && !isMissingTable(aiRes)) {
+    console.error('[ios-sync] delete user_ai_settings failed', { status: aiRes.status, code: aiRes.data?.code })
+    throw new PracticeAPIError(502, 'SYNC_UNAVAILABLE', '删除账号数据时出错，请稍后重试。')
   }
 }

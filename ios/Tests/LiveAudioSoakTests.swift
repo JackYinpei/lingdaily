@@ -86,18 +86,18 @@ final class LiveAudioSoakTests: XCTestCase {
         let env = ProcessInfo.processInfo.environment
         guard env["LINGDAILY_LIVE_TEST"] == "1", env["LINGDAILY_LIVE_AUDIO_SOAK"] == "1",
               let path = env["LINGDAILY_AI_TEST_CONFIG"] else {
-            throw XCTSkip("Explicit LIVE_TEST + LIVE_AUDIO_SOAK + pairing config required")
+            throw XCTSkip("Explicit LIVE_TEST + LIVE_AUDIO_SOAK + local AISettings config required")
         }
         let real = env["LINGDAILY_LIVE_MIC_TEST"] == "1"
-        // Check permission BEFORE calling the token route or consuming quota.
+        // Check permission BEFORE connecting or consuming quota.
         let source = try LiveSoakCapture(realMicrophone: real, audioFile: env["LINGDAILY_LIVE_AUDIO_FILE"])
         let duration = max(10, min(300, Double(env["LINGDAILY_LIVE_SOAK_SECONDS"] ?? "180") ?? 180))
-        let config = try JSONDecoder().decode(AIConnectionConfiguration.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        let settings = try AISettings.testConfiguration(at: path)
         let scenario = PracticeScenario(id: "audio-soak", title: "Synthetic work rehearsal", subtitle: "Test", category: "Test",
             symbol: "mic", partner: "Alex", partnerRole: "Colleague", setting: "A fictional conversation about moving a deadline to Thursday",
             steps: (0..<3).map { .init(id: "\($0)", goal: ["Explain delay", "Propose Thursday", "Confirm"][ $0 ], prompt: "Test",
                                      translation: "测试", hint: "测试", keywords: "test", expression: "Test", meaning: "测试") })
-        let token = try await PracticeAPIClient(configuration: config, aiConsent: { true }).liveToken(for: PracticeSession(scenario: scenario, useAI: true))
+        let spec = try PracticeAPIClient(accountSession: { nil }, aiSettings: { settings }).liveConnection(for: PracticeSession(scenario: scenario, useAI: true))
         let client = LiveWebSocketClient()
         var continuation: AsyncStream<LiveEvent>.Continuation!
         let stream = AsyncStream<LiveEvent>(bufferingPolicy: .bufferingNewest(256)) { continuation = $0 }
@@ -114,7 +114,7 @@ final class LiveAudioSoakTests: XCTestCase {
         }
         var finish: Task<Void, Never>?
         defer { deadline.cancel(); finish?.cancel(); source.stop(); events.finish() }
-        try await client.connect(token, generation: 1, handler: { event, _ in events.yield(event) }, failure: { _, diagnostics in
+        try await client.connect(spec, generation: 1, handler: { event, _ in events.yield(event) }, failure: { _, diagnostics in
             disconnected = true; failure = diagnostics; events.finish()
         })
         var started: Date?

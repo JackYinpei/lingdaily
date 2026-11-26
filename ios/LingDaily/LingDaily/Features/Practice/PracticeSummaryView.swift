@@ -2,9 +2,8 @@ import SwiftUI
 
 struct PracticeSummaryView: View {
     @EnvironmentObject private var store: PracticeStore
-    @EnvironmentObject private var account: AccountStore
+    @EnvironmentObject private var aiSettings: AISettingsStore
     @Environment(\.practiceService) private var api
-    @AppStorage(AIDataConsent.key) private var consentVersion = ""
     @State private var reviewing = false
     @State private var reviewError: String?
     @State private var reviewAttempt = 0
@@ -17,7 +16,8 @@ struct PracticeSummaryView: View {
     private var newWords: [AILearningItem] { session.collectedItems }
     private var reused: [ReviewTarget] { session.reusedReviewItems }
     private var reviewedSession: PracticeSession { store.archive.sessions.first { $0.id == session.id } ?? session }
-    private var reviewTaskID: String { "\(session.id)-\(account.session?.userID ?? "local")-\(consentVersion)-\(reviewAttempt)" }
+    private var hasTextModel: Bool { aiSettings.settings.resolvedText != nil }
+    private var reviewTaskID: String { "\(session.id)-\(aiSettings.settings.updatedAt.timeIntervalSince1970)-\(reviewAttempt)" }
 
     /// Facts only: tasks, turns, retries and new words; zero counts are left out.
     private var facts: String {
@@ -67,8 +67,8 @@ struct PracticeSummaryView: View {
                             Text(reviewError).font(.caption).foregroundColor(Brand.secondary)
                             Button("重试表达建议") { reviewAttempt += 1 }
                                 .buttonStyle(SolidButtonStyle(secondary: true)).accessibilityIdentifier("retry-sentence-review")
-                        } else if !AIDataConsent.isGranted(), reviewedSession.nextSentenceReview != nil {
-                            Text("允许 AI 数据使用后，可为这些原话整理表达建议。")
+                        } else if !hasTextModel, reviewedSession.nextSentenceReview != nil {
+                            Text("在「接口设置」配置文字模型后，可为这些原话整理更自然的表达建议。")
                                 .font(.caption).foregroundColor(Brand.secondary)
                         }
                         ForEach(reviewedSession.summaryLines) { line in takeaway(line) }
@@ -107,24 +107,23 @@ struct PracticeSummaryView: View {
         let generation = UUID()
         reviewGeneration = generation
         reviewing = false; reviewError = nil
-        guard account.canPractice, AIDataConsent.isGranted(), reviewedSession.nextSentenceReview != nil else { return }
-        let owner = account.session?.userID
+        guard hasTextModel, reviewedSession.nextSentenceReview != nil else { return }
         reviewing = true
         defer { if reviewGeneration == generation { reviewing = false } }
         do {
             while let request = reviewedSession.nextSentenceReview {
                 try Task.checkCancellation()
-                guard account.canPractice, account.session?.userID == owner, AIDataConsent.isGranted() else { return }
+                guard hasTextModel else { return }
                 let records = try await api.reviewSentences(request)
                 try Task.checkCancellation()
-                guard account.canPractice, account.session?.userID == owner, AIDataConsent.isGranted(),
+                guard hasTextModel,
                       var latest = store.archive.sessions.first(where: { $0.id == session.id }) else { return }
                 guard latest.applySentenceReviews(records) else { throw PracticeNetworkError.invalidReply }
                 store.save(latest)
             }
         } catch is CancellationError { }
         catch {
-            guard !Task.isCancelled, account.session?.userID == owner else { return }
+            guard !Task.isCancelled else { return }
             reviewError = "表达建议暂时没有整理完，所有原话都已保留。\(error.localizedDescription)"
         }
     }

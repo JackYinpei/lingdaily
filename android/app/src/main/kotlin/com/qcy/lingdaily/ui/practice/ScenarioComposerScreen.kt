@@ -42,6 +42,7 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import com.qcy.lingdaily.core.model.LearnerInterests
 import com.qcy.lingdaily.ui.AppIcons
 import com.qcy.lingdaily.ui.AppTextField
 import com.qcy.lingdaily.ui.Brand
@@ -52,14 +53,12 @@ import com.qcy.lingdaily.ui.LocalNavigator
 import com.qcy.lingdaily.ui.ReadableColumn
 import com.qcy.lingdaily.ui.Screen
 import com.qcy.lingdaily.ui.ScreenScaffold
-import com.qcy.lingdaily.core.model.LearnerInterests
 import com.qcy.lingdaily.ui.SolidButton
 import com.qcy.lingdaily.ui.TextAction
 import com.qcy.lingdaily.ui.Type
 import com.qcy.lingdaily.ui.medium
-import com.qcy.lingdaily.ui.settings.SignInButton
 
-/** Describe a real upcoming conversation; the server turns it into a three-step scenario saved on this device. */
+/** Describe a real upcoming conversation; the configured text model turns it into a 3-step scenario. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScenarioComposerScreen(screen: Screen.Composer) {
@@ -76,9 +75,10 @@ fun ScenarioComposerScreen(screen: Screen.Composer) {
     var notificationsDenied by remember { mutableStateOf(false) }
     var pickingDay by remember { mutableStateOf(false) }
     val trimmed = state.description.trim()
+    val hasTextModel = app.aiSettings.settings.resolvedText != null
 
     fun refreshIdeas() {
-        if (refreshing) return
+        if (refreshing || !hasTextModel) return
         refreshing = true
         refreshError = null
         val avoid = state.shownIdeas
@@ -98,7 +98,7 @@ fun ScenarioComposerScreen(screen: Screen.Composer) {
     }
 
     fun generate() {
-        if (trimmed.isEmpty() || isLoading) return
+        if (trimmed.isEmpty() || isLoading || !hasTextModel) return
         focus.clearFocus()
         errorMessage = null
         isLoading = true
@@ -126,11 +126,20 @@ fun ScenarioComposerScreen(screen: Screen.Composer) {
         bottomBar = {
             Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 errorMessage?.let { Text(it, style = Type.footnote, color = colors.accent) }
-                if (app.account.canPractice) {
-                    SolidButton(if (isLoading) "正在布置场景…" else "生成场景", onClick = ::generate, enabled = trimmed.isNotEmpty() && !isLoading,
-                        busy = isLoading, modifier = Modifier.testTag("generate-scenario"))
+                if (hasTextModel) {
+                    SolidButton(
+                        if (isLoading) "正在布置场景…" else "生成场景",
+                        onClick = ::generate,
+                        enabled = trimmed.isNotEmpty() && !isLoading,
+                        busy = isLoading,
+                        modifier = Modifier.testTag("generate-scenario"),
+                    )
                 } else {
-                    SignInButton()
+                    SolidButton(
+                        "配置文字模型接口",
+                        onClick = { navigator.push(Screen.APISettings()) },
+                        modifier = Modifier.testTag("configure-api"),
+                    )
                 }
             }
         },
@@ -143,7 +152,7 @@ fun ScenarioComposerScreen(screen: Screen.Composer) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("试试这些", style = Type.caption, color = colors.secondary, modifier = Modifier.weight(1f))
-                        if (app.account.canPractice) {
+                        if (hasTextModel) {
                             if (refreshing) CircularProgressIndicator(Modifier.padding(end = 6.dp).size(14.dp), color = colors.ink, strokeWidth = 2.dp)
                             TextAction(if (refreshing) "正在想…" else "换一批", icon = if (refreshing) null else AppIcons.Refresh, color = colors.ink,
                                 style = Type.caption.medium, enabled = !refreshing && !isLoading, modifier = Modifier.testTag("refresh-ideas"), onClick = ::refreshIdeas)

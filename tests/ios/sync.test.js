@@ -40,7 +40,7 @@ vi.mock('@/app/lib/history/server', () => ({
       return { ok: true, status: 200, data: params?.get('order')?.startsWith('timestamp.asc') ? found.sort((a, b) => a.timestamp.localeCompare(b.timestamp)) : found }
     }
     if (method === 'POST') {
-      const existing = rows.find(row => row.id === body.id)
+      const existing = body.id !== undefined ? rows.find(row => row.id === body.id) : undefined
       if (existing && params?.get('on_conflict') === 'id') Object.assign(existing, body)
       else if (existing) return { ok: false, status: 409, data: { code: '23505' } }
       else rows.push({ ...body })
@@ -231,6 +231,43 @@ describe('iOS cloud sync into the shared tables', () => {
     expect(status).toBe(200)
     expect(data.rejectedSessions).toEqual(['b0000000-1111-4222-8333-444455556666'])
     expect(db.tables.chat_history).toHaveLength(1)
+  })
+
+  it('encrypts BYOK aiSettings at rest per user and enforces updatedAt ordering', async () => {
+    const aiSettings = {
+      updatedAt: '2026-11-26T12:00:00.000Z',
+      textProvider: 'openai',
+      voiceProvider: 'gemini',
+      gemini: { apiKey: 'AIza-test-gemini-secret', baseURL: 'https://lingdailyapi-jp.yasobi.xyz', textModel: 'gemini-2.5-flash', liveModel: 'gemini-2.5-flash-native-audio-latest' },
+      openai: { apiKey: 'sk-test-openai-secret', baseURL: 'https://lingdailyapi-jp.yasobi.xyz/openai', textModel: 'gpt-4o-mini', liveModel: 'gpt-4o-realtime-preview' },
+    }
+    const saved = await call(POST, userA, { aiSettings })
+    expect(saved.status).toBe(200)
+    expect(saved.data.aiSettings).toEqual(aiSettings)
+
+    // Plaintext keys never enter the database row.
+    expect(db.tables.user_ai_settings).toHaveLength(1)
+    const rawRow = JSON.stringify(db.tables.user_ai_settings[0])
+    expect(rawRow).not.toContain('AIza-test-gemini-secret')
+    expect(rawRow).not.toContain('sk-test-openai-secret')
+    expect(db.tables.user_ai_settings[0].encrypted_config).toMatch(/^v1:/)
+
+    // Stale update from an older device does not overwrite newer settings.
+    const stale = await call(POST, userA, {
+      aiSettings: { ...aiSettings, updatedAt: '2026-11-26T11:00:00.000Z', textProvider: 'gemini' },
+    })
+    expect(stale.data.aiSettings.textProvider).toBe('openai')
+
+    // Another user cannot see or decrypt userA's ciphertext even if copied.
+    const other = await call(GET, userB, undefined, 'GET')
+    expect(other.data).not.toHaveProperty('aiSettings')
+    db.tables.user_ai_settings.push({
+      user_id: userB,
+      encrypted_config: db.tables.user_ai_settings[0].encrypted_config,
+      updated_at: aiSettings.updatedAt,
+    })
+    const forged = await call(GET, userB, undefined, 'GET')
+    expect(forged.data).not.toHaveProperty('aiSettings')
   })
 })
 

@@ -21,10 +21,18 @@ final class LiveCoreTests: XCTestCase {
               steps: (0..<3).map { .init(id: "\($0)", goal: "Goal \($0)", prompt: "Prompt", translation: "译文",
                                        hint: "提示", keywords: "word", expression: "Example", meaning: "含义") })
     }
-    func testSetupDoesNotSendClientSystemInstruction() throws {
-        let setup = try object(LiveCodec.setup(model: "test-model"))["setup"] as? [String: Any]
+    func testGeminiSetupCarriesInstructionVoiceAndTools() throws {
+        let setup = try object(LiveCodec.geminiSetup(model: "models/test-model", session: PracticeSession(scenario: scenario, useAI: true)))["setup"] as? [String: Any]
         XCTAssertEqual(setup?["model"] as? String, "models/test-model")
-        XCTAssertEqual(setup?.count, 1)
+        let instruction = ((setup?["systemInstruction"] as? [String: Any])?["parts"] as? [[String: Any]])?.first?["text"] as? String
+        XCTAssertTrue(instruction?.contains("UNTRUSTED exercise data") ?? false, "Scenario data is fenced off as untrusted")
+        let generation = setup?["generationConfig"] as? [String: Any]
+        XCTAssertEqual(generation?["responseModalities"] as? [String], ["AUDIO"])
+        let voice = ((((generation?["speechConfig"] as? [String: Any])?["voiceConfig"] as? [String: Any])?["prebuiltVoiceConfig"]) as? [String: Any])?["voiceName"] as? String
+        XCTAssertTrue(LiveInstructions.geminiAllVoices.contains(voice ?? ""))
+        XCTAssertEqual((setup?["tools"] as? [[String: Any]])?.isEmpty, false)
+        XCTAssertNotNil(setup?["inputAudioTranscription"])
+        XCTAssertNotNil(setup?["outputAudioTranscription"])
         let audio = try object(LiveCodec.audio(Data([0, 1])))
         let input = audio["realtimeInput"] as? [String: Any]
         let payload = input?["audio"] as? [String: String]
@@ -182,28 +190,21 @@ final class LiveCoreTests: XCTestCase {
         XCTAssertEqual(buffer.reservedBytes, 0)
     }
 
-    func testClientRejectsUntrustedWebSocketDestination() {
-        let expiry = ISO8601DateFormatter().string(from: Date().addingTimeInterval(60))
-        XCTAssertThrowsError(try LiveToken(token: "synthetic", model: "test", wsURL: "wss://evil.test", expiresAt: expiry).connectionURL())
-        let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        XCTAssertNoThrow(try LiveToken(token: "synthetic", model: "test", wsURL: LiveToken.endpoint,
-                                      expiresAt: formatter.string(from: Date().addingTimeInterval(60))).connectionURL())
-        XCTAssertThrowsError(try LiveToken(token: "synthetic", model: "test", wsURL: LiveToken.endpoint, expiresAt: "2000-01-01T00:00:00Z").connectionURL())
-    }
-    func testClientAllowsOnlyExactRelayEndpointsAndEncodesCredentialSeparately() throws {
-        let expiry = ISO8601DateFormatter().string(from: Date().addingTimeInterval(60))
-        for endpoint in [LiveToken.relayEndpoint, LiveToken.legacyRelayEndpoint] {
-            let url = try LiveToken(token: "synthetic/value+&", model: "test", wsURL: endpoint, expiresAt: expiry).connectionURL()
-            let parts = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
-            XCTAssertEqual(parts.queryItems, [URLQueryItem(name: "access_token", value: "synthetic/value+&")])
-            XCTAssertEqual(parts.scheme, "wss")
+    func testLiveEndpointsRejectUnsafeDestinationsAndEncodeTheKeySeparately() throws {
+        let url = try AIEndpointNormalizer.geminiLiveWebSocketURL(baseURL: "https://lingdailyapi-jp.yasobi.xyz", apiKey: "synthetic/value+&")
+        let parts = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(parts.queryItems, [URLQueryItem(name: "key", value: "synthetic/value+&")])
+        XCTAssertFalse(parts.percentEncodedQuery?.contains("+") ?? true, "A literal + would arrive as a space")
+        XCTAssertEqual(parts.scheme, "wss")
+        XCTAssertEqual(parts.host, "lingdailyapi-jp.yasobi.xyz")
+        XCTAssertEqual(parts.path, "/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")
+        XCTAssertEqual(try AIEndpointNormalizer.openAIRealtimeWebSocketURL(baseURL: "http://192.168.1.5:8080", model: "gpt-realtime").absoluteString,
+                       "ws://192.168.1.5:8080/v1/realtime?model=gpt-realtime")
+        for bad in ["http://evil.test", "https://user@evil.test", "https://evil.test?x=1", "https://evil.test#fragment", "ftp://evil.test"] {
+            XCTAssertThrowsError(try AIEndpointNormalizer.geminiLiveWebSocketURL(baseURL: bad, apiKey: "k"), bad)
+            XCTAssertThrowsError(try AIEndpointNormalizer.openAIRealtimeWebSocketURL(baseURL: bad, model: "gpt-realtime"), bad)
         }
-        for endpoint in [LiveToken.relayEndpoint + "?extra=1", LiveToken.relayEndpoint + "#fragment",
-                         LiveToken.relayEndpoint.replacingOccurrences(of: "wss:", with: "ws:"),
-                         LiveToken.relayEndpoint.replacingOccurrences(of: "yasobi.xyz", with: "yasobi.xyz.evil.test"),
-                         LiveToken.relayEndpoint.replacingOccurrences(of: "wss://", with: "wss://user@"),
-                         LiveToken.relayEndpoint.replacingOccurrences(of: "/ws/", with: ":8443/ws/")] {
-            XCTAssertThrowsError(try LiveToken(token: "synthetic", model: "test", wsURL: endpoint, expiresAt: expiry).connectionURL())
-        }
+        XCTAssertThrowsError(try AIEndpointNormalizer.geminiLiveWebSocketURL(baseURL: "", apiKey: "  "))
+        XCTAssertThrowsError(try AIEndpointNormalizer.openAIRealtimeWebSocketURL(baseURL: "", model: " "))
     }
 }

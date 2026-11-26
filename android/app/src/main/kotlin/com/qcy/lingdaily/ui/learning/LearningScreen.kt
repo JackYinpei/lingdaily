@@ -310,7 +310,7 @@ fun SessionDetailScreen(screen: Screen.SessionDetail) {
     val colors = Brand.colors
     val session = store.archive.sessions.firstOrNull { it.id == screen.sessionID } ?: screen.fallback
     val translations = remember { BubbleTranslations(app.api, app.scope) }
-    val meanings = remember { FeedbackMeanings(app.api, app.scope) { app.settings.aiConsentGranted } }
+    val meanings = remember { FeedbackMeanings(app.api, app.scope) { app.aiSettings.settings.resolvedText != null } }
     var showDelete by remember { mutableStateOf(false) }
     val startsNew = !session.isAI || session.phase == PracticeSession.Phase.COMPLETED
 

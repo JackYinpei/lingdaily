@@ -27,28 +27,3 @@ struct LiveUsage: Equatable {
                   outputAudio: lhs.outputAudio + rhs.outputAudio, total: lhs.total + rhs.total)
     }
 }
-
-/// What the app reports to `/api/ios/usage` when a Live connection ends.
-struct LiveUsageReport: Encodable, Equatable {
-    let reportId: UUID
-    let model: String
-    let inputTokens, outputTokens, inputAudioTokens, outputAudioTokens, totalTokens: Int
-
-    init?(reportId: UUID, model: String, usage: LiveUsage) {
-        guard usage.total > 0 || usage.input + usage.output > 0, !model.isEmpty else { return nil }
-        self.reportId = reportId; self.model = model
-        inputTokens = usage.input; outputTokens = usage.output
-        inputAudioTokens = usage.inputAudio; outputAudioTokens = usage.outputAudio; totalTokens = usage.total
-    }
-}
-
-/// The learner's own usage summary (`GET /api/ios/usage`).
-struct AIUsageSummary: Decodable, Equatable {
-    struct Group: Decodable, Equatable {
-        let key: String
-        let calls, total_tokens: Int
-    }
-    let days: Int
-    let total: Group
-    let byFeature: [Group]
-}

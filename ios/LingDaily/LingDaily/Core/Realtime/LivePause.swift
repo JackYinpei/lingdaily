@@ -1,7 +1,7 @@
 import Foundation
 
-/// How long the learner may pause in a call before the partner replies. The
-/// server locks it into the Live token, so a change applies from the next call.
+/// How long the learner may pause in a call before the partner replies. It is part
+/// of the session setup, so a change applies from the next call.
 enum LivePause {
     static let key = "livePauseMs"
     static let options = [800, 1500, 2500, 4000]

@@ -14,7 +14,9 @@ with acl_expectations(role_name, table_name, allowed_privileges) as (
     ('authenticated', 'chat_history', array['SELECT', 'INSERT', 'UPDATE', 'DELETE']),
     ('authenticated', 'scenarios', array['SELECT', 'INSERT', 'UPDATE', 'DELETE']),
     ('anon', 'ai_usage', array[]::text[]),
-    ('authenticated', 'ai_usage', array['SELECT'])
+    ('authenticated', 'ai_usage', array['SELECT']),
+    ('anon', 'user_ai_settings', array[]::text[]),
+    ('authenticated', 'user_ai_settings', array[]::text[])
 ),
 acl_mismatches as (
   select expectation.role_name, expectation.table_name, permission.privilege_name
@@ -104,7 +106,8 @@ metrics as (
         'public.podcasts'::regclass,
         'public.chat_history'::regclass,
         'public.scenarios'::regclass,
-        'public.ai_usage'::regclass
+        'public.ai_usage'::regclass,
+        'public.user_ai_settings'::regclass
       )
         and relation.relrowsecurity
     ) as rls_enabled_tables,
@@ -230,7 +233,7 @@ cross join lateral (
     (case when invalid_chat_rows = 0 then 'PASS' else 'FAIL' end, 'invalid_chat_rows', invalid_chat_rows::text, '0'),
     (case when scenario_language_columns = 4 then 'PASS' else 'FAIL' end, 'scenario_language_columns', scenario_language_columns::text, '4'),
     (case when invalid_scenario_language_rows = 0 then 'PASS' else 'FAIL' end, 'invalid_scenario_language_rows', invalid_scenario_language_rows::text, '0'),
-    (case when rls_enabled_tables = 6 then 'PASS' else 'FAIL' end, 'rls_enabled_tables', rls_enabled_tables::text, '6'),
+    (case when rls_enabled_tables = 7 then 'PASS' else 'FAIL' end, 'rls_enabled_tables', rls_enabled_tables::text, '7'),
     (case when canonical_policies = 15 then 'PASS' else 'FAIL' end, 'canonical_policies', canonical_policies::text, '15'),
     (case when unexpected_policies = 0 then 'PASS' else 'FAIL' end, 'unexpected_policies', unexpected_policies::text, '0'),
     (case when table_acl_mismatches = 0 then 'PASS' else 'FAIL' end, 'anon_authenticated_table_acl_mismatches', table_acl_mismatches::text, '0'),

@@ -1,12 +1,12 @@
 # LingDaily Android
 
-原生 Android 版，Kotlin + Jetpack Compose，最低支持 **Android 8.0（API 26）**。功能与 [iOS 版](../ios/README.md) 对应，连同一个线上服务 `https://lingdaily.yasobi.xyz`，同一账号在网页、iPhone 和 Android 看到同一份练习记录、词库和自建场景。
+原生 Android 版，Kotlin + Jetpack Compose，最低支持 **Android 8.0（API 26）**。与 [iOS 版](../ios/README.md) 一样是 **BYOK（自带接口）口语练习工具**：App 不内置任何模型或 API Key，开箱可浏览全部内置场景、收听每日播客；在「我的 → 接口设置」填入 Google Gemini 和/或 OpenAI 的 Key（可选 Base URL、文字模型、实时语音模型）后，所有 AI 功能由手机直连所配置的接口。线上服务 `https://lingdaily.yasobi.xyz` 只提供公开的场景清单与播客、可选的账号与云同步（练习记录、词库、自建场景和加密的接口设置），同一账号在网页、iPhone 和 Android 看到同一份数据。
 
 ## 当前状态
 
-已实现：场景首页（分类、继续练习）、独立的「播客」Tab（今日播客、生词、聊聊这条新闻、往期）、准备页（难度、对方脾气二维面板、目标/背景、词库带词）、文字逐轮练习（提示三级、更自然的说法、再说一次、听写、朗读）、Gemini Live 语音通话（字幕、纠错批注、自动收词、任务进度、打断、静音、卡住时的建议）、总结与逐句复盘、学习页（练习记录、词库、看中文说英文的复习）、新建场景、今日生词、每日/对话前提醒、AI 模型选择与用量、AI 数据使用说明、云同步、退出登录与删除账号。
+已实现：场景首页（分类、继续练习）、独立的「播客」Tab（今日播客、生词、聊聊这条新闻、往期）、准备页（难度、对方脾气二维面板、目标/背景、词库带词）、文字逐轮练习（提示三级、更自然的说法、再说一次、听写、朗读）、Gemini Live 语音通话（字幕、纠错批注、自动收词、任务进度、打断、静音、卡住时的建议）、总结与逐句复盘、学习页（练习记录、词库、看中文说英文的复习）、新建场景、今日生词、每日/对话前提醒、接口设置（Gemini / OpenAI，可获取模型列表）、可选登录与云同步、退出登录与删除账号。
 
-Release 包和普通 Debug 包都直连线上服务。Android 没有原生 Apple 登录，改用网页账号的邮箱和密码；登录依赖本仓库新增的服务端接口 `app/api/android/`（见下文“账号”），它随 main 分支部署后生效。部署前可以用本机开发服务体验全部 AI 功能。
+Release 包和 Debug 包行为相同：场景与播客来自线上公开接口（场景另打包在 `res/raw/scenario_catalog.json`，离线首启也有全部 25 个），AI 请求只发往用户填写的接口。Android 没有原生 Apple 登录，账号用网页账号的邮箱或手机号和密码（见下文“账号”），登录是可选的。
 
 尚未在真机上验证的部分（代码已完成，模拟器的 AOSP 镜像没有对应系统服务或无法验证）：
 
@@ -30,17 +30,12 @@ cd android
 
 工具链：Gradle 9.6.1、Android Gradle Plugin 9.3.3（Android Studio 2026.1.1 能打开的最新一档，升级 AGP 时连同 IDE 一起升）、Kotlin 2.3.21、compileSdk 37、targetSdk 36、JDK 17。AGP 9 自带 Kotlin 编译，不再应用 `org.jetbrains.kotlin.android` 插件。版本集中在 `gradle/libs.versions.toml`。
 
-### 用本机开发服务体验（Debug）
+### 接口设置（BYOK）
 
-与 iOS 的 `npm run ios:dev` 是同一套配对机制，Gemini 密钥只留在电脑上：
-
-```bash
-npm run ios:dev                    # 仓库根目录，保持运行
-adb reverse tcp:8000 tcp:8000      # 让手机/模拟器的 localhost:8000 指向这台电脑
-cd android && ./gradlew :app:installDebug
-```
-
-构建时如果存在 `.ios-dev/connection.json`（只在 `ios:dev` 运行期间存在），Debug 包会带上本机地址和随机配对 token，App 免登录并改连本机；「我的」页底部会显示“本机开发服务”。停止 `ios:dev` 后重新构建，Debug 包恢复连线上。Release 包永远不带配对信息，也不允许明文 HTTP。本机模式没有账号，不做云同步。
+- 实现：`core/network/AISettings.kt`（数据与 Keystore 加密存储）、`core/network/DirectAI.kt`（prompt、schema、请求体、校验，与服务端 `app/lib/ios/*.js` 一致）、`ui/settings/APISettingsScreen.kt`。
+- Gemini：文字 `POST {base}/v1beta/models/{model}:generateContent`（Key 在 `x-goog-api-key` 头），实时语音 `wss://{base}/ws/…BidiGenerateContent?key=`。OpenAI：文字 `POST {base}/v1/chat/completions`，实时语音 `wss://{base}/v1/realtime?model=`（GA 接口；`OpenAI-Beta: realtime=v1` 已于 2026-05-12 下线），音频重采样为 24 kHz。
+- 东京中转可选：Base URL 填 `https://lingdailyapi-jp.yasobi.xyz`（Gemini）或 `https://lingdailyapi-jp.yasobi.xyz/openai`（OpenAI）。只接受 `https://`，`http://` 仅限本机和私有局域网（模拟器访问电脑可用 `http://10.0.2.2:端口`）。
+- 文字和语音各选一个供应商，选中的那家没配好时自动用另一家。登录后接口设置随 `/api/ios/sync` 加密同步；退出登录、删除账号或换账号时清除本机副本。
 
 ## 签名与分发
 
@@ -100,8 +95,8 @@ app/src/test/        单元测试；ios-sync-changes.json 是 iOS 编码器的�
 ## 与 iOS 不同的地方
 
 - 登录方式（见“账号”）。
-- 文字模式的朗读和听写都走服务端的 Gemini（`/api/ios/speech`、`/api/ios/transcribe`），不依赖手机自带的语音服务：朗读用该角色在语音通话里的音色，听过的句子缓存在本机；听写在停止后把录音发给服务端转成文字，不保存。
-- 「轻松」难度下对方每句话自动在下面显示中文（文字模式用回复自带的翻译；语音模式在对方说完一句后调用 `/api/ios/translate`，只翻本次进入后的新句子，手动收起的不再展开）；说中文词时对方会顺口给出英文说法。
+- 文字模式朗读优先用手机自带的英文 TTS（免费、离线），没有英文 TTS 引擎时才用所配置的接口合成（OpenAI `tts-1` 等），听过的句子缓存在本机；听写在停止后把录音发给所配置的接口转成文字（Gemini 文字模型或 OpenAI `whisper-1`），不保存录音。
+- 「轻松」难度下对方每句话自动在下面显示中文（文字模式用回复自带的翻译；语音模式在对方说完一句后用所配置的文字模型翻译，只翻本次进入后的新句子，手动收起的不再展开）；说中文词时对方会顺口给出英文说法。
 - 语音通话顶部显示三个任务的进度（完成打勾）；三个任务都完成后不自动挂断，可以接着聊，学习者自己挂断后才进入总结（iOS 完成后自动结束）。
 - 语音通话切到后台不挂断：通话期间有一条常驻通知（可点“结束通话”），划掉 App 才结束。拿不到后台麦克风权限时退回“切后台即挂断”。
 - 每日播客是底部单独的「播客」Tab（练习 · 播客 · 学习 · 我的），不在首页：进度拖动、前后 15 秒、倍速、往期列表。

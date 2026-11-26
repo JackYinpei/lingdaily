@@ -185,7 +185,9 @@ begin
         ('authenticated', 'unfamiliar_english', array['SELECT', 'INSERT']),
         ('authenticated', 'podcasts', array['SELECT']),
         ('authenticated', 'chat_history', array['SELECT', 'INSERT', 'UPDATE', 'DELETE']),
-        ('authenticated', 'scenarios', array['SELECT', 'INSERT', 'UPDATE', 'DELETE'])
+        ('authenticated', 'scenarios', array['SELECT', 'INSERT', 'UPDATE', 'DELETE']),
+        ('anon', 'user_ai_settings', array[]::text[]),
+        ('authenticated', 'user_ai_settings', array[]::text[])
     )
     select 1
     from acl_expectations expectation

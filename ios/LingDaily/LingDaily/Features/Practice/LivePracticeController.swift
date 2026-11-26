@@ -29,10 +29,6 @@ final class LivePracticeController: ObservableObject {
     private var stuckTask: Task<Void, Never>?
     /// Idea generated in the background as soon as the partner finishes a line.
     private var prefetched: (line: UUID?, task: Task<LiveSuggestion?, Never>)?
-    /// Token usage of the current connection, reported once at hang-up (the audio never passes our server).
-    private var usage = LiveUsage()
-    private var usageModel: String?
-    private var usageReportID = UUID()
     /// After 打断, the rest of the partner's current reply is dropped until the server ends that turn.
     private var discardingPartnerTurn = false
     private var suggestedLine: UUID?
@@ -76,8 +72,17 @@ final class LivePracticeController: ObservableObject {
         transcript.reset(); pendingTools.reset(); cancelledTools.removeAll()
         turnFinished = false
         errorMessage = nil; muted = false; playing = false; state = .connecting
-        usage = LiveUsage(); usageModel = nil; usageReportID = UUID()
         model.enterLive()
+
+        let spec: LiveConnectionSpec
+        do {
+            spec = try api.liveConnection(for: model.session)
+        } catch {
+            stop(message: error.localizedDescription)
+            return
+        }
+        transcript.replacesOnFinish = (spec.provider == .openai)
+
         if LiveAudioController.permissionDenied {
             stop(message: "麦克风权限被拒。可在系统设置中允许麦克风，或切回文字模式。")
             return
@@ -103,7 +108,6 @@ final class LivePracticeController: ObservableObject {
         do { try audio.prepareOutput() }
         catch { stop(message: "暂时无法准备音频，请重新连接或使用文字模式。"); return }
         usesSpeaker = audio.usesSpeaker
-        let snapshot = model.session
         connectTask = Task { [weak self] in
             guard await LiveAudioController.permission() else {
                 guard let self, self.generations.accepts(connection: current) else { return }
@@ -112,22 +116,13 @@ final class LivePracticeController: ObservableObject {
             }
             guard let self, self.generations.accepts(connection: current), !Task.isCancelled else { return }
             do {
-                #if DEBUG
-                LiveDebugDiagnostics.record("phase=tokenRequest")
-                #endif
-                // The token round trip to the server overlaps with configuring voice
-                // processing (permission may just have been granted). Both finish
-                // before the socket opens, so no audio arrives before output is ready.
-                async let pendingToken = self.api.liveToken(for: snapshot)
                 try self.audio.prepareOutput()
-                let token = try await pendingToken
                 guard self.generations.accepts(connection: current), !Task.isCancelled else { return }
                 #if DEBUG
-                LiveDebugDiagnostics.record("phase=websocketConnect")
+                LiveDebugDiagnostics.record("phase=websocketConnect provider=\(spec.provider.rawValue)")
                 #endif
-                var updated = model.session; updated.beginLive(model: token.model); model.updateLive(updated)
-                self.usageModel = token.model
-                try await self.client.connect(token, generation: current,
+                var updated = model.session; updated.beginLive(model: spec.model); model.updateLive(updated)
+                try await self.client.connect(spec, generation: current,
                     handler: { [weak self] event, generation in self?.receive(event, generation: generation) },
                     failure: { [weak self] generation, diagnostics in
                         guard let self, self.generations.accepts(connection: generation) else { return }
@@ -135,7 +130,7 @@ final class LivePracticeController: ObservableObject {
                     })
             } catch {
                 guard self.generations.accepts(connection: current), !Task.isCancelled else { return }
-                self.stop(message: (error as? PracticeNetworkError)?.localizedDescription ?? "暂时无法连接语音服务，请重试或使用文字模式。")
+                self.stop(message: (error as? PracticeNetworkError)?.localizedDescription ?? "暂时无法连接语音服务，请重试或检查接口设置。")
             }
         }
     }
@@ -237,9 +232,10 @@ final class LivePracticeController: ObservableObject {
             cancelledTools.formUnion(ids)
             pendingTools.cancel(ids)
         case .goAway: stop(message: "本次连接即将到期，请重新连接。已有内容已保留。")
-        case .usage(let turn): usage = usage + turn
+        case .continueResponse, .usage: break
         }
     }
+
     private func scheduleSave() {
         guard pendingSave == nil else { return }
         let current = generations.connection
@@ -249,17 +245,6 @@ final class LivePracticeController: ObservableObject {
                   let model = self.model, let store = self.store else { return }
             self.pendingSave = nil
             store.save(model.session)
-        }
-    }
-    /// Best effort with one retry; the report ID makes a repeated upload harmless.
-    private func reportUsage() {
-        defer { usage = LiveUsage(); usageModel = nil }
-        guard let model = usageModel, let report = LiveUsageReport(reportId: usageReportID, model: model, usage: usage) else { return }
-        Task.detached { [api] in
-            for attempt in 0..<2 {
-                if (try? await api.reportLiveUsage(report)) != nil { return }
-                if attempt == 0 { try? await Task.sleep(nanoseconds: 3_000_000_000) }
-            }
         }
     }
 
@@ -280,6 +265,12 @@ final class LivePracticeController: ObservableObject {
     /// "卡住了" button (or the silence timer): show the reply idea, prefetched when possible.
     func requestSuggestion(automatic: Bool = false) {
         guard state == .active, let model, !suggesting else { return }
+        if (AISettingsKeychain.load() ?? AISettings()).resolvedText == nil {
+            if !automatic {
+                suggestionError = "配置文字模型接口后可使用「卡住了」建议。"
+            }
+            return
+        }
         stuckTask?.cancel(); stuckTask = nil
         let line = LiveStuckPolicy.awaitedLine(in: model.session)
         suggestedLine = line
@@ -306,7 +297,8 @@ final class LivePracticeController: ObservableObject {
 
     /// Start generating help for the partner's latest line before the learner needs it.
     private func prefetchSuggestion() {
-        guard state == .active, let model, let line = LiveStuckPolicy.awaitedLine(in: model.session),
+        guard state == .active, (AISettingsKeychain.load() ?? AISettings()).resolvedText != nil,
+              let model, let line = LiveStuckPolicy.awaitedLine(in: model.session),
               prefetched?.line != line else { return }
         prefetched = (line, Self.fetchSuggestion(for: model.session, using: api))
     }
@@ -329,7 +321,9 @@ final class LivePracticeController: ObservableObject {
     private func watchForStuck() {
         stuckTask?.cancel(); stuckTask = nil
         prefetchSuggestion()
-        guard state == .active, !muted, suggestion == nil, let model,
+        guard state == .active, !muted, suggestion == nil,
+              (AISettingsKeychain.load() ?? AISettings()).resolvedText != nil,
+              let model,
               let line = LiveStuckPolicy.awaitedLine(in: model.session), line != suggestedLine else { return }
         let current = generations.connection
         stuckTask = Task { [weak self] in
@@ -356,6 +350,7 @@ final class LivePracticeController: ObservableObject {
             else { await client.resumeInput(generation: current) }
         }
     }
+
     func stop(message: String? = nil) {
         guard state != .disconnected else { return }
         let closingGeneration = generations.connection
@@ -366,7 +361,6 @@ final class LivePracticeController: ObservableObject {
         generations.reconnect(); connectTask?.cancel(); connectTask = nil
         audio.stop(); state = .disconnected; playing = false; muted = false
         clearSuggestion(); suggestedLine = nil; discardingPartnerTurn = false
-        reportUsage()
         prefetched?.task.cancel(); prefetched = nil
         errorMessage = message
         if let model, let store {

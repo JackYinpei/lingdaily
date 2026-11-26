@@ -35,7 +35,7 @@ fun TodayVocabularyScreen(screen: Screen.TodayVocabulary) {
     val navigator = LocalNavigator.current
     val store = app.store
     val speech = app.speech
-    val episode = screen.episode ?: app.today.episode
+    val episode = screen.episode ?: app.podcasts.episodes.firstOrNull()
     DisposableEffect(Unit) {
         speech.reset()
         onDispose { speech.stopAll() }

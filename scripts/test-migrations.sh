@@ -29,7 +29,7 @@ fail() {
 command -v docker >/dev/null 2>&1 || fail "docker is required"
 
 mapfile -t MIGRATIONS < <(find "$MIGRATIONS_DIR" -maxdepth 1 -type f -name '*.sql' -print | sort)
-[[ ${#MIGRATIONS[@]} -eq 9 ]] || fail "expected 9 numbered migrations, found ${#MIGRATIONS[@]}"
+[[ ${#MIGRATIONS[@]} -eq 10 ]] || fail "expected 10 numbered migrations, found ${#MIGRATIONS[@]}"
 
 for migration in "${MIGRATIONS[@]}"; do
   filename="$(basename "$migration")"

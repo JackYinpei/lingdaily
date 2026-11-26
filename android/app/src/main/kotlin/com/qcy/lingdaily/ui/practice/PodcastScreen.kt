@@ -8,26 +8,29 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,6 +40,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import com.qcy.lingdaily.core.model.TodayEpisode
 import com.qcy.lingdaily.ui.AppIcons
@@ -46,13 +50,13 @@ import com.qcy.lingdaily.ui.Chip
 import com.qcy.lingdaily.ui.Hairline
 import com.qcy.lingdaily.ui.LocalApp
 import com.qcy.lingdaily.ui.LocalNavigator
+import com.qcy.lingdaily.ui.PageTitle
 import com.qcy.lingdaily.ui.ReadableColumn
 import com.qcy.lingdaily.ui.Screen
 import com.qcy.lingdaily.ui.ScreenScaffold
 import com.qcy.lingdaily.ui.SurfaceCard
 import com.qcy.lingdaily.ui.TextAction
 import com.qcy.lingdaily.ui.Type
-import com.qcy.lingdaily.ui.PageTitle
 import com.qcy.lingdaily.ui.medium
 import com.qcy.lingdaily.ui.semibold
 
@@ -91,59 +95,114 @@ private fun PodcastList(title: String? = null) {
     val store = app.podcasts
     val colors = Brand.colors
     val scope = rememberCoroutineScope()
-    LaunchedEffect(app.account.canPractice) {
-        launch { store.refresh() }
-        // 「今日」 (the newest episode with its rehearsal) needs an account.
-        if (app.account.canPractice) app.today.refresh()
+    var generatingDate by remember { mutableStateOf<String?>(null) }
+    var generationError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        store.refresh()
     }
 
-    // What the page is about: the loaded episode, else today's, else the newest in the list.
-    val current = player.episode ?: app.today.episode ?: store.episodes.firstOrNull()
-    // 「今日」 carries the rehearsal; the list does not.
-    val rehearsal = app.today.episode?.takeIf { it.date == current?.date }?.practiceScenario
+    // What the page is about: the loaded episode, else the newest in the list.
+    val current = player.episode ?: store.episodes.firstOrNull()
+    val rehearsal = current?.let { store.rehearsals[it.date] ?: it.practiceScenario }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = if (title != null) 20.dp else 12.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (title != null) item(key = "title") { Box(Modifier.padding(bottom = 12.dp)) { PageTitle(title) } }
-                if (current != null) item(key = "player") {
-                    SurfaceCard(Modifier.padding(bottom = 12.dp), padding = 20.dp, spacing = 14.dp) {
-                        Text(current.source.removePrefix("每日播客 ").ifEmpty { current.date }, style = Type.caption.semibold, color = colors.accent)
-                        Text(current.title, style = Type.title2, color = colors.ink)
-                        if (current.summary.isNotEmpty()) Text(current.summary, style = Type.subheadline, color = colors.secondary)
-                        PlayerControls(current)
-                        player.errorMessage?.let { Text(it, style = Type.caption, color = colors.accent) }
-                        if (current.vocabulary.isNotEmpty()) {
-                            Hairline()
-                            TextAction("${current.vocabulary.size} 个生词", color = colors.ink, trailingIcon = AppIcons.ChevronRight,
-                                modifier = Modifier.fillMaxWidth().testTag("podcast-vocabulary")) { navigator.push(Screen.TodayVocabulary(current)) }
+    fun talkAboutEpisode(episode: TodayEpisode) {
+        if (generatingDate != null) return
+        val existing = store.rehearsals[episode.date] ?: episode.practiceScenario
+        if (existing != null) {
+            navigator.push(Screen.Preparation(existing))
+            return
+        }
+        if (app.aiSettings.settings.resolvedText == null) {
+            navigator.push(Screen.APISettings())
+            return
+        }
+        generatingDate = episode.date
+        generationError = null
+        scope.launch {
+            try {
+                val created = app.api.createNewsScenario(episode)
+                store.rehearsals[episode.date] = created
+                navigator.push(Screen.Preparation(created))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                generationError = error.message ?: "暂时没能生成这期话题，请重试。"
+            } finally {
+                if (generatingDate == episode.date) generatingDate = null
+            }
+        }
+    }
+
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = if (title != null) 20.dp else 12.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (title != null) item(key = "title") { Box(Modifier.padding(bottom = 12.dp)) { PageTitle(title) } }
+        if (current != null) item(key = "player") {
+            val isGenerating = generatingDate == current.date
+            SurfaceCard(Modifier.padding(bottom = 12.dp), padding = 20.dp, spacing = 14.dp) {
+                Text(current.source.removePrefix("每日播客 ").ifEmpty { current.date }, style = Type.caption.semibold, color = colors.accent)
+                Text(current.title, style = Type.title2, color = colors.ink)
+                if (current.summary.isNotEmpty()) Text(current.summary, style = Type.subheadline, color = colors.secondary)
+                PlayerControls(current)
+                player.errorMessage?.let { Text(it, style = Type.caption, color = colors.accent) }
+                if (current.vocabulary.isNotEmpty()) {
+                    Hairline()
+                    TextAction("${current.vocabulary.size} 个生词", color = colors.ink, trailingIcon = AppIcons.ChevronRight,
+                        modifier = Modifier.fillMaxWidth().testTag("podcast-vocabulary")) { navigator.push(Screen.TodayVocabulary(current)) }
+                }
+                Hairline()
+                if (rehearsal != null) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { navigator.push(Screen.Preparation(rehearsal)) }
+                            .testTag("podcast-rehearsal"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Avatar(rehearsal, 36.dp)
+                        Column(Modifier.weight(1f)) {
+                            Text("聊聊这期内容 · ${rehearsal.partner}", style = Type.subheadline.semibold, color = colors.ink)
+                            Text(rehearsal.title, style = Type.caption, color = colors.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        if (rehearsal != null) {
-                            Hairline()
-                            Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { navigator.push(Screen.Preparation(rehearsal)) },
-                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Avatar(rehearsal, 36.dp)
-                                Column(Modifier.weight(1f)) {
-                                    Text("和 ${rehearsal.partner} 聊聊这条新闻", style = Type.subheadline.semibold, color = colors.ink)
-                                    Text(rehearsal.title, style = Type.caption, color = colors.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-                                Icon(AppIcons.ArrowForward, null, Modifier.size(20.dp), tint = colors.ink)
+                        Icon(AppIcons.ArrowForward, null, Modifier.size(20.dp), tint = colors.ink)
+                    }
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(enabled = !isGenerating, role = Role.Button) { talkAboutEpisode(current) }
+                            .testTag("podcast-rehearsal"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (isGenerating) {
+                            CircularProgressIndicator(Modifier.size(16.dp), color = colors.ink, strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(if (isGenerating) "正在生成话题…" else "聊聊这期内容", style = Type.subheadline.semibold, color = colors.ink)
+                            if (app.aiSettings.settings.resolvedText == null) {
+                                Text("先配置文字模型接口，即可和伙伴聊这期新闻", style = Type.caption, color = colors.secondary)
                             }
                         }
+                        if (!isGenerating) Icon(AppIcons.ChevronRight, null, Modifier.size(18.dp), tint = colors.secondary)
                     }
                 }
-                item(key = "past") { Text("往期", style = Type.headline, color = colors.ink) }
-                when {
-                    store.episodes.isNotEmpty() -> items(store.episodes, key = { it.date }) { episode -> EpisodeRow(episode) }
-                    store.isLoading -> item(key = "loading") {
-                        Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(Modifier.size(22.dp), color = colors.secondary, strokeWidth = 2.dp)
-                        }
-                    }
-                    store.failed -> item(key = "failed") {
-                        TextAction("往期播客没有加载出来，点此重试", style = Type.subheadline) { scope.launch { store.refresh(force = true) } }
-                    }
-                    else -> item(key = "empty") { Text("还没有往期播客。", style = Type.subheadline, color = colors.secondary) }
+                generationError?.let { Text(it, style = Type.caption, color = colors.accent) }
+            }
+        }
+        item(key = "past") { Text("往期", style = Type.headline, color = colors.ink) }
+        when {
+            store.episodes.isNotEmpty() -> items(store.episodes, key = { it.date }) { episode -> EpisodeRow(episode) }
+            store.isLoading -> item(key = "loading") {
+                Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.size(22.dp), color = colors.secondary, strokeWidth = 2.dp)
                 }
+            }
+            store.failed -> item(key = "failed") {
+                TextAction("往期播客没有加载出来，点此重试", style = Type.subheadline) { scope.launch { store.refresh(force = true) } }
+            }
+            else -> item(key = "empty") { Text("还没有往期播客。", style = Type.subheadline, color = colors.secondary) }
+        }
     }
 }
 
@@ -211,7 +270,7 @@ private fun EpisodeRow(episode: TodayEpisode) {
     val colors = Brand.colors
     val loaded = player.isCurrent(episode)
     val playing = loaded && player.isPlaying
-    SurfaceCard(Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+    SurfaceCard(Modifier.clip(RoundedCornerShape(20.dp))
         .clickable(enabled = episode.playableURL != null, role = Role.Button) { player.toggle(episode) }.testTag("episode-${episode.date}"), padding = 16.dp) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {

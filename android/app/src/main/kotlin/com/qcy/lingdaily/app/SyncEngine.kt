@@ -18,14 +18,15 @@ import com.qcy.lingdaily.core.persistence.SyncLedger
 import com.qcy.lingdaily.core.persistence.SyncLedgerFile
 
 /**
- * Keeps the local archive and the signed-in account's cloud copy in step.
- * Local edits are recorded immediately and uploaded a few seconds later;
- * the device also pulls when the account signs in and when the app returns.
+ * Keeps the local archive, local `AISettings` and the signed-in account's cloud copy in step.
+ * Local edits are recorded immediately and uploaded a few seconds later; the device also
+ * pulls when the account signs in and when the app returns.
  * During a Live call nothing is uploaded (the call's audio needs the bandwidth);
  * edits made during the call go out right after hang-up.
  */
 class SyncEngine(
     private val store: PracticeStore,
+    private val aiSettings: AISettingsStore,
     private val account: AccountStore,
     private val api: PracticeApiClient,
     private val ledgerFile: SyncLedgerFile,
@@ -47,7 +48,6 @@ class SyncEngine(
         private set
 
     private var ledger = ledgerFile.load()
-
     /** An earlier ledger write failed, so the saved ledger may miss edits: the next sync re-sends everything local. */
     private var needsFullResync = ledgerFile.isStale
     private var ledgerSaveFailed = false
@@ -65,12 +65,13 @@ class SyncEngine(
         lastSyncedAt = ledger.lastSyncedAt
         pendingCount = ledger.pendingCount
         store.onChange = ::record
+        aiSettings.onChange = ::recordAISettings
         scope.launch {
             snapshotFlow { account.session?.userID }.distinctUntilChanged().collect { if (it != null) syncNow() }
         }
     }
 
-    val isEnabled: Boolean get() = !account.usesLocalDevelopment && account.session != null
+    val isEnabled: Boolean get() = account.session != null
 
     /** Called by the call screen when a Live call starts and when it ends. */
     fun liveCallChanged(active: Boolean) {
@@ -90,6 +91,15 @@ class SyncEngine(
             is ArchiveChange.Scenario -> ledger.scenarioChanged(change.id)
             is ArchiveChange.ScenarioDeleted -> ledger.scenarioDeleted(change.id)
         }
+        scheduleSync()
+    }
+
+    private fun recordAISettings() {
+        ledger = ledger.aiSettingsChanged()
+        scheduleSync()
+    }
+
+    private fun scheduleSync() {
         saveLedger()
         changeCount++
         debounce?.cancel()
@@ -155,21 +165,23 @@ class SyncEngine(
                 forgetAccountData()
                 SyncLedger(ownerUserID = session.userID)
             } else if (needsFullResync) {
-                ledger.readopt(session.userID, store.archive)
+                ledger.readopt(session.userID, store.archive, hasAISettings = aiSettings.settings.hasAnyValue)
             } else {
-                SyncLedger.adopting(session.userID, store.archive)
+                SyncLedger.adopting(session.userID, store.archive, hasAISettings = aiSettings.settings.hasAnyValue)
             }
             needsFullResync = false
             saveLedger()
         }
         status = Status.Syncing
-        val changes = ledger.changes(store.archive)
+        val localAI = aiSettings.settings
+        val changes = ledger.changes(store.archive, localAI)
         return try {
             val snapshot = api.sync(changes)
             if (account.session?.userID != session.userID) return null
-            val merged = ledger.merge(snapshot, changes, store.archive)
+            val merged = ledger.merge(snapshot, changes, store.archive, localAI)
             ledger = merged.ledger
             store.replaceArchive(merged.archive)
+            merged.remoteAISettings?.let(aiSettings::replaceFromSync)
             saveLedger()
             lastSyncedAt = ledger.lastSyncedAt
             status = if (ledgerSaveFailed) Status.Failed(LEDGER_SAVE_FAILED) else Status.Idle
@@ -186,12 +198,13 @@ class SyncEngine(
     suspend fun flushBeforeSignOut(): Boolean = if (isEnabled) syncNow() else true
 
     /**
-     * Forgets everything this device holds for the account: archive, sync ledger, review history
-     * and reminders. Runs on sign-out, account deletion, and when a different account signs in.
+     * Forgets everything this device holds for the account: archive, API settings, sync ledger,
+     * review history and reminders. Runs on sign-out, account deletion, and account switches.
      */
     fun forgetAccountData() {
         debounce?.cancel()
         store.clearAll()
+        aiSettings.clear()
         ledger = SyncLedger()
         needsFullResync = false
         lastSyncedAt = null

@@ -169,14 +169,14 @@ final class AIPracticeTests: XCTestCase {
         XCTAssertEqual(Set(scenario?.steps.map(\.id) ?? []).count, 3)
     }
 
-    // Explicit opt-in: uses synthetic dialogue and the user's configured Gemini
-    // service, with the same URLSession client and models as the iOS app.
+    // Explicit opt-in: uses synthetic dialogue and the learner's own key from a local
+    // AISettings file, with the same URLSession client and requests as the iOS app.
     func testLiveGeminiConversation() async throws {
         guard let path = ProcessInfo.processInfo.environment["LINGDAILY_AI_TEST_CONFIG"] else {
             throw XCTSkip("Set LINGDAILY_AI_TEST_CONFIG only for a real model smoke test")
         }
-        let config = try JSONDecoder().decode(AIConnectionConfiguration.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
-        let api = PracticeAPIClient(configuration: config, aiConsent: { true })
+        let settings = try AISettings.testConfiguration(at: path)
+        let api = PracticeAPIClient(accountSession: { nil }, aiSettings: { settings })
         var session = PracticeSession(scenario: scenario, goal: "Ask Alex to move our deadline to Thursday", context: "The supplier will send the data on Wednesday. Be friendly.", useAI: true)
         for action in 0..<4 {
             if action == 1 { XCTAssertTrue(session.submit("I need more time because the supplier data arrives Wednesday.")) }

@@ -3,16 +3,17 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var account: AccountStore
+    @EnvironmentObject private var aiSettings: AISettingsStore
     @EnvironmentObject private var sync: SyncEngine
     @AppStorage("appearance") private var appearance = "system"
     @AppStorage("autoReadAIReplies") private var autoReadReplies = true
     @AppStorage(SpeechController.slowKey) private var slowSpeech = false
     @AppStorage(ReviewPicker.enabledKey) private var reviewWords = true
     @AppStorage(LivePause.key) private var pauseMs = LivePause.standard
-    @AppStorage(AIDataConsent.key) private var aiConsentVersion = ""
     @State private var signingOut = false
     @State private var unsyncedOnSignOut = false
     @State private var showingAccountData = false
+    @State private var showingAPISettings = false
     @State private var editingInterests = false
     @AppStorage(LearnerInterests.key) private var interestsRaw = ""
 
@@ -23,13 +24,47 @@ struct SettingsView: View {
         return labels.isEmpty ? "选一选你想练的场合，首页按它排序" : labels.joined(separator: " · ")
     }
 
+    private var apiSummary: String {
+        let current = aiSettings.settings
+        guard current.isAnyConfigured else {
+            return "未配置 · 点击填入 API Key 与模型"
+        }
+        let textPart = current.resolvedText.map { "\($0.provider.title) (\($0.config.textModel))" } ?? "未配置"
+        let voicePart = current.resolvedVoice.map { "\($0.provider.title) (\($0.config.liveModel))" } ?? "未配置"
+        return "文字：\(textPart)\n语音：\(voicePart)"
+    }
+
     var body: some View {
         ZStack {
             PageBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     PageTitle(title: "我的")
-                    if !account.usesLocalDevelopment { accountCard }
+
+                    Button { showingAPISettings = true } label: {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("接口设置").font(.headline).foregroundColor(Brand.ink)
+                                Text(apiSummary)
+                                    .font(.caption)
+                                    .foregroundColor(aiSettings.settings.isAnyConfigured ? Brand.secondary : Brand.accent)
+                                    .lineSpacing(3)
+                                    .multilineTextAlignment(.leading)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundColor(Brand.secondary)
+                        }
+                        .frame(minHeight: 48)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .surfaceCard()
+                    .accessibilityIdentifier("api-settings")
+
+                    accountCard
+
                     VStack(alignment: .leading, spacing: 16) {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("外观").font(.subheadline).foregroundColor(Brand.ink)
@@ -60,6 +95,7 @@ struct SettingsView: View {
                             .accessibilityIdentifier("live-pause")
                         }
                     }.surfaceCard()
+
                     Button { editingInterests = true } label: {
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 4) {
@@ -72,25 +108,17 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.plain).surfaceCard()
                     .accessibilityIdentifier("edit-interests")
+
                     ReminderCard()
-                    if account.canPractice { AIModelCard() }
-                    if account.session != nil && !account.usesLocalDevelopment { UsageCard() }
+
                     VStack(alignment: .leading, spacing: 12) {
                         Link("隐私政策", destination: LingDailyService.baseURL.appendingPathComponent("privacy"))
                             .frame(minHeight: 44)
                         Brand.line.frame(height: 1)
                         Link("帮助与联系", destination: LingDailyService.baseURL.appendingPathComponent("support"))
                             .frame(minHeight: 44)
-                        Brand.line.frame(height: 1)
-                        if aiConsentVersion == AIDataConsent.version {
-                            Button("撤回 AI 数据使用授权") { AIDataConsent.revoke() }
-                                .frame(minHeight: 44)
-                        } else {
-                            Button("AI 数据使用") {
-                                NotificationCenter.default.post(name: AIDataConsent.requested, object: nil)
-                            }.frame(minHeight: 44)
-                        }
                     }.font(.subheadline).foregroundColor(Brand.ink).surfaceCard()
+
                     Text("LingDaily \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
                         .font(.caption).foregroundColor(Brand.secondary).frame(maxWidth: .infinity)
                 }
@@ -98,12 +126,13 @@ struct SettingsView: View {
                 .readableColumn()
             }
         }
+        .pushDestination(isPresented: $showingAPISettings) { APISettingsView() }
         .pushDestination(isPresented: $editingInterests) { InterestOnboardingView(editing: true) }
         .alert("还有内容没同步", isPresented: $unsyncedOnSignOut) {
             Button("仍然退出", role: .destructive) { finishSignOut() }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("有 \(sync.pendingCount) 项改动还没上传到账号。退出会移除本机记录，这些改动会丢失。")
+            Text("有 \(sync.pendingCount) 项改动还没上传到账号。退出会移除本机记录与接口设置，这些改动会丢失。")
         }
         .pushDestination(isPresented: $showingAccountData) { AccountDataView() }
     }
@@ -134,6 +163,11 @@ struct SettingsView: View {
                     }.frame(minHeight: 44).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityIdentifier("account-data")
             } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("云同步（可选）").font(.subheadline.weight(.semibold)).foregroundColor(Brand.ink)
+                    Text("登录后可在多台设备间同步练习记录、词库、自建场景及加密保存的接口设置。不登录也可在本机完整使用。")
+                        .font(.caption).foregroundColor(Brand.secondary).lineSpacing(3)
+                }
                 AppleSignInButton()
             }
         }.surfaceCard()
@@ -177,8 +211,7 @@ struct SettingsView: View {
     }()
 }
 
-/// 账号与数据: where the learner's data lives, and — one step further — account
-/// deletion (App Store Review Guideline 5.1.1(v)): explain, then confirm with Apple.
+/// 账号与数据: where the learner's data lives, and account deletion (App Store 5.1.1(v)).
 private struct AccountDataView: View {
     @EnvironmentObject private var account: AccountStore
     @EnvironmentObject private var sync: SyncEngine
@@ -211,7 +244,7 @@ private struct AccountDataView: View {
     private var deletion: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("删除账号").font(.headline).foregroundColor(Brand.ink)
-            Text("账号和全部练习记录、词库、自建场景（含网页版）将永久删除，无法撤销。")
+            Text("账号和全部练习记录、词库、自建场景及云端接口设置（含网页版）将永久删除，无法撤销。")
                 .font(.subheadline).foregroundColor(Brand.secondary).lineSpacing(4)
             if let errorMessage {
                 Text(errorMessage).font(.caption).foregroundColor(Brand.accent)
@@ -289,119 +322,3 @@ private struct ReminderCard: View {
         ReminderCenter.shared.rescheduleDaily(practicedToday: PracticeStats.spokeToday(store.archive.sessions))
     }
 }
-
-/// Lets the learner pick a model per feature from the server's allowed list.
-/// The choice is stored on this device; empty means the server default.
-private struct AIModelCard: View {
-    @Environment(\.practiceService) private var api
-    @State private var catalog: AIModelCatalog?
-    @State private var failed = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("AI 模型").font(.subheadline).foregroundColor(Brand.ink)
-            if let catalog {
-                ForEach(AIModelFeature.allCases) { feature in
-                    if feature != AIModelFeature.allCases.first { Brand.line.frame(height: 1) }
-                    ModelRow(feature: feature, options: catalog.feature(feature))
-                }
-            } else if failed {
-                Button("加载失败，点此重试") { Task { await load() } }
-                    .font(.caption).foregroundColor(Brand.secondary).frame(minHeight: 44)
-            } else {
-                ProgressView().frame(maxWidth: .infinity, minHeight: 44)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .surfaceCard()
-        .task { if catalog == nil { await load() } }
-    }
-
-    private func load() async {
-        failed = false
-        do { catalog = try await api.modelCatalog() } catch { failed = true }
-    }
-}
-
-private struct ModelRow: View {
-    let feature: AIModelFeature
-    let options: AIModelCatalog.Feature
-    @AppStorage private var selection: String
-
-    init(feature: AIModelFeature, options: AIModelCatalog.Feature) {
-        self.feature = feature
-        self.options = options
-        _selection = AppStorage(wrappedValue: "", AIModelPreference.key(feature))
-    }
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(feature.title).font(.subheadline).foregroundColor(Brand.ink)
-            Spacer(minLength: 8)
-            Picker(feature.title, selection: $selection) {
-                // Model ids name the provider; the picker shows only what each choice is like.
-                Text("默认").tag("")
-                ForEach(options.choices.filter { $0.id != options.default }, id: \.id) { choice in
-                    Text(choice.note).tag(choice.id)
-                }
-            }
-            .pickerStyle(.menu).tint(Brand.secondary).font(.caption)
-            .accessibilityIdentifier("model-\(feature.rawValue)")
-        }
-        .frame(minHeight: 44)
-    }
-}
-
-/// The learner's own AI token usage over the last 30 days (no prices).
-private struct UsageCard: View {
-    @Environment(\.practiceService) private var api
-    @State private var summary: AIUsageSummary?
-    @State private var failed = false
-
-    private static let labels = ["practice": "文字对话", "scenario": "生成场景", "ideas": "换一批",
-                                 "translate": "单句翻译", "suggest": "卡住时的建议", "live": "语音通话"]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("我的用量").font(.subheadline).foregroundColor(Brand.ink)
-                Spacer()
-                Text("近 30 天").font(.caption).foregroundColor(Brand.secondary)
-            }
-            if let summary {
-                Text("\(Self.format(summary.total.total_tokens)) tokens · \(summary.total.calls) 次")
-                    .font(.title3.weight(.semibold)).foregroundColor(Brand.ink)
-                ForEach(summary.byFeature, id: \.key) { group in
-                    HStack {
-                        Text(Self.labels[group.key] ?? group.key).font(.caption).foregroundColor(Brand.secondary)
-                        Spacer()
-                        Text("\(Self.format(group.total_tokens)) · \(group.calls) 次").font(.caption).foregroundColor(Brand.ink)
-                    }
-                }
-                if summary.byFeature.isEmpty {
-                    Text("还没有用量记录。").font(.caption).foregroundColor(Brand.secondary)
-                }
-            } else if failed {
-                Button("加载失败，点此重试") { Task { await load() } }
-                    .font(.caption).foregroundColor(Brand.secondary).frame(minHeight: 44)
-            } else {
-                ProgressView().frame(maxWidth: .infinity, minHeight: 44)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .surfaceCard()
-        .task { await load() }
-    }
-
-    private func load() async {
-        failed = false
-        do { summary = try await api.usageSummary() } catch { failed = true }
-    }
-
-    private static func format(_ value: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
-    }
-}
-

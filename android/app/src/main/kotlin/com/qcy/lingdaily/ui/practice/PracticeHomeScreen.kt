@@ -25,11 +25,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,13 +52,12 @@ import com.qcy.lingdaily.ui.LocalApp
 import com.qcy.lingdaily.ui.LocalNavigator
 import com.qcy.lingdaily.ui.ReadableColumn
 import com.qcy.lingdaily.ui.Screen
+import com.qcy.lingdaily.ui.SolidButton
 import com.qcy.lingdaily.ui.StepProgress
 import com.qcy.lingdaily.ui.SurfaceCard
 import com.qcy.lingdaily.ui.Type
 import com.qcy.lingdaily.ui.medium
 import com.qcy.lingdaily.ui.semibold
-import com.qcy.lingdaily.ui.settings.SignInButton
-
 
 private fun greeting(hour: Int = LocalTime.now().hour): String = when (hour) {
     in 5..10 -> "早上好"
@@ -73,7 +72,7 @@ fun PracticeHomeScreen() {
     val app = LocalApp.current
     val navigator = LocalNavigator.current
     val archive = app.store.archive
-    val account = app.account
+    val aiSettings = app.aiSettings.settings
     val reminders = app.reminders
     val settings = app.settings
     // Built-in scenarios, the ones matching the learner's first-run picks first.
@@ -117,7 +116,7 @@ fun PracticeHomeScreen() {
     val activeCategory = settings.homeCategory.takeIf { it in categories }
     fun shows(scenario: PracticeScenario) = activeCategory == null || scenario.category == activeCategory
 
-    LaunchedEffect(account.canPractice) {
+    LaunchedEffect(Unit) {
         app.catalog.refresh()
     }
     LaunchedEffect(reminders.pendingScenarioID) {
@@ -160,10 +159,11 @@ fun PracticeHomeScreen() {
                     }
                 }
             }
-            if (!account.canPractice) {
-                SurfaceCard(spacing = 14.dp) {
-                    Text("先登录，再开口", style = Type.headline, color = Brand.colors.ink)
-                    SignInButton()
+            if (!aiSettings.isAnyConfigured) {
+                SurfaceCard(spacing = 12.dp) {
+                    Text("先配置模型接口", style = Type.headline, color = Brand.colors.ink)
+                    Text("填入 Google Gemini 或 OpenAI 的 API Key 与模型名称即可开始对话", style = Type.subheadline, color = Brand.colors.secondary)
+                    SolidButton("配置接口", onClick = { navigator.push(Screen.APISettings()) }, modifier = Modifier.testTag("configure-api"))
                 }
             }
             unfinished?.let { session -> ContinueCard(session) { navigator.push(Screen.Conversation(session)) } }

@@ -19,7 +19,7 @@ enum LiveCallActivity {
     }
 }
 
-/// Keeps the local archive and the signed-in account's cloud copy in step.
+/// Keeps the local archive, AI settings and the signed-in account's cloud copy in step.
 /// Local edits are recorded immediately and uploaded a few seconds later;
 /// the device also pulls when the account signs in and when the app returns.
 /// During a Live call nothing is uploaded (the call's audio needs the bandwidth);
@@ -32,6 +32,7 @@ final class SyncEngine: ObservableObject {
     @Published private(set) var lastSyncedAt: Date?
     private let store: PracticeStore
     private let account: AccountStore
+    private let aiSettings: AISettingsStore
     private let ledgerFile: SyncLedgerFile
     private var ledger: SyncLedger
     /// An earlier ledger write failed, so the saved ledger may miss edits: the next sync re-sends everything local.
@@ -49,15 +50,17 @@ final class SyncEngine: ObservableObject {
     private var changeCount = 0
     private var changeCountAtStart = 0
 
-    init(store: PracticeStore, account: AccountStore) {
+    init(store: PracticeStore, account: AccountStore, aiSettings: AISettingsStore) {
         self.store = store
         self.account = account
+        self.aiSettings = aiSettings
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         ledgerFile = SyncLedgerFile(url: directory.appendingPathComponent("LingDailyExperience/sync-ledger.json"))
         ledger = ledgerFile.load()
         needsFullResync = ledgerFile.isStale
         lastSyncedAt = ledger.lastSyncedAt
         store.onChange = { [weak self] change in self?.record(change) }
+        aiSettings.onChange = { [weak self] _ in self?.recordAISettingsChange() }
         signedIn = account.$session.removeDuplicates().sink { [weak self] session in
             guard session != nil else { return }
             Task { @MainActor in _ = await self?.syncNow() }
@@ -76,7 +79,7 @@ final class SyncEngine: ObservableObject {
         Task { _ = await syncNow() }
     }
 
-    var isEnabled: Bool { !account.usesLocalDevelopment && account.session != nil }
+    var isEnabled: Bool { account.session != nil }
     var pendingCount: Int { ledger.pendingCount }
 
     func record(_ change: ArchiveChange) {
@@ -88,6 +91,15 @@ final class SyncEngine: ObservableObject {
         case .scenario(let id): ledger.scenarioChanged(id)
         case .scenarioDeleted(let id): ledger.scenarioDeleted(id)
         }
+        scheduleDebouncedSync()
+    }
+
+    func recordAISettingsChange() {
+        ledger.aiSettingsChanged()
+        scheduleDebouncedSync()
+    }
+
+    private func scheduleDebouncedSync() {
         saveLedger()
         changeCount &+= 1
         debounce?.cancel()
@@ -150,20 +162,22 @@ final class SyncEngine: ObservableObject {
                 forgetAccountData()
                 ledger = SyncLedger(ownerUserID: session.userID)
             } else if needsFullResync {
-                ledger.readopt(owner: session.userID, archive: store.archive)
+                ledger.readopt(owner: session.userID, archive: store.archive, hasAISettings: aiSettings.settings.hasAnyValue)
             } else {
-                ledger.adopt(owner: session.userID, archive: store.archive)
+                ledger.adopt(owner: session.userID, archive: store.archive, hasAISettings: aiSettings.settings.hasAnyValue)
             }
             needsFullResync = false
             saveLedger()
         }
         status = .syncing
-        let changes = ledger.changes(from: store.archive)
+        let changes = ledger.changes(from: store.archive, aiSettings: aiSettings.settings)
         do {
-            let snapshot = try await PracticeAPIClient(configuration: nil).sync(changes)
+            let snapshot = try await PracticeAPIClient().sync(changes)
             guard account.session?.userID == session.userID else { return nil }
             var merged = store.archive
-            ledger.merge(snapshot, sent: changes, into: &merged)
+            if let adoptedAI = ledger.merge(snapshot, sent: changes, into: &merged, localAISettings: aiSettings.settings) {
+                aiSettings.replaceFromSync(adoptedAI)
+            }
             store.replaceArchive(merged)
             saveLedger()
             lastSyncedAt = ledger.lastSyncedAt
@@ -181,11 +195,12 @@ final class SyncEngine: ObservableObject {
         return await syncNow()
     }
 
-    /// Forgets everything this device holds for the account: archive, sync ledger, review history
-    /// and reminders. Runs on sign-out, account deletion, and when a different account signs in.
+    /// Forgets everything this device holds for the account: archive, AI settings, sync ledger,
+    /// review history and reminders. Runs on sign-out, account deletion, and account switch.
     func forgetAccountData() {
         debounce?.cancel()
         store.clearAll()
+        aiSettings.clear()
         ledger = SyncLedger()
         needsFullResync = false
         lastSyncedAt = nil

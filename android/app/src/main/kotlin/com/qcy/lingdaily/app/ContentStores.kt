@@ -1,6 +1,7 @@
 package com.qcy.lingdaily.app
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.io.File
@@ -11,25 +12,34 @@ import kotlinx.serialization.builtins.ListSerializer
 import com.qcy.lingdaily.core.model.AppJson
 import com.qcy.lingdaily.core.model.PartnerCharacter
 import com.qcy.lingdaily.core.model.PracticeScenario
+import com.qcy.lingdaily.core.model.ScenarioCatalog
 import com.qcy.lingdaily.core.model.ScenarioExtras
 import com.qcy.lingdaily.core.model.TodayEpisode
 import com.qcy.lingdaily.core.model.nowMillis
+import com.qcy.lingdaily.core.model.parseScenarioCatalog
 import com.qcy.lingdaily.core.network.PracticeApiClient
-import com.qcy.lingdaily.core.network.PracticeNetworkException
 import com.qcy.lingdaily.core.persistence.writeAtomically
 
 /**
- * Built-in scenarios from the server, cached on the device. The four bundled ones are
- * the fallback, so the home page never starts empty, even offline on first launch.
+ * Built-in scenarios from the server, cached on the device. Before the first refresh (or
+ * offline), all 25 bundled scenarios and their `tags` & `cast` load directly from
+ * `R.raw.scenario_catalog`.
  */
-class ScenarioCatalogStore(private val file: File, private val api: PracticeApiClient) {
-    var scenarios by mutableStateOf(cached() ?: ScenarioLibrary.all)
+class ScenarioCatalogStore(
+    private val file: File,
+    private val api: PracticeApiClient,
+    bundledCatalog: () -> String = { "" },
+) {
+    private val extrasFile = File(file.parentFile, "scenario-catalog-extras.json")
+    private val initial: ScenarioCatalog = loadInitial(bundledCatalog)
+
+    var scenarios by mutableStateOf(initial.scenarios)
         private set
 
-    /** Interest tags and alternate cast by scenario id; empty for the bundled fallback. */
-    var extras by mutableStateOf(if (cached() != null) cachedExtras() else emptyMap())
+    /** Interest tags and alternate cast by scenario id. */
+    var extras by mutableStateOf(initial.extras)
         private set
-    private val extrasFile = File(file.parentFile, "scenario-catalog-extras.json")
+
     private var refreshing = false
     private var refreshedAt: Long? = null
 
@@ -65,47 +75,26 @@ class ScenarioCatalogStore(private val file: File, private val api: PracticeApiC
         }
     }
 
+    private fun loadInitial(bundledCatalog: () -> String): ScenarioCatalog {
+        val diskScenarios = cached()
+        if (diskScenarios != null) {
+            return ScenarioCatalog(diskScenarios, cachedExtras())
+        }
+        val bundled = runCatching { parseScenarioCatalog(bundledCatalog()) }.getOrNull()
+        if (bundled != null && bundled.scenarios.isNotEmpty()) return bundled
+        return ScenarioCatalog(ScenarioLibrary.all, emptyMap())
+    }
+
     private fun cached(): List<PracticeScenario>? = runCatching {
         AppJson.decodeFromString(ListSerializer(PracticeScenario.serializer()), file.readText())
     }.getOrNull()?.takeIf { it.isNotEmpty() }
 
     private fun cachedExtras(): Map<String, ScenarioExtras> = runCatching {
-        AppJson.decodeFromString(ListSerializer(ScenarioExtras.serializer()), File(file.parentFile, "scenario-catalog-extras.json").readText())
+        AppJson.decodeFromString(ListSerializer(ScenarioExtras.serializer()), extrasFile.readText())
     }.getOrDefault(emptyList()).associate { it.id to it.cleaned() }
 }
 
-/** 「今日」: the latest daily podcast and its rehearsal. Kept in memory; refreshed on return to the app. */
-class TodayStore(private val api: PracticeApiClient) {
-    var episode by mutableStateOf<TodayEpisode?>(null)
-        private set
-    private var loadedAt: Long? = null
-    private var refreshing = false
-
-    suspend fun refresh(force: Boolean = false) {
-        if (refreshing) return
-        // Within 10 minutes only a missing rehearsal is worth asking for again.
-        if (!force && episode?.scenario != null && loadedAt?.let { nowMillis() - it < FRESH_MS } == true) return
-        refreshing = true
-        try {
-            episode = api.today()
-            loadedAt = nowMillis()
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: PracticeNetworkException) {
-            if (error.kind == PracticeNetworkException.Kind.SIGNED_OUT) episode = null
-        } catch (_: Exception) {
-        } finally {
-            refreshing = false
-        }
-    }
-
-    fun clear() {
-        episode = null
-        loadedAt = null
-    }
-}
-
-/** The daily podcasts of the last weeks for the player page. Kept in memory. */
+/** The daily podcasts of the last weeks for the player page, plus per-episode news rehearsals in memory. */
 class PodcastStore(private val api: PracticeApiClient) {
     var episodes by mutableStateOf(emptyList<TodayEpisode>())
         private set
@@ -113,6 +102,8 @@ class PodcastStore(private val api: PracticeApiClient) {
         private set
     var failed by mutableStateOf(false)
         private set
+    /** Generated 3-step news rehearsals cached in memory keyed by `episode.date`. */
+    val rehearsals = mutableStateMapOf<String, PracticeScenario>()
     private var loadedAt: Long? = null
 
     suspend fun refresh(force: Boolean = false) {
@@ -129,6 +120,10 @@ class PodcastStore(private val api: PracticeApiClient) {
         } finally {
             isLoading = false
         }
+    }
+
+    fun clearRehearsals() {
+        rehearsals.clear()
     }
 }
 

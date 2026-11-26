@@ -28,14 +28,12 @@ import com.qcy.lingdaily.core.realtime.LiveProtocolException
 import com.qcy.lingdaily.core.realtime.LiveStuckPolicy
 import com.qcy.lingdaily.core.realtime.LiveSuggestion
 import com.qcy.lingdaily.core.realtime.LiveTranscriptReducer
-import com.qcy.lingdaily.core.realtime.LiveUsage
-import com.qcy.lingdaily.core.realtime.LiveUsageReport
 
 /**
- * One Gemini Live call for the rehearsal on screen: connection, audio, subtitles, the
- * model's tool calls and the "stuck?" help. Used on the main thread. Everything that can
- * arrive late (socket events, audio callbacks, timers) carries the connection generation
- * it belongs to and is ignored once the call has ended or been replaced.
+ * One Realtime voice call (Google Gemini Live or OpenAI Realtime) for the rehearsal on screen:
+ * direct connection, audio, subtitles, tool calls and "stuck?" help. Used on the main thread.
+ * Everything that can arrive late (socket events, audio callbacks, timers) carries the connection
+ * generation it belongs to and is ignored once the call has ended or been replaced.
  */
 class LivePracticeController(private val app: AppContainer) {
     enum class State { DISCONNECTED, CONNECTING, ACTIVE }
@@ -87,12 +85,6 @@ class LivePracticeController(private val app: AppContainer) {
     /** Idea generated in the background as soon as the partner finishes a line. */
     private var prefetched: Pair<UUID?, Deferred<LiveSuggestion?>>? = null
     private var suggestedLine: UUID? = null
-
-    /** Token usage of the current connection, reported once at hang-up (the audio never passes our server). */
-    private var usage = LiveUsage()
-    private var usageModel: String? = null
-    private var usageReportID = UUID.randomUUID()
-
     /** After 打断, the rest of the partner's current reply is dropped until the server ends that turn. */
     private var discardingPartnerTurn = false
 
@@ -115,6 +107,13 @@ class LivePracticeController(private val app: AppContainer) {
 
     fun start(model: PracticeViewModel) {
         if (state != State.DISCONNECTED || model.session.phase == PracticeSession.Phase.COMPLETED) return
+        val snapshot = model.session
+        val config = try {
+            api.liveConnection(snapshot)
+        } catch (error: Exception) {
+            errorMessage = (error as? PracticeNetworkException)?.message ?: "请先配置实时语音模型接口。"
+            return
+        }
         app.podcast.pause()
         this.model = model
         hasStarted = true
@@ -128,9 +127,6 @@ class LivePracticeController(private val app: AppContainer) {
         muted = false
         playing = false
         moveTo(State.CONNECTING)
-        usage = LiveUsage()
-        usageModel = null
-        usageReportID = UUID.randomUUID()
         model.enterLive()
 
         audio.onStopRequired = { reason ->
@@ -144,7 +140,6 @@ class LivePracticeController(private val app: AppContainer) {
         }
         audio.onRouteChanged = { speaker -> if (generations.accepts(current)) usesSpeaker = speaker }
 
-        val snapshot = model.session
         connectJob = scope.launch {
             if (!app.requestPermission(Manifest.permission.RECORD_AUDIO)) {
                 if (generations.accepts(current)) stop("麦克风权限被拒。可在系统设置中允许麦克风，或切回文字模式。")
@@ -155,7 +150,7 @@ class LivePracticeController(private val app: AppContainer) {
             app.hangUpCall = { stop() }
             continuesInBackground = LiveCallService.start(app.context, model.session.scenario.partner)
             try {
-                // The speaker path is open before the token is asked for, so no reply can arrive before it.
+                // The speaker path is open before the socket connects, so no reply can arrive before it.
                 audio.prepareOutput()
             } catch (_: RuntimeException) {
                 stop("暂时无法准备音频，请重新连接或使用文字模式。")
@@ -163,13 +158,14 @@ class LivePracticeController(private val app: AppContainer) {
             }
             usesSpeaker = audio.usesSpeaker
             try {
-                val token = api.liveToken(snapshot)
                 if (!generations.accepts(current)) return@launch
-                model.updateLive(model.session.beginLive(model = token.model))
-                usageModel = token.model
-                client.connect(token, current,
+                model.updateLive(model.session.beginLive(model = config.model))
+                client.connect(
+                    config = config,
+                    generation = current,
                     handler = { event, generation -> receive(event, generation) },
-                    failure = { generation, diagnostics -> if (generations.accepts(generation)) stop(diagnostics.message) })
+                    failure = { generation, diagnostics -> if (generations.accepts(generation)) stop(diagnostics.message) },
+                )
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -218,7 +214,7 @@ class LivePracticeController(private val app: AppContainer) {
                 // Lines the learner chose not to hear after 打断 are not shown as said.
                 if (event.role == PracticeMessage.Role.PARTNER && discardingPartnerTurn) return
                 try {
-                    val segment = transcript.update(event.role, event.text, event.finished)
+                    val segment = transcript.update(event.role, event.text, event.finished, event.replace)
                     if (segment.text.isBlank()) return
                     val session = model.session.liveTranscript(segment.id, event.role, segment.text) ?: throw LiveProtocolException.overloaded()
                     if (event.role == PracticeMessage.Role.USER) clearSuggestion()
@@ -262,7 +258,7 @@ class LivePracticeController(private val app: AppContainer) {
                 pendingTools.cancel(event.ids)
             }
             is LiveEvent.GoAway -> stop("本次连接即将到期，请重新连接。已有内容已保留。")
-            is LiveEvent.Usage -> usage += event.usage
+            is LiveEvent.Usage, is LiveEvent.RequestContinuation -> Unit
         }
     }
 
@@ -277,26 +273,6 @@ class LivePracticeController(private val app: AppContainer) {
         }
     }
 
-    /** Best effort with one retry; the report ID makes a repeated upload harmless. */
-    private fun reportUsage() {
-        val report = usageModel?.let { LiveUsageReport.create(usageReportID, it, usage) }
-        usage = LiveUsage()
-        usageModel = null
-        if (report == null || app.account.usesLocalDevelopment) return
-        scope.launch {
-            repeat(2) { attempt ->
-                try {
-                    api.reportLiveUsage(report)
-                    return@launch
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Exception) {
-                    if (attempt == 0) delay(3000)
-                }
-            }
-        }
-    }
-
     /**
      * 打断: stop the partner now and open the microphone for the learner. On the
      * loudspeaker this is how the learner talks over the partner without echo.
@@ -308,6 +284,7 @@ class LivePracticeController(private val app: AppContainer) {
         discardingPartnerTurn = !turnFinished
         generations.interrupt()
         audio.learnerTakesFloor()
+        client.cancelResponse(generations.connection)
         playing = false
         transcript.finishPartner()
         if (muted) toggleMute()
@@ -317,6 +294,10 @@ class LivePracticeController(private val app: AppContainer) {
     fun requestSuggestion(automatic: Boolean = false) {
         val model = model ?: return
         if (state != State.ACTIVE || suggesting) return
+        if (app.aiSettings.settings.resolvedText == null) {
+            if (!automatic) suggestionError = "在「我的 → 接口设置」配置文字模型后，即可使用卡住提示。"
+            return
+        }
         stuckJob?.cancel()
         stuckJob = null
         val line = LiveStuckPolicy.awaitedLine(model.session)
@@ -346,7 +327,7 @@ class LivePracticeController(private val app: AppContainer) {
     /** Start generating help for the partner's latest line before the learner needs it. */
     private fun prefetchSuggestion() {
         val model = model ?: return
-        if (state != State.ACTIVE) return
+        if (state != State.ACTIVE || app.aiSettings.settings.resolvedText == null) return
         val line = LiveStuckPolicy.awaitedLine(model.session) ?: return
         if (prefetched?.first != line) prefetched = line to fetchSuggestion(model.session)
     }
@@ -371,6 +352,7 @@ class LivePracticeController(private val app: AppContainer) {
     private fun watchForStuck() {
         stuckJob?.cancel()
         stuckJob = null
+        if (app.aiSettings.settings.resolvedText == null) return
         prefetchSuggestion()
         val model = model ?: return
         if (state != State.ACTIVE || muted || suggestion != null) return
@@ -418,7 +400,6 @@ class LivePracticeController(private val app: AppContainer) {
         clearSuggestion()
         suggestedLine = null
         discardingPartnerTurn = false
-        reportUsage()
         prefetched?.second?.cancel()
         prefetched = null
         errorMessage = message

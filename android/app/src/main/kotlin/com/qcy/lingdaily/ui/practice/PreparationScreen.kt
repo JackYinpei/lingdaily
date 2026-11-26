@@ -73,7 +73,6 @@ import com.qcy.lingdaily.ui.SolidButton
 import com.qcy.lingdaily.ui.TextAction
 import com.qcy.lingdaily.ui.Type
 import com.qcy.lingdaily.ui.semibold
-import com.qcy.lingdaily.ui.settings.SignInButton
 
 private fun levelNote(level: PracticeLevel): String = when (level) {
     PracticeLevel.EASY -> "短句、常用词，对方更有耐心。"
@@ -102,10 +101,16 @@ fun PreparationScreen(screen: Screen.Preparation) {
     ScreenScaffold(
         title = "准备对话", onBack = { navigator.close(screen) },
         bottomBar = {
+            val aiSettings = app.aiSettings.settings
             Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (app.account.canPractice) {
+                if (aiSettings.isAnyConfigured) {
                     fun start(voice: Boolean) {
                         focus.clearFocus()
+                        val configured = if (voice) aiSettings.resolvedVoice != null else aiSettings.resolvedText != null
+                        if (!configured) {
+                            navigator.push(Screen.APISettings())
+                            return
+                        }
                         settings.preferVoicePractice = voice
                         val session = PracticeSession.start(scenario.withPersona(state.persona), goal = state.goal, context = state.context,
                             useAI = true, level = level, temperament = temperament,
@@ -118,8 +123,7 @@ fun PreparationScreen(screen: Screen.Preparation) {
                         SolidButton("语音通话", modifier = Modifier.weight(1f).testTag("start-voice"), onClick = { start(true) })
                     }
                 } else {
-                    // Signing in here keeps the learner on this scenario instead of sending them to 我的.
-                    SignInButton()
+                    SolidButton("配置 API Key 开始练习", onClick = { navigator.push(Screen.APISettings()) }, modifier = Modifier.testTag("configure-api"))
                 }
             }
         },

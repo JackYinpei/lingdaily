@@ -1,12 +1,15 @@
 import Foundation
 
-/// One receiver, one writer, one upload pump. URL/token and provider errors never
-/// escape this boundary. All late callbacks carry their connection generation.
+/// One receiver, one writer, one upload pump for Gemini Live and OpenAI Realtime.
+/// The URL (it can carry the API key) never escapes this boundary.
+/// All late callbacks carry their connection generation.
 actor LiveWebSocketClient {
     typealias Handler = @MainActor (LiveEvent, UInt64) -> Void
     typealias Failure = @MainActor (UInt64, FailureDiagnostics) -> Void
     private var socket: URLSessionWebSocketTask?
     private var session: URLSession?
+    private var provider: AIProviderKind = .gemini
+    private var resampler = PCM16Resampler16To24()
     private var generation: UInt64 = 0
     private var ready = false
     private var inputGate = LiveInputGate()
@@ -14,24 +17,41 @@ actor LiveWebSocketClient {
     private var writing = false
     private var sentAudioFrames = 0
     private var closedUploadStatistics: UploadStatistics?
+
     struct FailureDiagnostics {
         let stage: String
         let closeCode: Int
         let transportCode: Int?
+        let detail: String?
+
+        init(stage: String, closeCode: Int, transportCode: Int?, detail: String? = nil) {
+            self.stage = stage
+            self.closeCode = closeCode
+            self.transportCode = transportCode
+            self.detail = detail
+        }
+
         var message: String {
+            if let detail, !detail.isEmpty {
+                return detail
+            }
             if stage == "setupTimeout" || transportCode == NSURLErrorTimedOut {
-                return "手机连接语音服务超时，请检查手机网络后重新连接。已有内容已保留。"
+                return "手机连接语音服务超时，请检查网络或接口地址后重新连接。已有内容已保留。"
+            }
+            if transportCode == NSURLErrorUserAuthenticationRequired || transportCode == NSURLErrorBadServerResponse {
+                return "语音服务握手被拒绝，请检查 API Key、实时语音模型名称或接口地址。已有内容已保留。"
             }
             if let transportCode, [NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost, NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost].contains(transportCode) {
                 return "手机与语音服务的网络连接已断开，请检查手机网络后重试。已有内容已保留。"
             }
             if closeCode > 0 {
-                return "语音服务已关闭连接（\(closeCode)），请重新连接。已有内容已保留。"
+                return "语音服务已关闭连接（\(closeCode)），请检查模型名称与配额后重新连接。已有内容已保留。"
             }
             if stage == "protocol" { return "语音服务返回了无法处理的消息，请重新连接。已有内容已保留。" }
             return "语音连接已断开，请重新连接。已有内容已保留。"
         }
     }
+
     private var receiver: Task<Void, Never>?
     private var uploader: Task<Void, Never>?
     private var timeout: Task<Void, Never>?
@@ -40,23 +60,29 @@ actor LiveWebSocketClient {
     private var handler: Handler?
     private var failure: Failure?
 
-    func connect(_ token: LiveToken, generation current: UInt64,
+    func connect(_ spec: LiveConnectionSpec, generation current: UInt64,
                  handler: @escaping Handler, failure: @escaping Failure) async throws {
         guard !Task.isCancelled, current >= generation else { throw CancellationError() }
         reset()
         closedUploadStatistics = nil
-        generation = current; self.handler = handler; self.failure = failure
-        let url = try token.connectionURL()
+        generation = current
+        provider = spec.provider
+        self.handler = handler
+        self.failure = failure
         let config = URLSessionConfiguration.ephemeral
         config.httpShouldSetCookies = false
         config.timeoutIntervalForRequest = 25
         let session = URLSession(configuration: config)
         self.session = session
-        let socket = session.webSocketTask(with: url)
+        var request = URLRequest(url: spec.wsURL)
+        for (header, value) in spec.headers {
+            request.setValue(value, forHTTPHeaderField: header)
+        }
+        let socket = session.webSocketTask(with: request)
         socket.maximumMessageSize = 512 * 1024
         self.socket = socket
         socket.resume()
-        try enqueue(LiveCodec.setup(model: token.model), generation: current)
+        try enqueue(spec.setupMessage, generation: current, priority: true)
         receiver = Task { [weak self] in await self?.receive(socket, generation: current) }
         timeout = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 20_000_000_000)
@@ -81,7 +107,7 @@ actor LiveWebSocketClient {
                 case .string(let value): data = Data(value.utf8)
                 @unknown default: throw LiveProtocolError.invalid
                 }
-                for event in try LiveCodec.parse(data) {
+                for event in try LiveCodec.parse(data, provider: provider) {
                     guard generation == current, socket === source else { return }
                     switch event {
                     case .setupComplete:
@@ -93,9 +119,13 @@ actor LiveWebSocketClient {
                         let duplicate = seenTools.contains(call.id)
                         guard seenTools.count < 512 else { throw LiveProtocolError.overloaded }
                         // Queue acknowledgement BEFORE scheduling any UI/persistence work.
-                        try enqueue(LiveCodec.toolResponse(call, accepted: action != nil), generation: current, priority: true)
+                        try enqueue(LiveCodec.toolResponse(call, accepted: action != nil, provider: provider),
+                                    generation: current, priority: true)
                         if action == nil || duplicate { continue }
                         seenTools.insert(call.id)
+                    case .continueResponse:
+                        try enqueue(LiveCodec.openAIResponseCreate(), generation: current, priority: true)
+                        continue
                     default: break
                     }
                     await handler?(event, current)
@@ -121,6 +151,7 @@ actor LiveWebSocketClient {
             }
         }
     }
+
     private func isCurrent(_ source: URLSessionWebSocketTask, generation current: UInt64) -> Bool {
         generation == current && socket === source && ready
     }
@@ -141,31 +172,50 @@ actor LiveWebSocketClient {
             }
         }
     }
+
     private func takeUploadBatch(generation current: UInt64, nextFrame: () -> Data?) -> (UInt64, [Data])? {
         guard ready, generation == current else { return nil }
         return (inputGate.generation, inputGate.isOpen ? LiveUploadBatch.take(nextFrame: nextFrame) : [])
     }
+
     private func upload(_ pcm: Data, frames: Int, generation current: UInt64, inputGeneration epoch: UInt64) async {
         guard ready, generation == current, inputGate.accepts(epoch) else { return }
-        do { try enqueue(LiveCodec.audio(pcm), generation: current, audio: true, frames: frames) }
-        catch { await fail(current, stage: "uploadEncoding", error: error) }
+        do {
+            let encoded = try LiveCodec.audio(pcm, provider: provider, resampler: &resampler)
+            try enqueue(encoded, generation: current, audio: true, frames: frames)
+        } catch {
+            await fail(current, stage: "uploadEncoding", error: error)
+        }
     }
+
     func endInput(generation current: UInt64) async {
         guard ready, current == generation else { return }
         inputGate.close()
+        resampler.reset()
         // Drop already queued microphone frames; output and control are retained.
         outgoing.clearAudio()
-        do { try enqueue(LiveCodec.audioEnd(), generation: current, priority: true) }
-        catch { await fail(current, stage: "send", error: error) }
+        do {
+            if let endMessage = try LiveCodec.audioEnd(provider: provider) {
+                try enqueue(endMessage, generation: current, priority: true)
+            }
+        } catch {
+            await fail(current, stage: "send", error: error)
+        }
     }
+
     func resumeInput(generation current: UInt64) {
         guard ready, current == generation, !inputGate.isOpen else { return }
+        resampler.reset()
         inputGate.open()
     }
+
     func sendText(_ text: String, generation current: UInt64) throws {
         guard ready, current == generation else { throw LiveProtocolError.invalid }
-        try enqueue(LiveCodec.text(text), generation: current, priority: true)
+        for message in try LiveCodec.textMessages(text, provider: provider) {
+            try enqueue(message, generation: current, priority: true)
+        }
     }
+
     private func enqueue(_ message: String, generation current: UInt64, priority: Bool = false, audio: Bool = false,
                          frames: Int = 1) throws {
         guard generation == current, socket != nil else { return }
@@ -175,6 +225,7 @@ actor LiveWebSocketClient {
             Task { [weak self] in await self?.write(generation: current) }
         }
     }
+
     private func write(generation current: UInt64) async {
         do {
             while generation == current, let socket, let item = outgoing.take() {
@@ -184,15 +235,27 @@ actor LiveWebSocketClient {
             if generation == current { writing = false }
         } catch { if generation == current { await fail(current, stage: "send", error: error) } }
     }
+
     struct UploadStatistics { let sentFrames, droppedFrames, queuedFrames: Int }
     func uploadStatistics() -> UploadStatistics {
         closedUploadStatistics ?? .init(sentFrames: sentAudioFrames, droppedFrames: outgoing.droppedAudioFrames, queuedFrames: outgoing.count)
     }
+
     private func fail(_ current: UInt64, stage: String, error: Error? = nil) async {
         guard generation == current else { return }
         let native = error as NSError?
-        let diagnostics = FailureDiagnostics(stage: stage, closeCode: socket?.closeCode.rawValue ?? 0,
-            transportCode: native?.domain == NSURLErrorDomain ? native?.code : nil)
+        let customDetail: String?
+        if case let .server(message) = error as? LiveProtocolError {
+            customDetail = message
+        } else {
+            customDetail = nil
+        }
+        let diagnostics = FailureDiagnostics(
+            stage: stage,
+            closeCode: socket?.closeCode.rawValue ?? 0,
+            transportCode: native?.domain == NSURLErrorDomain ? native?.code : nil,
+            detail: customDetail
+        )
         #if DEBUG
         LiveDebugDiagnostics.record("failure stage=\(stage) close=\(diagnostics.closeCode) transport=\(diagnostics.transportCode ?? 0) sentFrames=\(sentAudioFrames)")
         #endif
@@ -200,15 +263,18 @@ actor LiveWebSocketClient {
         close()
         await callback?(current, diagnostics)
     }
+
     func close(expectedGeneration: UInt64? = nil) {
         if let expectedGeneration, expectedGeneration != generation { return }
         if closedUploadStatistics == nil { closedUploadStatistics = uploadStatistics() }
         generation &+= 1
         reset()
     }
+
     private func reset() {
         ready = false
         inputGate.close()
+        resampler.reset()
         receiver?.cancel(); uploader?.cancel(); timeout?.cancel(); keepalive?.cancel()
         receiver = nil; uploader = nil; timeout = nil; keepalive = nil
         socket?.cancel(with: .normalClosure, reason: nil); socket = nil

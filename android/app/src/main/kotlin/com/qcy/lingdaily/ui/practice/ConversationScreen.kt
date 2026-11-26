@@ -112,7 +112,7 @@ fun ConversationScreen(screen: Screen.Conversation) {
     val model = remember { PracticeViewModel(initial, app.api, store, app.scope) }
     val live = remember { LivePracticeController(app) }
     val translations = remember { BubbleTranslations(app.api, app.scope) }
-    val meanings = remember { FeedbackMeanings(app.api, app.scope) { settings.aiConsentGranted } }
+    val meanings = remember { FeedbackMeanings(app.api, app.scope) { app.aiSettings.settings.resolvedText != null } }
     var voiceMode by remember { mutableStateOf(initial.isAI && (screen.voiceMode ?: settings.preferVoicePractice)) }
     var draft by remember { mutableStateOf(initial.draft.orEmpty()) }
     var dictationPrefix by remember { mutableStateOf("") }
@@ -440,7 +440,11 @@ fun ConversationScreen(screen: Screen.Conversation) {
                     if (model.isLoading) TypingBubble(session.scenario) else SurfaceCard(spacing = 12.dp) {
                         Text("没收到 ${session.scenario.partner} 的回复", style = Type.headline, color = colors.ink)
                         Text(model.errorMessage ?: "网络可能断开了，已发送的内容都还在。", style = Type.subheadline, color = colors.secondary)
-                        SolidButton("再试一次", onClick = model::requestPending, modifier = Modifier.testTag("retry-ai-request"))
+                        if (app.aiSettings.settings.resolvedText == null) {
+                            SolidButton("配置文字模型接口", onClick = { navigator.push(Screen.APISettings()) }, modifier = Modifier.testTag("configure-api"))
+                        } else {
+                            SolidButton("再试一次", onClick = model::requestPending, modifier = Modifier.testTag("retry-ai-request"))
+                        }
                     }
                 }
                 item(key = "latest") { Spacer(Modifier.height(1.dp)) }
@@ -603,7 +607,13 @@ private fun VoiceControls(session: PracticeSession, live: LivePracticeController
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             if (live.state == LivePracticeController.State.DISCONNECTED) {
-                SolidButton(if (session.live?.model == null) "开始通话" else "重新连接", onClick = onConnect, modifier = Modifier.testTag("live-connect"))
+                val app = LocalApp.current
+                val navigator = LocalNavigator.current
+                if (app.aiSettings.settings.resolvedVoice == null) {
+                    SolidButton("配置语音模型接口", onClick = { navigator.push(Screen.APISettings()) }, modifier = Modifier.testTag("configure-api"))
+                } else {
+                    SolidButton(if (session.live?.model == null) "开始通话" else "重新连接", onClick = onConnect, modifier = Modifier.testTag("live-connect"))
+                }
             } else {
                 SolidButton(if (live.muted) "取消静音" else "静音", icon = if (live.muted) AppIcons.MicOff else AppIcons.Mic, secondary = true,
                     enabled = active, onClick = live::toggleMute, modifier = Modifier.weight(1f).testTag("live-mute"))

@@ -1,7 +1,6 @@
 package com.qcy.lingdaily.core.realtime
 
 import java.util.UUID
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -20,9 +19,9 @@ import com.qcy.lingdaily.core.model.Uuid
  *
  * On the loudspeaker the partner's voice reaches the microphone louder than the learner's
  * own voice; echo cancellation only attenuates it (least at the start of a call, before it
- * adapts), so the residue keeps triggering Gemini's voice detection and cuts the partner
- * off mid-sentence. Loudness cannot tell residue from speech reliably here, so while
- * partner audio is queued or playing (plus a short room tail) microphone frames are
+ * adapts), so the residue keeps triggering voice detection and cuts the partner off mid-sentence.
+ * Loudness cannot tell residue from speech reliably here, so while partner audio is queued
+ * or playing (plus a short room tail) microphone frames are
  * replaced with silence. The learner takes the floor explicitly with 打断: playback stops
  * first, so the open microphone then carries only the learner's voice.
  * Headphones/Bluetooth have no echo path and keep voice barge-in.
@@ -88,8 +87,8 @@ object LiveKickoff {
 }
 
 /**
- * How long the learner may pause in a call before the partner replies. The server locks
- * it into the Live token, so a change applies from the next call.
+ * How long the learner may pause in a call before the partner replies. It is part of the
+ * session setup, so a change applies from the next call.
  */
 object LivePause {
     const val KEY = "livePauseMs"
@@ -180,34 +179,4 @@ data class LiveUsage(
                 minOf(audio("responseTokensDetails"), output), total)
         }
     }
-}
-
-/** What the app reports to `/api/ios/usage` when a Live connection ends. */
-@Serializable
-data class LiveUsageReport(
-    val reportId: Uuid,
-    val model: String,
-    val inputTokens: Int,
-    val outputTokens: Int,
-    val inputAudioTokens: Int,
-    val outputAudioTokens: Int,
-    val totalTokens: Int,
-) {
-    companion object {
-        fun create(reportId: UUID, model: String, usage: LiveUsage): LiveUsageReport? {
-            if ((usage.total <= 0 && usage.input + usage.output <= 0) || model.isEmpty()) return null
-            return LiveUsageReport(reportId, model, usage.input, usage.output, usage.inputAudio, usage.outputAudio, usage.total)
-        }
-    }
-}
-
-/** The learner's own usage summary (`GET /api/ios/usage`). */
-@Serializable
-data class AIUsageSummary(val days: Int, val total: Group, val byFeature: List<Group> = emptyList()) {
-    @Serializable
-    data class Group(
-        val key: String = "",
-        val calls: Int = 0,
-        @SerialName("total_tokens") val totalTokens: Long = 0,
-    )
 }

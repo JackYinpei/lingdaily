@@ -28,12 +28,10 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -46,6 +44,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -62,7 +62,7 @@ import com.qcy.lingdaily.ui.practice.PreparationScreen
 import com.qcy.lingdaily.ui.practice.ScenarioComposerScreen
 import com.qcy.lingdaily.ui.practice.SummaryScreen
 import com.qcy.lingdaily.ui.practice.TodayVocabularyScreen
-import com.qcy.lingdaily.ui.settings.AIDataConsentPage
+import com.qcy.lingdaily.ui.settings.APISettingsScreen
 import com.qcy.lingdaily.ui.settings.AccountDataScreen
 import com.qcy.lingdaily.ui.settings.InterestsOnboarding
 import com.qcy.lingdaily.ui.settings.InterestsScreen
@@ -90,13 +90,6 @@ fun LingDailyRoot(app: AppContainer) {
 
             BackHandler(enabled = !navigator.isAtRoot) { navigator.pop() }
 
-            // First run asks what the learner wants to practise; the AI consent waits until it is done.
-            // The learner sees where AI data goes before the first AI call can be made.
-            LaunchedEffect(app.account.canPractice, app.settings.learnerInterestsAsked) {
-                if (app.settings.learnerInterestsAsked && app.account.canPractice && !app.settings.aiConsentGranted) {
-                    app.consentRequested = true
-                }
-            }
             // A tapped reminder opens its scenario from the practice page.
             LaunchedEffect(app.reminders.pendingScenarioID) {
                 if (app.reminders.pendingScenarioID != null) tab = 0
@@ -136,11 +129,11 @@ fun LingDailyRoot(app: AppContainer) {
                             is Screen.SignIn -> SignInScreen(screen)
                             is Screen.AccountData -> AccountDataScreen(screen)
                             is Screen.Interests -> InterestsScreen(screen)
+                            is Screen.APISettings -> APISettingsScreen(screen)
                         }
                     }
                 }
                 if (!app.settings.learnerInterestsAsked) InterestsOnboarding(onDone = {})
-                else if (app.consentRequested) AIDataConsentPage(onDone = { app.consentRequested = false })
                 else UpdateDialog()
             }
         }

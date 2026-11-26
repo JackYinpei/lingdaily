@@ -20,7 +20,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,7 +30,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,17 +44,13 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import java.text.NumberFormat
-import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import com.qcy.lingdaily.BuildConfig
 import com.qcy.lingdaily.app.SyncEngine
 import com.qcy.lingdaily.app.UpdateChecker
-import com.qcy.lingdaily.core.network.AIModelCatalog
-import com.qcy.lingdaily.core.network.AIModelFeature
+import com.qcy.lingdaily.core.network.AISettings
 import com.qcy.lingdaily.core.network.LingDailyService
-import com.qcy.lingdaily.core.realtime.AIUsageSummary
 import com.qcy.lingdaily.core.realtime.LivePause
 import com.qcy.lingdaily.ui.AppIcons
 import com.qcy.lingdaily.ui.Brand
@@ -101,12 +95,20 @@ private fun <T> MenuPicker(label: String, options: List<Pair<T, String>>, onSele
     }
 }
 
-/** 我的: account, appearance, practice choices, reminders, AI model and usage, privacy. */
+private fun apiSummary(aiSettings: AISettings): String {
+    val text = aiSettings.resolvedText?.let { "${it.provider.shortTitle} (${it.textModel})" }
+    val voice = aiSettings.resolvedVoice?.let { "${it.provider.shortTitle} (${it.liveModel})" }
+    if (text == null && voice == null) return "未配置 · 填入 Gemini 或 OpenAI 密钥与模型即可对话"
+    return "文字：${text ?: "未配置"} · 语音：${voice ?: "未配置"}"
+}
+
+/** 我的: API settings, optional account sync, appearance, practice choices, reminders and links. */
 @Composable
 fun SettingsScreen() {
     val app = LocalApp.current
     val navigator = LocalNavigator.current
     val settings = app.settings
+    val ai = app.aiSettings.settings
     val account = app.account
     val sync = app.sync
     val colors = Brand.colors
@@ -133,44 +135,75 @@ fun SettingsScreen() {
                     Text("下载完成后点开安装包即可覆盖安装，记录不会丢。", style = Type.caption, color = colors.secondary)
                 }
             }
-            if (!account.usesLocalDevelopment) {
-                SurfaceCard(spacing = 14.dp) {
-                    val session = account.session
-                    if (session == null) SignInButton() else {
-                        val failed = sync.status is SyncEngine.Status.Failed
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(session.displayName, style = Type.subheadline, color = colors.ink)
-                            Text(when (val status = sync.status) {
-                                SyncEngine.Status.Syncing -> "正在同步…"
-                                is SyncEngine.Status.Failed -> status.message
-                                SyncEngine.Status.Idle -> sync.lastSyncedAt?.let {
-                                    "已同步 · ${DateUtils.getRelativeTimeSpanString(it, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)}"
-                                } ?: "尚未同步"
-                            }, style = Type.caption, color = if (failed) colors.accent else colors.secondary)
-                        }
-                        if (failed) TextAction("重新同步", color = colors.ink) { scope.launch { sync.syncNow() } }
-                        Hairline()
-                        TextAction(if (signingOut) "正在同步…" else "退出登录", color = colors.ink, enabled = !signingOut, modifier = Modifier.fillMaxWidth()) {
-                            signingOut = true
-                            scope.launch {
-                                val clean = try {
-                                    sync.flushBeforeSignOut()
-                                } finally {
-                                    signingOut = false
-                                }
-                                if (clean) finishSignOut() else unsyncedOnSignOut = true
+
+            // BYOK API configuration entry
+            SurfaceCard(
+                Modifier.clickable(role = Role.Button) { navigator.push(Screen.APISettings()) }.testTag("api-settings"),
+            ) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("接口设置", style = Type.subheadline.semibold, color = colors.ink)
+                        Text(
+                            apiSummary(ai),
+                            style = Type.caption,
+                            color = if (ai.isAnyConfigured) colors.secondary else colors.accent,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Icon(AppIcons.ChevronRight, null, Modifier.size(18.dp), tint = colors.secondary)
+                }
+            }
+
+            // Optional account sign-in & cloud sync
+            SurfaceCard(spacing = 14.dp) {
+                val session = account.session
+                if (session == null) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("账号同步（可选）", style = Type.subheadline.semibold, color = colors.ink)
+                        Text(
+                            "不登录也能正常练习和听播客。登录后可在多台设备间同步练习记录、词库、自建场景和加密的接口设置。",
+                            style = Type.caption,
+                            color = colors.secondary,
+                        )
+                    }
+                    SignInButton(secondary = true)
+                } else {
+                    val failed = sync.status is SyncEngine.Status.Failed
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(session.displayName, style = Type.subheadline, color = colors.ink)
+                        Text(when (val status = sync.status) {
+                            SyncEngine.Status.Syncing -> "正在同步…"
+                            is SyncEngine.Status.Failed -> status.message
+                            SyncEngine.Status.Idle -> sync.lastSyncedAt?.let {
+                                "已同步 · ${DateUtils.getRelativeTimeSpanString(it, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)}"
+                            } ?: "尚未同步"
+                        }, style = Type.caption, color = if (failed) colors.accent else colors.secondary)
+                    }
+                    if (failed) TextAction("重新同步", color = colors.ink) { scope.launch { sync.syncNow() } }
+                    Hairline()
+                    TextAction(if (signingOut) "正在同步…" else "退出登录", color = colors.ink, enabled = !signingOut, modifier = Modifier.fillMaxWidth()) {
+                        signingOut = true
+                        scope.launch {
+                            val clean = try {
+                                sync.flushBeforeSignOut()
+                            } finally {
+                                signingOut = false
                             }
+                            if (clean) finishSignOut() else unsyncedOnSignOut = true
                         }
-                        Hairline()
-                        // Account deletion lives one level down, in 账号与数据.
-                        Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { navigator.push(Screen.AccountData()) }.testTag("account-data"),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Text("账号与数据", style = Type.subheadline, color = colors.ink, modifier = Modifier.weight(1f))
-                            Icon(AppIcons.ChevronRight, null, Modifier.size(18.dp), tint = colors.secondary)
-                        }
+                    }
+                    Hairline()
+                    // Account deletion lives one level down, in 账号与数据.
+                    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { navigator.push(Screen.AccountData()) }.testTag("account-data"),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("账号与数据", style = Type.subheadline, color = colors.ink, modifier = Modifier.weight(1f))
+                        Icon(AppIcons.ChevronRight, null, Modifier.size(18.dp), tint = colors.secondary)
                     }
                 }
             }
+
             SurfaceCard(spacing = 12.dp) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("外观", style = Type.subheadline, color = colors.ink)
@@ -190,6 +223,7 @@ fun SettingsScreen() {
                         onSelect = { settings.livePauseMs = it }, modifier = Modifier.testTag("live-pause"))
                 }
             }
+
             SurfaceCard(Modifier.clickable(role = Role.Button) { navigator.push(Screen.Interests()) }.testTag("edit-interests")) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -199,23 +233,17 @@ fun SettingsScreen() {
                     Icon(AppIcons.ChevronRight, null, Modifier.size(18.dp), tint = colors.secondary)
                 }
             }
+
             ReminderCard()
-            if (account.canPractice) AIModelCard()
-            if (account.session != null && !account.usesLocalDevelopment) UsageCard()
+
             SurfaceCard(spacing = 4.dp) {
                 TextAction("隐私政策", color = colors.ink, modifier = Modifier.fillMaxWidth()) { links.openUri("${LingDailyService.BASE_URL}/privacy") }
                 Hairline()
                 TextAction("帮助与联系", color = colors.ink, modifier = Modifier.fillMaxWidth()) { links.openUri("${LingDailyService.BASE_URL}/support") }
-                Hairline()
-                if (settings.aiConsentGranted) {
-                    TextAction("撤回 AI 数据使用授权", color = colors.ink, modifier = Modifier.fillMaxWidth()) { settings.revokeAIConsent() }
-                } else {
-                    TextAction("AI 数据使用", color = colors.ink, modifier = Modifier.fillMaxWidth()) { app.consentRequested = true }
-                }
             }
+
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("LingDaily ${BuildConfig.VERSION_NAME}" + if (account.usesLocalDevelopment) " · 本机开发服务" else "",
-                    style = Type.caption, color = colors.secondary, textAlign = TextAlign.Center)
+                Text("LingDaily ${BuildConfig.VERSION_NAME}", style = Type.caption, color = colors.secondary, textAlign = TextAlign.Center)
                 TextAction(if (app.updates.isChecking) "正在检查…" else updateNote ?: "检查更新", style = Type.caption,
                     enabled = !app.updates.isChecking, modifier = Modifier.testTag("check-update")) {
                     scope.launch {
@@ -234,7 +262,7 @@ fun SettingsScreen() {
         AlertDialog(
             onDismissRequest = { unsyncedOnSignOut = false },
             title = { Text("还有内容没同步") },
-            text = { Text("有 ${sync.pendingCount} 项改动还没上传到账号。退出会移除本机记录，这些改动会丢失。") },
+            text = { Text("有 ${sync.pendingCount} 项改动还没上传到账号。退出会移除本机记录与接口设置，这些改动会丢失。") },
             confirmButton = {
                 TextButton(onClick = {
                     unsyncedOnSignOut = false
@@ -302,89 +330,6 @@ private fun ReminderCard() {
     }
 }
 
-/** A card whose content comes from the service: spinner, a retry line, or the content. */
-@Composable
-private fun <T> LoadedCard(title: String, trailing: String? = null, load: suspend () -> T, content: @Composable (T) -> Unit) {
-    val colors = Brand.colors
-    var value by remember { mutableStateOf<T?>(null) }
-    var failed by remember { mutableStateOf(false) }
-    var attempt by remember { mutableStateOf(0) }
-    LaunchedEffect(attempt) {
-        failed = false
-        try {
-            value = load()
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Exception) {
-            failed = true
-        }
-    }
-    SurfaceCard(spacing = 12.dp) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(title, style = Type.subheadline, color = colors.ink, modifier = Modifier.weight(1f))
-            if (trailing != null) Text(trailing, style = Type.caption, color = colors.secondary)
-        }
-        val loaded = value
-        when {
-            loaded != null -> content(loaded)
-            failed -> TextAction("加载失败，点此重试", style = Type.caption) { attempt++ }
-            else -> Box(Modifier.fillMaxWidth().heightIn(min = 44.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(Modifier.size(20.dp), color = colors.secondary, strokeWidth = 2.dp)
-            }
-        }
-    }
-}
-
-/**
- * Lets the learner pick a model per feature from the server's allowed list.
- * The choice is stored on this device; none means the server default.
- */
-@Composable
-private fun AIModelCard() {
-    val app = LocalApp.current
-    val settings = app.settings
-    LoadedCard<AIModelCatalog>("AI 模型", load = { app.api.modelCatalog() }) { catalog ->
-        AIModelFeature.entries.forEachIndexed { index, feature ->
-            if (index > 0) Hairline()
-            val options = catalog.feature(feature)
-            val chosen = settings.model(feature)?.takeIf { id -> id != options.defaultModel && options.choices.any { it.id == id } }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(feature.title, style = Type.subheadline, color = Brand.colors.ink)
-                Spacer(Modifier.width(12.dp))
-                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-                    // Model ids name the provider; the picker shows only what each choice is like.
-                    val note = { id: String -> options.choices.firstOrNull { it.id == id }?.note ?: "其他" }
-                    MenuPicker<String?>(chosen?.let(note) ?: "默认",
-                        listOf<Pair<String?, String>>(null to "默认") +
-                            options.choices.filter { it.id != options.defaultModel }.map { it.id to it.note },
-                        onSelect = { settings.setModel(feature, it) }, modifier = Modifier.testTag("model-${feature.raw}"))
-                }
-            }
-        }
-    }
-}
-
-private val usageLabels = mapOf("practice" to "文字对话", "scenario" to "生成场景", "ideas" to "换一批",
-    "translate" to "单句翻译", "suggest" to "卡住时的建议", "live" to "语音通话")
-
-/** The learner's own AI token usage over the last 30 days (no prices). */
-@Composable
-private fun UsageCard() {
-    val app = LocalApp.current
-    val colors = Brand.colors
-    val number = remember { NumberFormat.getIntegerInstance(Locale.CHINA) }
-    LoadedCard<AIUsageSummary>("我的用量", trailing = "近 30 天", load = { app.api.usageSummary() }) { summary ->
-        Text("${number.format(summary.total.totalTokens)} tokens · ${summary.total.calls} 次", style = Type.title3.semibold, color = colors.ink)
-        for (group in summary.byFeature) {
-            Row {
-                Text(usageLabels[group.key] ?: group.key, style = Type.caption, color = colors.secondary, modifier = Modifier.weight(1f))
-                Text("${number.format(group.totalTokens)} · ${group.calls} 次", style = Type.caption, color = colors.ink)
-            }
-        }
-        if (summary.byFeature.isEmpty()) Text("还没有用量记录。", style = Type.caption, color = colors.secondary)
-    }
-}
-
 /**
  * 账号与数据: which account this is, and — one step further — account deletion, which is
  * explained first and then confirmed with the account's password.
@@ -433,7 +378,7 @@ fun AccountDataScreen(screen: Screen.AccountData) {
                 } else {
                     SurfaceCard(spacing = 14.dp) {
                         Text("删除账号", style = Type.headline, color = colors.ink)
-                        Text("账号和全部练习记录、词库、自建场景（含网页版和 iPhone 版）将永久删除，无法撤销。", style = Type.subheadline, color = colors.secondary)
+                        Text("账号和全部练习记录、词库、自建场景、云端接口设置（含网页版和 iPhone 版）将永久删除，无法撤销。", style = Type.subheadline, color = colors.secondary)
                         PasswordField(password, { password = it }, "输入密码确认", enabled = !deleting, onDone = ::delete,
                             modifier = Modifier.testTag("delete-account-password"))
                         errorMessage?.let { Text(it, style = Type.caption, color = colors.accent) }

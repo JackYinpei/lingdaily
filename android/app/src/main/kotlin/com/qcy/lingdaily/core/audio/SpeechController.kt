@@ -9,6 +9,8 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaPlayer
 import android.media.MediaRecorder
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -17,20 +19,23 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
+import java.util.Locale
 import kotlin.concurrent.thread
 import kotlin.math.max
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import com.qcy.lingdaily.core.model.prefix
 import com.qcy.lingdaily.core.network.PracticeNetworkException
 import com.qcy.lingdaily.core.network.PracticeServing
 
-/** A WAV file (RIFF, PCM16 mono) around raw samples: the format the transcription route accepts. */
+/** A WAV file (RIFF, PCM16 mono) around raw samples. */
 fun wavFile(pcm: ByteArray, sampleRate: Int = 16_000): ByteArray {
     val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
     header.put("RIFF".toByteArray(Charsets.US_ASCII)).putInt(36 + pcm.size).put("WAVEfmt ".toByteArray(Charsets.US_ASCII))
@@ -40,11 +45,10 @@ fun wavFile(pcm: ByteArray, sampleRate: Int = 16_000): ByteArray {
 }
 
 /**
- * Text-mode dictation and read-aloud. Both go through the LingDaily service (Gemini), so
- * they work the same on every phone, whether or not it has an English speech service:
- * a line is fetched as MP3 and played; a recording is sent when the learner stops and
- * comes back as text. Live calls never go through here.
- * One instance serves every screen; all of it runs on the main thread.
+ * Text-mode dictation and read-aloud.
+ * Read-aloud uses Android's local `TextToSpeech` (`Locale.US`) first so vocabulary cards and
+ * text rehearsals work offline for free, falling back to `api.speech(...)` (WAV/MP3) only if
+ * the device has no English TTS engine. Dictation transcribes short WAV recordings via `api.transcribe(...)`.
  */
 class SpeechController(
     context: Context,
@@ -67,6 +71,7 @@ class SpeechController(
     var transcript by mutableStateOf("")
         private set
     var errorMessage by mutableStateOf<String?>(null)
+        private set
 
     private val context = context.applicationContext
     private val audioManager = this.context.getSystemService(AudioManager::class.java)
@@ -84,6 +89,9 @@ class SpeechController(
     private var speaking = 0
     private var player: MediaPlayer? = null
     private var focusRequest: AudioFocusRequest? = null
+    private var tts: TextToSpeech? = null
+    private var ttsUnavailable = false
+    private var ttsInit: CompletableDeferred<TextToSpeech?>? = null
 
     // ---- Dictation ----
 
@@ -221,6 +229,8 @@ class SpeechController(
         isSpeaking = true
         scope.launch {
             try {
+                if (speakWithLocalTts(line, current)) return@launch
+                if (speaking != current) return@launch
                 val file = withContext(Dispatchers.IO) { cached(line, partner) }
                     ?: api.speech(line, partner).let { audio -> withContext(Dispatchers.IO) { store(line, partner, audio) } }
                 if (speaking != current) return@launch
@@ -230,11 +240,96 @@ class SpeechController(
             } catch (error: Exception) {
                 if (speaking != current) return@launch
                 isSpeaking = false
-                // Asking for AI consent already explains itself on its own page.
                 val known = error as? PracticeNetworkException
                 errorMessage = if (known != null && known.kind != PracticeNetworkException.Kind.UNAVAILABLE) known.message
                 else "朗读暂时不可用，文字内容仍可正常查看。"
             }
+        }
+    }
+
+    private suspend fun ensureLocalTts(): TextToSpeech? {
+        if (ttsUnavailable) return null
+        tts?.let { return it }
+        ttsInit?.let { return withTimeoutOrNull(3_000L) { it.await() } }
+        val deferred = CompletableDeferred<TextToSpeech?>()
+        ttsInit = deferred
+        var instance: TextToSpeech? = null
+        instance = try {
+            TextToSpeech(context) { status ->
+                scope.launch {
+                    val engine = instance
+                    if (status != TextToSpeech.SUCCESS || engine == null) {
+                        runCatching { engine?.shutdown() }
+                        ttsUnavailable = true
+                        deferred.complete(null)
+                        return@launch
+                    }
+                    val lang = runCatching { engine.setLanguage(Locale.US) }.getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
+                    if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) {
+                        runCatching { engine.shutdown() }
+                        ttsUnavailable = true
+                        deferred.complete(null)
+                        return@launch
+                    }
+                    engine.setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build(),
+                    )
+                    engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) = Unit
+                        override fun onDone(utteranceId: String?) {
+                            val id = utteranceId?.removePrefix("lingdaily-")?.toIntOrNull() ?: return
+                            scope.launch { finished(id) }
+                        }
+
+                        @Deprecated("Deprecated in Java")
+                        override fun onError(utteranceId: String?) {
+                            val id = utteranceId?.removePrefix("lingdaily-")?.toIntOrNull() ?: return
+                            scope.launch { finished(id, failed = true) }
+                        }
+
+                        override fun onError(utteranceId: String?, errorCode: Int) {
+                            val id = utteranceId?.removePrefix("lingdaily-")?.toIntOrNull() ?: return
+                            scope.launch { finished(id, failed = true) }
+                        }
+                    })
+                    tts = engine
+                    deferred.complete(engine)
+                }
+            }
+        } catch (_: Exception) {
+            ttsUnavailable = true
+            deferred.complete(null)
+            null
+        }
+        val ready = withTimeoutOrNull(3_000L) { deferred.await() }
+        if (ready == null && !deferred.isCompleted) {
+            runCatching { instance?.shutdown() }
+            ttsUnavailable = true
+            deferred.complete(null)
+        }
+        if (ttsInit === deferred) ttsInit = null
+        return ready
+    }
+
+    private suspend fun speakWithLocalTts(line: String, current: Int): Boolean {
+        val engine = ensureLocalTts() ?: return false
+        if (speaking != current) return true
+        return try {
+            engine.setSpeechRate(if (slowSpeech()) 0.8f else 1.0f)
+            requestFocus()
+            val result = engine.speak(line, TextToSpeech.QUEUE_FLUSH, null, "lingdaily-$current")
+            if (result == TextToSpeech.SUCCESS) {
+                true
+            } else {
+                releaseFocus()
+                false
+            }
+        } catch (_: Exception) {
+            releaseFocus()
+            false
         }
     }
 
@@ -271,6 +366,10 @@ class SpeechController(
     private fun releasePlayer() {
         player?.let { runCatching { it.release() } }
         player = null
+        releaseFocus()
+    }
+
+    private fun releaseFocus() {
         focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
         focusRequest = null
     }
@@ -284,21 +383,38 @@ class SpeechController(
         if (audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) focusRequest = request
     }
 
-    // A line already heard (a 词库 word, a scenario's opening) plays again without the network.
-    private fun cacheFile(text: String, partner: String?): File {
+    private fun cacheKey(text: String, partner: String?): String {
         val digest = MessageDigest.getInstance("SHA-256").digest("${partner.orEmpty()}\u0000$text".toByteArray())
-        return File(cache, digest.joinToString("") { "%02x".format(it) }.take(40) + ".mp3")
+        return digest.joinToString("") { "%02x".format(it) }.take(40)
     }
 
-    private fun cached(text: String, partner: String?): File? =
-        cacheFile(text, partner).takeIf { it.isFile && it.length() > 0 }?.also { it.setLastModified(System.currentTimeMillis()) }
+    private fun isWav(audio: ByteArray): Boolean =
+        audio.size >= 12
+            && audio[0] == 'R'.code.toByte() && audio[1] == 'I'.code.toByte()
+            && audio[2] == 'F'.code.toByte() && audio[3] == 'F'.code.toByte()
+
+    private fun cached(text: String, partner: String?): File? {
+        val stem = cacheKey(text, partner)
+        for (ext in listOf("wav", "mp3")) {
+            val candidate = File(cache, "$stem.$ext")
+            if (candidate.isFile && candidate.length() > 0) {
+                candidate.setLastModified(System.currentTimeMillis())
+                return candidate
+            }
+        }
+        return null
+    }
 
     private fun store(text: String, partner: String?, audio: ByteArray): File {
         cache.mkdirs()
-        val file = cacheFile(text, partner)
+        val ext = if (isWav(audio)) "wav" else "mp3"
+        val file = File(cache, "${cacheKey(text, partner)}.$ext")
         val temporary = File(cache, "${file.name}.tmp")
         temporary.writeBytes(audio)
-        if (!temporary.renameTo(file)) temporary.copyTo(file, overwrite = true)
+        if (!temporary.renameTo(file)) {
+            temporary.copyTo(file, overwrite = true)
+            temporary.delete()
+        }
         // The least recently heard lines make room.
         cache.listFiles()?.sortedByDescending { it.lastModified() }?.drop(MAX_CACHED)?.forEach { it.delete() }
         return file
@@ -306,6 +422,7 @@ class SpeechController(
 
     fun stopAll() {
         speaking++
+        runCatching { tts?.stop() }
         releasePlayer()
         isSpeaking = false
         stopRecording()
@@ -321,10 +438,8 @@ class SpeechController(
     private companion object {
         const val RATE = 16_000
         const val MAX_DICTATION_MS = 45_000L
-
-        /** 45 s of 16 kHz PCM16, under the service's 2 MB limit. */
+        /** 45 s of 16 kHz PCM16, about 1.4 MB per recording. */
         const val MAX_BYTES = RATE * 2 * 45
-
         /** Less than a third of a second is a mis-tap, not speech. */
         const val MIN_BYTES = RATE * 2 / 3
         const val MAX_CACHED = 300

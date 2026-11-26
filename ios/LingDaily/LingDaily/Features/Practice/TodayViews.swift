@@ -1,10 +1,14 @@
 import SwiftUI
 
-/// 「今日」: the latest daily podcast to listen to, its eight terms, and a rehearsal about one story.
+/// Latest daily podcast card: listen, view eight terms, and rehearse a story from it.
 struct TodayCard: View {
     let episode: TodayEpisode
     @ObservedObject var player: PodcastPlayer
-    let onPractice: (PracticeScenario) -> Void
+    var cachedScenario: PracticeScenario? = nil
+    var isGeneratingScenario = false
+    var isTextAIConfigured = false
+    var scenarioError: String? = nil
+    let onDiscuss: () -> Void
     let onVocabulary: () -> Void
 
     private var heading: String {
@@ -48,25 +52,103 @@ struct TodayCard: View {
             if player.isCurrent(episode) {
                 ProgressView(value: player.progress).tint(Brand.accent).accessibilityLabel("播放进度")
             }
-            if let error = player.errorMessage { Text(error).font(.caption).foregroundColor(Brand.secondary) }
-            if let scenario = episode.practiceScenario {
-                Brand.line.frame(height: 1)
-                Button { onPractice(scenario) } label: {
-                    HStack(spacing: 12) {
-                        Avatar(scenario: scenario, size: 36)
+            if let error = player.errorMessage, player.isCurrent(episode) || player.episodeDate == nil {
+                Text(error).font(.caption).foregroundColor(Brand.secondary)
+            }
+            Brand.line.frame(height: 1)
+            Button(action: onDiscuss) {
+                HStack(spacing: 12) {
+                    if let cachedScenario {
+                        Avatar(scenario: cachedScenario, size: 36)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("和 \(scenario.partner) 聊聊这条新闻").font(.subheadline.weight(.semibold)).foregroundColor(Brand.ink)
-                            Text(scenario.title).font(.caption).foregroundColor(Brand.secondary).lineLimit(1)
+                            Text("聊聊这期内容").font(.subheadline.weight(.semibold)).foregroundColor(Brand.ink)
+                            Text("和 \(cachedScenario.partner) · \(cachedScenario.title)")
+                                .font(.caption).foregroundColor(Brand.secondary).lineLimit(1)
                         }
-                        Spacer(minLength: 8)
+                    } else {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 8) {
+                                if isGeneratingScenario {
+                                    ProgressView().scaleEffect(0.8)
+                                }
+                                Text(isGeneratingScenario ? "正在准备话题…" : "聊聊这期内容")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(Brand.ink)
+                            }
+                            Text(isTextAIConfigured ? "围绕本期播客生成三步英语练习" : "配置文字模型接口后可围绕本期内容练习")
+                                .font(.caption)
+                                .foregroundColor(Brand.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    if !isGeneratingScenario {
                         Image(systemName: "arrow.right").font(.headline).foregroundColor(Brand.ink)
-                    }.contentShape(Rectangle())
+                    }
                 }
-                .buttonStyle(.plain).accessibilityIdentifier("today-practice")
+                .frame(minHeight: 40)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isGeneratingScenario)
+            .accessibilityIdentifier("today-practice")
+            if let scenarioError {
+                Text(scenarioError).font(.caption).foregroundColor(Brand.accent)
             }
         }
         .surfaceCard()
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// Compact card for recent daily podcast episodes under 「往期」.
+struct PastEpisodeCard: View {
+    let episode: TodayEpisode
+    @ObservedObject var player: PodcastPlayer
+    let onVocabulary: () -> Void
+
+    private var dateLabel: String {
+        episode.source.replacingOccurrences(of: "每日播客 ", with: "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(dateLabel).font(.caption.weight(.medium)).foregroundColor(Brand.secondary)
+                Spacer(minLength: 8)
+                if let duration = episode.duration {
+                    Text("\(max(1, Int((Double(duration) / 60).rounded()))) 分钟").font(.caption).foregroundColor(Brand.secondary)
+                }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(episode.title).font(.subheadline.weight(.semibold)).foregroundColor(Brand.ink)
+                if !episode.summary.isEmpty {
+                    Text(episode.summary).font(.caption).foregroundColor(Brand.secondary).lineSpacing(2).lineLimit(2)
+                }
+            }
+            HStack(spacing: 10) {
+                if episode.playableURL != nil {
+                    Button { player.toggle(episode) } label: {
+                        let playing = player.isCurrent(episode) && player.isPlaying
+                        Label(playing ? "暂停" : "收听", systemImage: playing ? "pause.fill" : "play.fill")
+                            .font(.caption.weight(.semibold)).padding(.horizontal, 14).frame(minHeight: 38)
+                            .foregroundColor(Brand.onInk).background(Brand.ink).clipShape(Capsule())
+                    }
+                }
+                if !episode.vocabulary.isEmpty {
+                    Button(action: onVocabulary) {
+                        Text("\(episode.vocabulary.count) 个生词").font(.caption.weight(.medium))
+                            .padding(.horizontal, 14).frame(minHeight: 38)
+                            .foregroundColor(Brand.ink).overlay(Capsule().stroke(Brand.line, lineWidth: 1))
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            if player.isCurrent(episode) {
+                ProgressView(value: player.progress).tint(Brand.accent).accessibilityLabel("播放进度")
+            }
+        }
+        .surfaceCard(padding: 16)
     }
 }
 
@@ -100,7 +182,7 @@ struct TodayVocabularyView: View {
             .readableColumn().background(Brand.page)
             .accessibilityIdentifier("today-save-all")
         }
-        .navigationBack(title: "今日生词") { dismiss() }
+        .navigationBack(title: "本期生词") { dismiss() }
         .onDisappear { speech.stopAll() }
     }
 

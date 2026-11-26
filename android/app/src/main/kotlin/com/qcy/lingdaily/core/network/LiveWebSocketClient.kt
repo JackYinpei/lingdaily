@@ -19,16 +19,19 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
 import com.qcy.lingdaily.core.realtime.LiveCodec
+import com.qcy.lingdaily.core.realtime.LiveConnectionConfig
 import com.qcy.lingdaily.core.realtime.LiveEvent
 import com.qcy.lingdaily.core.realtime.LiveInputGate
 import com.qcy.lingdaily.core.realtime.LiveProtocolException
-import com.qcy.lingdaily.core.realtime.LiveToken
 import com.qcy.lingdaily.core.realtime.LiveUploadBatch
+import com.qcy.lingdaily.core.realtime.OpenAIRealtimeCodec
+import com.qcy.lingdaily.core.realtime.Pcm16Resampler16To24
 
 /**
- * One socket, one upload pump. The URL (it carries the token) and provider errors never
- * escape this boundary. Every late callback carries its connection generation, so an
- * old socket can never affect a new call. Events are delivered in order on `deliverOn`.
+ * One socket, one upload pump, supporting both Google Gemini Live and OpenAI Realtime.
+ * The URL (it can carry the API key) never escapes this boundary.
+ * Every late callback carries its connection generation, so an old socket can never
+ * affect a new call. Events are delivered in order on `deliverOn`.
  */
 class LiveWebSocketClient(
     /** Where events and failures are delivered; the app passes the main thread. */
@@ -38,12 +41,16 @@ class LiveWebSocketClient(
     data class FailureDiagnostics(val stage: String, val closeCode: Int = 0, val transport: Transport? = null) {
         val message: String
             get() = when {
+                closeCode == 401 || closeCode == 403 ->
+                    "语音接口认证失败（$closeCode），请检查 API Key 和模型权限。已有内容已保留。"
+                closeCode == 404 ->
+                    "找不到实时语音模型或接口地址（404），请检查接口设置。已有内容已保留。"
                 stage == "setupTimeout" || transport == Transport.TIMEOUT ->
-                    "手机连接语音服务超时，请检查手机网络后重新连接。已有内容已保留。"
+                    "手机连接语音服务超时，请检查网络或接口地址后重新连接。已有内容已保留。"
                 transport == Transport.UNREACHABLE ->
-                    "手机与语音服务的网络连接已断开，请检查手机网络后重试。已有内容已保留。"
+                    "手机与语音服务的网络连接已断开，请检查网络后重试。已有内容已保留。"
                 closeCode > 0 -> "语音服务已关闭连接（$closeCode），请重新连接。已有内容已保留。"
-                stage == "protocol" -> "语音服务返回了无法处理的消息，请重新连接。已有内容已保留。"
+                stage == "protocol" -> "语音服务返回了无法处理的消息，请检查实时语音模型设置后重新连接。已有内容已保留。"
                 else -> "语音连接已断开，请重新连接。已有内容已保留。"
             }
     }
@@ -55,10 +62,13 @@ class LiveWebSocketClient(
     private val lock = Any()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var socket: WebSocket? = null
+    private var activeProvider: AIProviderKind = AIProviderKind.GEMINI
     private var generation = 0L
     private var ready = false
     private val inputGate = LiveInputGate()
+    private val resampler = Pcm16Resampler16To24()
     private val seenTools = mutableSetOf<String>()
+    private val openAICallNames = mutableMapOf<String, String>()
     private var sentAudioFrames = 0
     private var droppedAudioFrames = 0
     private var uploader: Job? = null
@@ -66,16 +76,26 @@ class LiveWebSocketClient(
     private var handler: ((LiveEvent, Long) -> Unit)? = null
     private var failure: ((Long, FailureDiagnostics) -> Unit)? = null
 
-    fun connect(token: LiveToken, generation: Long, handler: (LiveEvent, Long) -> Unit,
-                failure: (Long, FailureDiagnostics) -> Unit) {
-        val url = token.connectionURL()
+    fun connect(
+        config: LiveConnectionConfig,
+        generation: Long,
+        handler: (LiveEvent, Long) -> Unit,
+        failure: (Long, FailureDiagnostics) -> Unit,
+    ) {
+        val url = config.webSocketURL()
+        val request = Request.Builder().url(url).apply {
+            if (config.provider == AIProviderKind.OPENAI) {
+                header("Authorization", "Bearer ${config.apiKey.trim()}")
+            }
+        }.build()
         synchronized(lock) {
             if (generation < this.generation) throw CancellationException("A newer call replaced this one")
             reset()
             this.generation = generation
+            this.activeProvider = config.provider
             this.handler = handler
             this.failure = failure
-            socket = http.newWebSocket(Request.Builder().url(url).build(), Listener(generation, token.model))
+            socket = http.newWebSocket(request, Listener(generation, config))
             timeout = scope.launch {
                 delay(SETUP_TIMEOUT_MS)
                 val waiting = synchronized(lock) { this@LiveWebSocketClient.generation == generation && !ready }
@@ -84,10 +104,30 @@ class LiveWebSocketClient(
         }
     }
 
-    private inner class Listener(private val current: Long, private val model: String) : WebSocketListener() {
+    private inner class Listener(
+        private val current: Long,
+        private val config: LiveConnectionConfig,
+    ) : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
-            synchronized(lock) {
-                if (generation == current && socket === webSocket) webSocket.send(LiveCodec.setup(model))
+            try {
+                val frame = when (config.provider) {
+                    AIProviderKind.GEMINI -> LiveCodec.setup(
+                        model = config.model,
+                        systemInstruction = config.systemInstruction,
+                        voiceName = config.geminiVoice,
+                        pauseMs = config.pauseMs,
+                    )
+                    AIProviderKind.OPENAI -> OpenAIRealtimeCodec.sessionUpdate(
+                        instructions = config.systemInstruction,
+                        voice = config.openAIVoice,
+                        pauseMs = config.pauseMs,
+                    )
+                }
+                synchronized(lock) {
+                    if (generation == current && socket === webSocket) webSocket.send(frame)
+                }
+            } catch (_: LiveProtocolException) {
+                fail(current, "protocol")
             }
         }
 
@@ -111,7 +151,7 @@ class LiveWebSocketClient(
                 t is java.io.IOException -> Transport.UNREACHABLE
                 else -> null
             }
-            // A refused handshake (expired or already used token) reports its HTTP status.
+            // A refused handshake (for example a rejected key or model) reports its HTTP status.
             fail(current, "receive", closeCode = response?.code ?: 0, transport = transport)
         }
     }
@@ -123,7 +163,11 @@ class LiveWebSocketClient(
             synchronized(lock) {
                 if (generation != current || socket !== source) return
                 callback = handler
-                for (event in LiveCodec.parse(message)) {
+                val parsed = when (activeProvider) {
+                    AIProviderKind.GEMINI -> LiveCodec.parse(message)
+                    AIProviderKind.OPENAI -> OpenAIRealtimeCodec.parse(message, openAICallNames)
+                }
+                for (event in parsed) {
                     when (event) {
                         is LiveEvent.SetupComplete -> {
                             if (ready) continue
@@ -136,9 +180,19 @@ class LiveWebSocketClient(
                             val duplicate = event.call.id in seenTools
                             if (seenTools.size >= 512) throw LiveProtocolException.overloaded()
                             // Acknowledge BEFORE scheduling any UI or persistence work.
-                            source.send(LiveCodec.toolResponse(event.call, accepted))
+                            val ack = when (activeProvider) {
+                                AIProviderKind.GEMINI -> LiveCodec.toolResponse(event.call, accepted)
+                                AIProviderKind.OPENAI -> OpenAIRealtimeCodec.toolResponse(event.call, accepted)
+                            }
+                            source.send(ack)
                             if (!accepted || duplicate) continue
                             seenTools += event.call.id
+                        }
+                        is LiveEvent.RequestContinuation -> {
+                            if (activeProvider == AIProviderKind.OPENAI) {
+                                source.send(OpenAIRealtimeCodec.responseCreate())
+                            }
+                            continue
                         }
                         else -> Unit
                     }
@@ -181,7 +235,11 @@ class LiveWebSocketClient(
                 droppedAudioFrames += frames
                 return
             }
-            if (socket.send(LiveCodec.audio(pcm))) sentAudioFrames += frames
+            val payload = when (activeProvider) {
+                AIProviderKind.GEMINI -> LiveCodec.audio(pcm)
+                AIProviderKind.OPENAI -> OpenAIRealtimeCodec.audioAppend(resampler.resample(pcm))
+            }
+            if (socket.send(payload)) sentAudioFrames += frames
         }
     }
 
@@ -189,21 +247,44 @@ class LiveWebSocketClient(
         synchronized(lock) {
             if (!ready || generation != this.generation) return
             inputGate.close()
-            socket?.send(LiveCodec.audioEnd())
+            resampler.reset()
+            // OpenAI server_vad rejects empty input_audio_buffer.commit; only Gemini uses audioStreamEnd.
+            if (activeProvider == AIProviderKind.GEMINI) {
+                socket?.send(LiveCodec.audioEnd())
+            }
         }
     }
 
     fun resumeInput(generation: Long) {
         synchronized(lock) {
-            if (ready && generation == this.generation && !inputGate.isOpen) inputGate.open()
+            if (ready && generation == this.generation && !inputGate.isOpen) {
+                resampler.reset()
+                inputGate.open()
+            }
+        }
+    }
+
+    fun cancelResponse(generation: Long) {
+        synchronized(lock) {
+            if (!ready || generation != this.generation) return
+            if (activeProvider == AIProviderKind.OPENAI) {
+                socket?.send(OpenAIRealtimeCodec.responseCancel())
+            }
         }
     }
 
     fun sendText(text: String, generation: Long) {
         synchronized(lock) {
             val socket = socket
-            if (!ready || generation != this.generation || socket == null || !socket.send(LiveCodec.text(text))) {
+            if (!ready || generation != this.generation || socket == null) {
                 throw LiveProtocolException.invalid()
+            }
+            val messages = when (activeProvider) {
+                AIProviderKind.GEMINI -> listOf(LiveCodec.text(text))
+                AIProviderKind.OPENAI -> OpenAIRealtimeCodec.textMessages(text)
+            }
+            for (frame in messages) {
+                if (!socket.send(frame)) throw LiveProtocolException.invalid()
             }
         }
     }
@@ -232,6 +313,7 @@ class LiveWebSocketClient(
     private fun reset() {
         ready = false
         inputGate.close()
+        resampler.reset()
         uploader?.cancel()
         timeout?.cancel()
         uploader = null
@@ -241,6 +323,7 @@ class LiveWebSocketClient(
         handler = null
         failure = null
         seenTools.clear()
+        openAICallNames.clear()
         sentAudioFrames = 0
         droppedAudioFrames = 0
     }
@@ -248,7 +331,6 @@ class LiveWebSocketClient(
     companion object {
         private const val SETUP_TIMEOUT_MS = 20_000L
         private const val UPLOAD_INTERVAL_MS = 20L
-
         /** About one second of base64 microphone audio. */
         private const val MAX_QUEUED_AUDIO_BYTES = 64 * 1024L
 

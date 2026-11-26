@@ -59,17 +59,17 @@ token，再直接连 Gemini WebSocket 或配置的 WebSocket 代理。
 | `scripts/` | 生产 preflight/postflight 与隔离迁移测试 |
 | `tests/` | Live 音频、对话合并、播客脚本/shownotes/RSS 单测 |
 | `.github/workflows/` | PR 质量门禁与 main 分支镜像部署 |
-| `ios/` | 原生 SwiftUI AI 体验版，最低 iOS 15；Sign in with Apple 后连线上服务，真实 Gemini 逐轮文字 + Live 实时语音/重说/历史与收藏；本机存档经 `SyncEngine` 同步到与网页共用的 Supabase 表，可删除账号 |
+| `ios/` | 原生 SwiftUI 口语练习工具，最低 iOS 15。**不内置任何模型或 API Key（BYOK）**：开箱只有场景库（打包 `Resources/ScenarioCatalog.json`，可从公开 `/api/ios/scenarios` 刷新）和公开播客；用户在「我的 → 接口设置」填 Google Gemini 和/或 OpenAI 的 Key、可选 Base URL（如东京中转）、文字模型与实时语音模型后，App 直连供应商（`Core/Network/DirectAIProvider.swift`、`AISettings.swift`），不经过本项目服务端。Apple 登录可选，只用于云同步（练习、词库、自建场景和加密的接口设置），可删除账号 |
 | `app/api/ios/auth/apple/` | 原生 Sign in with Apple：验证 Apple identity token（JWKS、bundle ID audience、nonce），按 Apple 验证邮箱复用 `ensureAuthUser()` 映射 Supabase UUID，签发 60 天 iOS 会话 JWT（AUTH_SECRET 经 HKDF 派生的独立密钥） |
-| `app/api/ios/practice/`、`app/api/ios/scenario/`、`app/api/ios/live-token/` | Gemini 逐句练习、新场景生成及受约束 Gemini Live 临时 token API；生产只接受 iOS 会话，本机配对 token 仅 development + 显式启用可用；缓存与限流按用户隔离，不读写数据库 |
+| `app/api/ios/practice/`、`app/api/ios/scenario/`、`app/api/ios/live-token/` | 服务端代调 Gemini 的旧接口（逐句练习、新场景生成、受约束 Live 临时 token）。BYOK 版 iOS/Android 已不再调用，只为已安装的旧版本保留；同一套 prompt/schema 已移植到两端（`DirectAIProvider.swift`、`DirectAI.kt`），改 prompt 时两端和 `app/lib/ios/*.js` 要一起改 |
 | `app/api/ios/scenarios/`、`app/api/ios/today/` | 内置场景清单（公开、无模型调用，内容在 `app/lib/ios/scenarioCatalog.js`，上新无需发版；数组顺序即默认首页顺序，生活/学习/社交在前、职场在后；每个场景有 `tags`（兴趣 id，见 `app/lib/ios/interests.js`，App 按首次引导的选择排序）和 `cast`（2–3 个可「换个人」的角色，`cast[0]` 为默认；所有名字全清单唯一，各自在 `app/lib/ios/live.js` 固定音色）；`tags`/`cast` 不进会话快照与同步）；「今日」最新每日播客 + 按期共享生成一次的「聊聊这条新闻」场景（`app/lib/server/iosToday.js`，只用节目稿事实） |
 | `instrumentation.js`、`instrumentation-node.js` | 服务端启动钩子（Node 部分单独文件，不进 Edge bundle）：Supabase 在国内、服务器在东京，新建 TLS 约 250–360ms、复用约 85ms，故把 fetch 空闲连接保持 45s（数据库网关约 60s 断开）；仅 Node 自带 undici 6.x（Node 20）时生效，`undici` 依赖须与之同一大版本 |
 | `nginx/lingdaily-site.conf` | 主站 nginx 参考配置：HTTP/2、JSON/XML gzip、TLS 会话复用、上游 keepalive、8MB 请求体（iOS 同步）；不改应用行为，部署前 `nginx -t` |
-| `app/lib/ios/liveEndpoint.mjs`、`nginx/gemini-proxy.conf` | 原生Live服务端独立选择Google/受控JP/旧中转，严格origin与固定Constrained路径；Nginx示例透传WSS且禁用含凭据URL日志，App也检查完整endpoint白名单 |
+| `app/lib/ios/liveEndpoint.mjs`、`nginx/gemini-proxy.conf` | 东京中转 `lingdailyapi-jp.yasobi.xyz`：`/ws/`、`/v1beta/` 等转发 Google，`/openai/*` 与 `/v1/{chat,audio,responses,models,realtime}` 转发 OpenAI（HTTP + Realtime WebSocket）；请求带用户自己的 Key，全部 location 关闭访问/错误日志。BYOK App 把它当作可选 Base URL（Gemini 填根地址，OpenAI 填 `/openai`），默认直连官方 |
 | `ios/.../Core/Realtime/`、`Core/Network/LiveWebSocketClient.swift`、`Core/Audio/LiveAudioController.swift` | 原生 Live 编解码/字幕/有界待转录工具/generation/PCM（共享 LiveMicrophonePipeline 大缓冲拆分、静音批次失效、采集图重启与路由重排输出、opt-in有界数字诊断），URLSession WebSocket 与 AVAudioEngine；收到 setupComplete 才开采集，后台/中断需用户手动重连 |
 | `ios/.../Core/Models/DictationTranscript.swift`、`Core/Audio/SpeechController.swift` | 文字模式设备听写按音频窗口累积，停止/发送等待末句；系统TTS仅供文字/记录朗读，Live音频直传模型，不经过本地ASR/TTS |
-| `scripts/ios-dev.mjs` | 可选的本机 iOS AI 服务（调试服务端改动用）；默认回环监听，显式 `-- --device` 绑定单一私有局域网地址；配对文件只在进程运行期间存在，退出即删除，此后 Debug 构建改连线上；仅 Debug 打包配对 token，绝不打包模型密钥 |
-| `android/` | 原生 Android 版（Kotlin + Jetpack Compose，最低 Android 8.0 / API 26），功能与 iOS 版对应：文字逐轮练习、Gemini Live 语音通话、总结复盘、词库与复习、自建场景、今日播客、提醒、云同步、删除账号。与 iOS 共用 `/api/ios/*` 和同一份同步 JSON；用网页账号的邮箱密码登录（Android 没有原生 Apple 登录）。结构、运行与验证见 `android/README.md` |
+| `scripts/ios-dev.mjs` | 旧的本机 iOS AI 服务（调试服务端 `/api/ios/*` AI 接口用）。BYOK 版 App 已移除配对，不再读取它生成的配对文件 |
+| `android/` | 原生 Android 版（Kotlin + Jetpack Compose，最低 Android 8.0 / API 26），与 iOS 版同为 BYOK 工具：不内置模型/Key，场景库打包在 `res/raw/scenario_catalog.json`，填入 Gemini/OpenAI 接口后直连（`core/network/DirectAI.kt`、`AISettings.kt`）文字练习、实时语音、总结复盘、新建场景、翻译与听写/朗读。账号可选（网页账号的邮箱或手机号 + 密码），只用于云同步与删除账号；与 iOS 共用 `/api/ios/sync` 和同一份同步 JSON。结构、运行与验证见 `android/README.md` |
 | `app/api/android/`、`app/lib/server/androidAuth.js` | Android 登录/注册/删除账号：用 Supabase 校验邮箱密码后签发与 iOS 相同的原生会话（`issueIOSSession`），因此 `/api/ios/*` 对两端通用；按邮箱/手机号限流；手机号账号不发短信，由 `app/lib/phoneAccount.js` 映射为 Admin API 建的已确认邮箱账号（`<号码>@phone.lingdaily.yasobi.xyz`，号码存 `user_metadata.phone`），网页登录框也接受手机号；删除账号需再次输入密码，密码错误返回 403（App 把 401 当作会话失效并退出登录） |
 | `docs/ios/` | iOS 设计、架构、数据契约、阶段计划与待选择的产品创意；实现前阅读总览，区分现状与提案。iOS 视觉单一来源是 `ios/.../DesignSystem/Brand.swift`（纸墨 + 单一强调色，与网页紫色主题分开），改 UI 前先读 `02-design-system.md` 的设计原则 |
 
@@ -253,7 +253,7 @@ Live 声明两个 tool，都遵循“先立即回 `accepted`，再异步处理�
 | `POST /api/ios/suggest` | iOS 会话 | 通话中卡住时的回复建议：中文提示 + 关键词 + 学习者视角英文参考句及中文意思 |
 | `POST /api/ios/translate` | iOS 会话 | 按需把对方一句话译成中文（Live 字幕没有自带翻译），结果存进该消息并随云同步 |
 | `POST /api/ios/review` | iOS 会话 | 对话结束后的逐句表达复盘：每批最多 4 条用户原话，按消息 ID 返回自然改写/中文意思/解释；已自然则保留原句。沿用 practice 模型选择、鉴权、按用户缓存/限流和用量统计 |
-| `GET/POST /api/ios/sync` | iOS 会话 | 原生云同步：上传待同步改动并返回账号云端快照（写入下方共享表）；POST 带 `knownSessions` 时只回传有变化的会话，其余列在 `unchangedSessions` |
+| `GET/POST /api/ios/sync` | iOS 会话 | 原生云同步：上传待同步改动并返回账号云端快照（写入下方共享表）；POST 带 `knownSessions` 时只回传有变化的会话，其余列在 `unchangedSessions`。可选 `aiSettings`（BYOK Key/Base URL/模型，`updatedAt` 新者胜）加密存入 `user_ai_settings`，快照解密后只回给本人 |
 | `POST /api/ios/account/delete` | iOS 会话 + Apple 二次确认 | 永久删除账号（含网页数据）与 Supabase auth 用户，可选撤销 Apple 授权 |
 | `POST /api/android/auth/password`、`/register` | 公开（需有效邮箱密码） | Android 登录/注册，签发与 iOS 相同的原生会话；注册需邮件确认时返回 `confirmationRequired: true` |
 | `POST /api/android/auth/phone`、`/phone/register` | 公开（需手机号+密码） | Android 手机号登录/注册，无短信验证，注册即登录；登录带 `autoRegister: true`（App 默认）时未注册号码直接注册 |
@@ -371,6 +371,10 @@ seed 只插入缺失的系统场景，不覆盖生产已有 prompt/description�
 
 iOS App 的 AI token 用量（仅 iOS）。文字类功能（practice/scenario/ideas/translate/suggest）由服务端每次模型调用后按 `usageMetadata` 写一行（含纠错重试的计费尝试）；Live 由 App 按每轮 `usageMetadata` 累加，挂断时上报一行，`report_id` 与 `user_id` 组成唯一键保证幂等。字段：`user_id`（auth.users FK，cascade）、`source='ios'`、`feature`、`model`、`input/output/thinking/input_audio/output_audio/total_tokens`、`report_id`、`created_at`。RLS 只允许 owner SELECT；写入只走 service_role。`ai_usage_summary(p_since, p_user_id)` 为 service_role 专用 SECURITY DEFINER RPC，按北京日期×功能×模型×用户分组。估算花费只对 `AI_PRICING_JSON` 中配置了价格（USD/1M token，可分 audioInput/audioOutput）的模型计算，思考 token 按输出计价，未配置的模型只显示 token。
 
+### `user_ai_settings`
+
+BYOK 接口设置的云端副本（每用户一行）：`user_id`（auth.users FK，cascade，PK）、`encrypted_config`、`updated_at`。`encrypted_config` 是 `v1:<iv>:<tag>:<ciphertext>`，AES-256-GCM，密钥由 `AUTH_SECRET` 按用户 HKDF 派生（`app/lib/server/iosSync.js`），Postgres 里没有明文 Key；轮换 `AUTH_SECRET` 会使旧密文无法解密（服务端当作没有设置，下次设备上传时覆盖）。RLS 开启且没有 policy，anon/authenticated 无任何权限，只走 service_role。删除账号时一并删除。
+
 ### `scenario_categories`
 
 生产旧库保留的历史分类表：`id`, unique `slug`, `name_zh/en/ja`, `icon`,
@@ -399,7 +403,7 @@ completed 只有 force 可重领，进行中租约超过 30 分钟可重领。
 
 ## 数据库迁移规则
 
-- 九个规范迁移必须按文件名顺序执行（`202610050001_native_practice_sync` 必须在 iOS 云同步代码上线前执行；未执行时同步接口返回 502，iOS 数据保留在本机等待重试）。
+- 十个规范迁移必须按文件名顺序执行（`202610050001_native_practice_sync` 必须在 iOS 云同步代码上线前执行；未执行时同步接口返回 502，iOS 数据保留在本机等待重试。`202611260001_user_ai_settings` 未执行时同步照常，只是不保存接口设置）。
 - 每个 migration 自带 `BEGIN`/`COMMIT`。在 SQL Editor 必须整份执行，不得去掉事务
   边界或只运行局部；保护性异常必须回滚本文件此前的 DDL/DML。
 - 2026-07-11 生产 catalog 的合成等价 fixture 是
@@ -455,7 +459,7 @@ completed 只有 force 可重领，进行中租约超过 30 分钟可重领。
 iOS 当前实现边界、运行命令和已知验证限制见 `docs/ios/10-ai-integration.md` 与 `ios/README.md`，09 为旧原型记录。
 修改纯 Swift 练习状态/归档后执行 `swift test --package-path ios`；修改原生页面或音频后执行模拟器构建与对应交互验证。不得把本机体验版 JSON 直接上传为 Web 历史，或把预设对话当成真实 AI 能力。
 修改 Android 代码后执行 `cd android && ./gradlew :app:testDebugUnitTest :app:assembleDebug`；修改 `/api/android/*` 执行 `npx vitest run tests/android`。两端同步的会话 JSON 必须保持一致：改动 `PracticeSession` 等同步字段时，iOS、Android（`android/app/src/test/resources/ios-sync-changes.json` 由 iOS 编码器生成）和服务端要一起改。
-修改 iOS AI 接口执行 `npx vitest run tests/ios`；真实模型测试需显式设置 `LINGDAILY_AI_TEST_CONFIG`，使用合成对话，不能在普通测试中自动消耗模型额度。Live 真联调另外必须显式 `LINGDAILY_LIVE_TEST=1`（共享 Swift 的 `LiveNetworkTests` 或 `scripts/ios-live-smoke.mjs`）；不得打印临时 token、带凭据的 WebSocket URL 或供应商正文。正式部署不能开启本机配对入口（`IOS_PRACTICE_DEV_ENABLED`）；生产只通过 Apple 登录签发的 iOS 会话访问。
+修改 iOS AI 接口执行 `npx vitest run tests/ios`；真实模型测试需显式设置 `LINGDAILY_AI_TEST_CONFIG`（BYOK 后指向本机一份 `AISettings` JSON，含自己的 Key，绝不提交），使用合成对话，不能在普通测试中自动消耗模型额度。Live 真联调另外必须显式 `LINGDAILY_LIVE_TEST=1`（共享 Swift 的 `LiveNetworkTests` 或 `scripts/ios-live-smoke.mjs`）；不得打印临时 token、带凭据的 WebSocket URL 或供应商正文。正式部署不能开启本机配对入口（`IOS_PRACTICE_DEV_ENABLED`）；生产只通过 Apple 登录签发的 iOS 会话访问。
 
 常用命令：
 

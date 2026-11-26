@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Describe a real upcoming conversation; the server turns it into a three-step scenario saved on this device.
+/// Describe a real upcoming conversation; the configured text model turns it into a three-step scenario saved locally.
 struct ScenarioComposerView: View {
     @EnvironmentObject private var store: PracticeStore
-    @EnvironmentObject private var account: AccountStore
+    @EnvironmentObject private var aiSettings: AISettingsStore
     @EnvironmentObject private var reminders: ReminderCenter
     @Environment(\.dismiss) private var dismiss
     @Environment(\.practiceService) private var api
@@ -13,6 +13,7 @@ struct ScenarioComposerView: View {
     @State private var description = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var showingAPISettings = false
     @State private var task: Task<Void, Never>?
     @State private var examples = Self.starterExamples
     /// Every idea shown so far, so a new batch never repeats one.
@@ -28,6 +29,7 @@ struct ScenarioComposerView: View {
         "在机场航班取消了，要去柜台改签到明天早上",
     ]
     private var trimmed: String { description.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var hasTextModel: Bool { aiSettings.settings.resolvedText != nil }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -54,16 +56,18 @@ struct ScenarioComposerView: View {
                         HStack {
                             Text("试试这些").font(.caption).foregroundColor(Brand.secondary)
                             Spacer()
-                            if account.canPractice { Button(action: refreshIdeas) {
-                                HStack(spacing: 4) {
-                                    if refreshing { ProgressView().scaleEffect(0.7) }
-                                    else { Image(systemName: "arrow.triangle.2.circlepath") }
-                                    Text(refreshing ? "正在想…" : "换一批")
+                            if hasTextModel {
+                                Button(action: refreshIdeas) {
+                                    HStack(spacing: 4) {
+                                        if refreshing { ProgressView().scaleEffect(0.7) }
+                                        else { Image(systemName: "arrow.triangle.2.circlepath") }
+                                        Text(refreshing ? "正在想…" : "换一批")
+                                    }
                                 }
+                                .font(.caption.weight(.medium)).foregroundColor(Brand.ink).frame(minHeight: 44)
+                                .disabled(refreshing || isLoading)
+                                .accessibilityIdentifier("refresh-ideas")
                             }
-                            .font(.caption.weight(.medium)).foregroundColor(Brand.ink).frame(minHeight: 44)
-                            .disabled(refreshing || isLoading)
-                            .accessibilityIdentifier("refresh-ideas") }
                         }
                         if let refreshError {
                             Text(refreshError).font(.caption).foregroundColor(Brand.secondary)
@@ -89,7 +93,7 @@ struct ScenarioComposerView: View {
                     Text(errorMessage).font(.footnote).foregroundColor(Brand.accent)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                if account.canPractice {
+                if hasTextModel {
                     Button(action: generate) {
                         HStack(spacing: 8) {
                             if isLoading { ProgressView().tint(Brand.onInk) }
@@ -100,12 +104,18 @@ struct ScenarioComposerView: View {
                     .disabled(trimmed.isEmpty || isLoading)
                     .accessibilityIdentifier("generate-scenario")
                 } else {
-                    AppleSignInButton()
+                    Button("配置文字模型接口") {
+                        focused = false
+                        showingAPISettings = true
+                    }
+                    .buttonStyle(SolidButtonStyle())
+                    .accessibilityIdentifier("configure-text-api")
                 }
             }
             .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8)
             .readableColumn().background(Brand.page)
         }
+        .pushDestination(isPresented: $showingAPISettings) { APISettingsView() }
         .navigationBack(title: "新场景", isEnabled: !isLoading) { dismiss() }
         .onDisappear { task?.cancel() }
     }

@@ -75,15 +75,3 @@ data class AccountSignInResponse(
         return session.takeIf { it.isUsable(now) && it.userID.isNotEmpty() }
     }
 }
-
-/**
- * Pairing with the local AI service of `npm run ios:dev`, bundled into Debug builds only.
- * It reaches this machine's loopback through `adb reverse tcp:8000 tcp:8000`, so the
- * pairing token never leaves the USB cable or the emulator. Public servers use the
- * signed-in account session instead.
- */
-data class DevConnection(val baseURL: String, val accessToken: String) {
-    val isValid: Boolean
-        get() = baseURL.removeSuffix("/") == "http://localhost:8000"
-            && accessToken.length == 64 && accessToken.all { it in "0123456789abcdef" }
-}

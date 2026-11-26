@@ -48,11 +48,11 @@ import com.qcy.lingdaily.ui.SolidButton
 import com.qcy.lingdaily.ui.TextAction
 import com.qcy.lingdaily.ui.Type
 
-/** The one account entry point, shared by the practice home, the preparation page and the profile page. */
+/** The one account entry point, shared by the profile page. */
 @Composable
-fun SignInButton(modifier: Modifier = Modifier) {
+fun SignInButton(modifier: Modifier = Modifier, secondary: Boolean = false) {
     val navigator = LocalNavigator.current
-    SolidButton("登录 / 注册", onClick = { navigator.push(Screen.SignIn()) }, modifier = modifier.testTag("sign-in"))
+    SolidButton("登录 / 注册", onClick = { navigator.push(Screen.SignIn()) }, secondary = secondary, modifier = modifier.testTag("sign-in"))
 }
 
 @Composable

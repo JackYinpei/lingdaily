@@ -10,10 +10,12 @@ import com.qcy.lingdaily.core.model.PracticeScenario
 import com.qcy.lingdaily.core.model.PracticeSession
 import com.qcy.lingdaily.core.model.SavedExpression
 import com.qcy.lingdaily.core.model.nowMillis
+import com.qcy.lingdaily.core.network.AISettings
 
 /**
  * Cloud copy of the signed-in account, as returned by `/api/ios/sync`.
- * Rehearsals, vocabulary and own scenarios live in the same Supabase tables as the web app.
+ * Rehearsals, vocabulary and own scenarios live in the same Supabase tables as the web app;
+ * `aiSettings` is stored encrypted per user on the server.
  */
 @Serializable
 data class SyncSnapshot(
@@ -23,6 +25,7 @@ data class SyncSnapshot(
     val rejectedSessions: List<String>? = null,
     /** Sessions whose cloud copy is the version this device sent in `knownSessions`; not repeated in `sessions`. */
     val unchangedSessions: List<String>? = null,
+    val aiSettings: AISettings? = null,
 ) {
     @Serializable
     data class Session(val id: String, val session: PracticeSession)
@@ -42,6 +45,7 @@ data class SyncChanges(
     val scenarios: Bucket<PracticeScenario> = Bucket(),
     /** Version (updatedAt, epoch ms) of every session on this device, so the server skips sending them back. */
     val knownSessions: Map<String, Long>? = null,
+    val aiSettings: AISettings? = null,
 ) {
     @Serializable
     data class Bucket<Item>(val upsert: List<Item> = emptyList(), val delete: List<String> = emptyList()) {
@@ -54,7 +58,8 @@ data class SyncChanges(
         val createdAt: Millis, val kind: String? = null,
     )
 
-    val isEmpty: Boolean get() = sessions.isEmpty && expressions.isEmpty && scenarios.isEmpty
+    val isEmpty: Boolean
+        get() = sessions.isEmpty && expressions.isEmpty && scenarios.isEmpty && aiSettings == null
 }
 
 /**
@@ -88,6 +93,7 @@ data class SyncLedger(
     val deleted: Keys = Keys(),
     /** Sessions the server can never store (invalid or too large); kept locally, not retried until edited. */
     val rejectedSessions: Set<String> = emptySet(),
+    val aiSettingsDirty: Boolean = false,
 ) {
     @Serializable
     data class Keys(
@@ -98,9 +104,13 @@ data class SyncLedger(
         val count: Int get() = sessions.size + expressions.size + scenarios.size
     }
 
-    data class Merged(val ledger: SyncLedger, val archive: PracticeArchive)
+    data class Merged(
+        val ledger: SyncLedger,
+        val archive: PracticeArchive,
+        val remoteAISettings: AISettings? = null,
+    )
 
-    val pendingCount: Int get() = dirty.count + deleted.count
+    val pendingCount: Int get() = dirty.count + deleted.count + (if (aiSettingsDirty) 1 else 0)
 
     fun sessionChanged(id: UUID): SyncLedger {
         val key = sessionKey(id)
@@ -126,12 +136,14 @@ data class SyncLedger(
     fun scenarioDeleted(id: String): SyncLedger = copy(
         dirty = dirty.copy(scenarios = dirty.scenarios - id), deleted = deleted.copy(scenarios = deleted.scenarios + id))
 
+    fun aiSettingsChanged(): SyncLedger = copy(aiSettingsDirty = true)
+
     /**
      * After a lost ledger write: everything on this device is sent again, and the
      * deletes the saved ledger still knew about are kept (resending a delete is harmless).
      */
-    fun readopt(owner: String, archive: PracticeArchive): SyncLedger {
-        val adopted = adopting(owner, archive)
+    fun readopt(owner: String, archive: PracticeArchive, hasAISettings: Boolean = false): SyncLedger {
+        val adopted = adopting(owner, archive, hasAISettings || aiSettingsDirty)
         return adopted.copy(deleted = Keys(
             sessions = deleted.sessions - adopted.dirty.sessions,
             expressions = deleted.expressions - adopted.dirty.expressions,
@@ -143,7 +155,11 @@ data class SyncLedger(
      * The next request's worth of pending changes. Whatever does not fit stays
      * pending and goes out in the following round.
      */
-    fun changes(archive: PracticeArchive, limits: SyncBatchLimits = SyncBatchLimits()): SyncChanges {
+    fun changes(
+        archive: PracticeArchive,
+        aiSettings: AISettings? = null,
+        limits: SyncBatchLimits = SyncBatchLimits(),
+    ): SyncChanges {
         val upsert = mutableListOf<PracticeSession>()
         var bytes = 0
         for (session in archive.sessions) {
@@ -155,6 +171,7 @@ data class SyncLedger(
             upsert += session
             bytes += size
         }
+        val outgoingAI = if (aiSettingsDirty && aiSettings != null) aiSettings.sanitizedForSync() else null
         return SyncChanges(
             sessions = SyncChanges.Bucket(upsert, deleted.sessions.sorted().take(limits.sessionDeletes)),
             expressions = SyncChanges.Bucket(
@@ -167,6 +184,7 @@ data class SyncLedger(
             knownSessions = buildMap {
                 for (session in archive.sessions.take(limits.knownSessions)) putIfAbsent(sessionKey(session.id), session.updatedAt)
             },
+            aiSettings = outgoingAI,
         )
     }
 
@@ -174,7 +192,13 @@ data class SyncLedger(
      * Applies a successful round trip. `sent` is what was uploaded; anything
      * changed locally while the request was in flight stays pending.
      */
-    fun merge(snapshot: SyncSnapshot, sent: SyncChanges, archive: PracticeArchive, now: Long = nowMillis()): Merged {
+    fun merge(
+        snapshot: SyncSnapshot,
+        sent: SyncChanges,
+        archive: PracticeArchive,
+        localAISettings: AISettings? = null,
+        now: Long = nowMillis(),
+    ): Merged {
         val dirtySessions = dirty.sessions.toMutableSet()
         val dirtyExpressions = dirty.expressions.toMutableSet()
         val dirtyScenarios = dirty.scenarios.toMutableSet()
@@ -196,6 +220,15 @@ data class SyncLedger(
         val deletedSessions = deleted.sessions - sent.sessions.delete.toSet()
         val deletedExpressions = deleted.expressions - sent.expressions.delete.toSet()
         val deletedScenarios = deleted.scenarios - sent.scenarios.delete.toSet()
+
+        var nextAISettingsDirty = aiSettingsDirty
+        if (sent.aiSettings != null && localAISettings?.updatedAt == sent.aiSettings.updatedAt) {
+            nextAISettingsDirty = false
+        }
+        val remoteAISettings = snapshot.aiSettings?.takeIf {
+            !nextAISettingsDirty || it.updatedAt > (localAISettings?.updatedAt ?: 0L)
+        }
+        if (remoteAISettings != null) nextAISettingsDirty = false
 
         // Sessions the server did not repeat are this device's own copies (same version).
         val unchanged = snapshot.unchangedSessions.orEmpty().map { it.lowercase() }.toSet()
@@ -254,12 +287,14 @@ data class SyncLedger(
                 dirty = Keys(dirtySessions, dirtyExpressions, dirtyScenarios),
                 deleted = Keys(deletedSessions, deletedExpressions, deletedScenarios),
                 rejectedSessions = rejected,
+                aiSettingsDirty = nextAISettingsDirty,
             ),
             archive = archive.copy(
                 sessions = sessions.sortedByDescending { it.updatedAt },
                 expressions = expressions.sortedByDescending { it.createdAt },
                 scenarios = scenarios,
             ),
+            remoteAISettings = remoteAISettings,
         )
     }
 
@@ -267,13 +302,14 @@ data class SyncLedger(
         fun sessionKey(id: UUID): String = id.toString().lowercase()
 
         /** First sync for an account: everything already on this device is uploaded into it. */
-        fun adopting(owner: String, archive: PracticeArchive): SyncLedger = SyncLedger(
+        fun adopting(owner: String, archive: PracticeArchive, hasAISettings: Boolean = false): SyncLedger = SyncLedger(
             ownerUserID = owner,
             dirty = Keys(
                 sessions = archive.sessions.map { sessionKey(it.id) }.toSet(),
                 expressions = archive.expressions.map { it.id }.toSet(),
                 scenarios = archive.scenarios.map { it.id }.toSet(),
             ),
+            aiSettingsDirty = hasAISettings,
         )
     }
 }

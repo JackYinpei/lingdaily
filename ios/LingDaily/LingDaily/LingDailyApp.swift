@@ -11,6 +11,7 @@ import SwiftUI
 struct LingDailyApp: App {
     @StateObject private var store: PracticeStore
     @StateObject private var account: AccountStore
+    @StateObject private var aiSettings: AISettingsStore
     @StateObject private var sync: SyncEngine
     @StateObject private var catalog = ScenarioCatalogStore()
     @StateObject private var today = TodayStore()
@@ -23,9 +24,11 @@ struct LingDailyApp: App {
     init() {
         let store = PracticeStore()
         let account = AccountStore()
+        let aiSettings = AISettingsStore()
         _store = StateObject(wrappedValue: store)
         _account = StateObject(wrappedValue: account)
-        _sync = StateObject(wrappedValue: SyncEngine(store: store, account: account))
+        _aiSettings = StateObject(wrappedValue: aiSettings)
+        _sync = StateObject(wrappedValue: SyncEngine(store: store, account: account, aiSettings: aiSettings))
         // Before launch finishes, so a reminder that opened the app is still delivered.
         ReminderCenter.shared.install()
         TabBarStyle.apply()
@@ -36,6 +39,7 @@ struct LingDailyApp: App {
             RootView()
                 .environmentObject(store)
                 .environmentObject(account)
+                .environmentObject(aiSettings)
                 .environmentObject(sync)
                 .environmentObject(catalog)
                 .environmentObject(today)
@@ -51,7 +55,7 @@ struct LingDailyApp: App {
             // Pick up changes made on the web or another device when returning to the app.
             Task { await sync.syncNow() }
             Task { await catalog.refresh() }
-            if account.canPractice { Task { await today.refresh() } }
+            Task { await today.refresh() }
         }
     }
 }

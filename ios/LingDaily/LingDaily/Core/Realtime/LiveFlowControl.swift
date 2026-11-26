@@ -45,7 +45,8 @@ struct LiveInputBuffer {
     var count: Int { frames.count }
 }
 
-/// Control messages are never discarded in favour of microphone frames.
+/// Control messages are never discarded in favour of microphone frames, and keep
+/// strict FIFO order relative to earlier control messages while jumping ahead of audio.
 /// Capacity counts 20 ms frames (a merged audio message weighs its frame count),
 /// so the backlog stays bounded to the same duration of audio.
 struct LiveOutgoingBuffer {
@@ -69,7 +70,12 @@ struct LiveOutgoingBuffer {
             else { break }
         }
         weight += item.weight
-        if priority { items.insert(item, at: 0) } else { items.append(item) }
+        if priority {
+            let insertIndex = items.firstIndex(where: \.audio) ?? items.endIndex
+            items.insert(item, at: insertIndex)
+        } else {
+            items.append(item)
+        }
     }
     mutating func take() -> Item? {
         guard !items.isEmpty else { return nil }

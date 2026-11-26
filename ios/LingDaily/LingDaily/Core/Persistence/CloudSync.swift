@@ -1,7 +1,8 @@
 import Foundation
 
 /// Cloud copy of the signed-in account, as returned by `/api/ios/sync`.
-/// Rehearsals, vocabulary and own scenarios live in the same Supabase tables as the web app.
+/// Rehearsals, vocabulary and own scenarios live in the same Supabase tables as the web app;
+/// `aiSettings` is stored encrypted per user on the server.
 struct SyncSnapshot: Decodable {
     struct Session: Decodable { let id: String; let session: PracticeSession }
     struct Expression: Decodable {
@@ -15,6 +16,7 @@ struct SyncSnapshot: Decodable {
     let rejectedSessions: [String]?
     /// Sessions whose cloud copy is the version this device sent in `knownSessions`; not repeated in `sessions`.
     let unchangedSessions: [String]?
+    let aiSettings: AISettings?
 }
 
 /// Local changes not yet in the cloud.
@@ -34,7 +36,8 @@ struct SyncChanges: Encodable {
     var scenarios = Bucket<PracticeScenario>()
     /// Version (updatedAt, epoch ms) of every session on this device, so the server skips sending them back.
     var knownSessions: [String: Double]?
-    var isEmpty: Bool { sessions.isEmpty && expressions.isEmpty && scenarios.isEmpty }
+    var aiSettings: AISettings? = nil
+    var isEmpty: Bool { sessions.isEmpty && expressions.isEmpty && scenarios.isEmpty && aiSettings == nil }
 }
 
 /// What one sync request may carry. Mirrors the server's limits; the byte budget also
@@ -102,8 +105,40 @@ struct SyncLedger: Codable, Equatable {
     var deleted = Keys()
     /// Sessions the server can never store (invalid or too large); kept locally, not retried until edited.
     var rejectedSessions: Set<String> = []
+    var aiSettingsDirty: Bool = false
 
-    var pendingCount: Int { dirty.count + deleted.count }
+    init(ownerUserID: String? = nil,
+         lastSyncedAt: Date? = nil,
+         synced: Keys = Keys(),
+         dirty: Keys = Keys(),
+         deleted: Keys = Keys(),
+         rejectedSessions: Set<String> = [],
+         aiSettingsDirty: Bool = false) {
+        self.ownerUserID = ownerUserID
+        self.lastSyncedAt = lastSyncedAt
+        self.synced = synced
+        self.dirty = dirty
+        self.deleted = deleted
+        self.rejectedSessions = rejectedSessions
+        self.aiSettingsDirty = aiSettingsDirty
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ownerUserID, lastSyncedAt, synced, dirty, deleted, rejectedSessions, aiSettingsDirty
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ownerUserID = try container.decodeIfPresent(String.self, forKey: .ownerUserID)
+        lastSyncedAt = try container.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
+        synced = try container.decodeIfPresent(Keys.self, forKey: .synced) ?? Keys()
+        dirty = try container.decodeIfPresent(Keys.self, forKey: .dirty) ?? Keys()
+        deleted = try container.decodeIfPresent(Keys.self, forKey: .deleted) ?? Keys()
+        rejectedSessions = try container.decodeIfPresent(Set<String>.self, forKey: .rejectedSessions) ?? []
+        aiSettingsDirty = try container.decodeIfPresent(Bool.self, forKey: .aiSettingsDirty) ?? false
+    }
+
+    var pendingCount: Int { dirty.count + deleted.count + (aiSettingsDirty ? 1 : 0) }
 
     static func sessionKey(_ id: UUID) -> String { id.uuidString.lowercased() }
 
@@ -120,20 +155,23 @@ struct SyncLedger: Codable, Equatable {
     mutating func expressionDeleted(_ key: String) { dirty.expressions.remove(key); deleted.expressions.insert(key) }
     mutating func scenarioChanged(_ id: String) { dirty.scenarios.insert(id); deleted.scenarios.remove(id) }
     mutating func scenarioDeleted(_ id: String) { dirty.scenarios.remove(id); deleted.scenarios.insert(id) }
+    mutating func aiSettingsChanged() { aiSettingsDirty = true }
 
     /// First sync for an account: everything already on this device is uploaded into it.
-    mutating func adopt(owner: String, archive: PracticeArchive) {
+    mutating func adopt(owner: String, archive: PracticeArchive, hasAISettings: Bool = false) {
         self = SyncLedger(ownerUserID: owner)
         dirty.sessions = Set(archive.sessions.map { Self.sessionKey($0.id) })
         dirty.expressions = Set(archive.expressions.map(\.id))
         dirty.scenarios = Set(archive.scenarios.map(\.id))
+        aiSettingsDirty = hasAISettings
     }
 
     /// After a lost ledger write: everything on this device is sent again, and the
     /// deletes the saved ledger still knew about are kept (resending a delete is harmless).
-    mutating func readopt(owner: String, archive: PracticeArchive) {
+    mutating func readopt(owner: String, archive: PracticeArchive, hasAISettings: Bool = false) {
         let pendingDeletes = deleted
-        adopt(owner: owner, archive: archive)
+        let pendingAI = aiSettingsDirty
+        adopt(owner: owner, archive: archive, hasAISettings: hasAISettings || pendingAI)
         deleted = Keys(sessions: pendingDeletes.sessions.subtracting(dirty.sessions),
                        expressions: pendingDeletes.expressions.subtracting(dirty.expressions),
                        scenarios: pendingDeletes.scenarios.subtracting(dirty.scenarios))
@@ -141,7 +179,7 @@ struct SyncLedger: Codable, Equatable {
 
     /// The next request's worth of pending changes. Whatever does not fit stays
     /// pending and goes out in the following round.
-    func changes(from archive: PracticeArchive, limits: SyncBatchLimits = .server) -> SyncChanges {
+    func changes(from archive: PracticeArchive, aiSettings: AISettings? = nil, limits: SyncBatchLimits = .server) -> SyncChanges {
         var changes = SyncChanges()
         var bytes = 0
         for session in archive.sessions where dirty.sessions.contains(Self.sessionKey(session.id)) {
@@ -162,12 +200,18 @@ struct SyncLedger: Codable, Equatable {
         changes.knownSessions = Dictionary(archive.sessions.prefix(limits.knownSessions).map {
             (Self.sessionKey($0.id), $0.updatedAt.timeIntervalSince1970 * 1000)
         }, uniquingKeysWith: { a, _ in a })
+        if aiSettingsDirty, let aiSettings {
+            changes.aiSettings = aiSettings
+        }
         return changes
     }
 
     /// Applies a successful round trip. `sent` is what was uploaded; anything
     /// changed locally while the request was in flight stays pending.
-    mutating func merge(_ snapshot: SyncSnapshot, sent: SyncChanges, into archive: inout PracticeArchive, now: Date = Date()) {
+    /// Returns updated `AISettings` when the remote copy should replace the local one.
+    @discardableResult
+    mutating func merge(_ snapshot: SyncSnapshot, sent: SyncChanges, into archive: inout PracticeArchive,
+                        localAISettings: AISettings? = nil, now: Date = Date()) -> AISettings? {
         let sentSessions = Dictionary(sent.sessions.upsert.map { (Self.sessionKey($0.id), $0.updatedAt) }, uniquingKeysWith: { a, _ in a })
         for session in archive.sessions {
             let key = Self.sessionKey(session.id)
@@ -181,6 +225,20 @@ struct SyncLedger: Codable, Equatable {
         deleted.sessions.subtract(sent.sessions.delete)
         deleted.expressions.subtract(sent.expressions.delete)
         deleted.scenarios.subtract(sent.scenarios.delete)
+
+        var adoptedAISettings: AISettings?
+        if sent.aiSettings != nil, localAISettings?.updatedAt == sent.aiSettings?.updatedAt {
+            aiSettingsDirty = false
+        }
+        if let remoteAI = snapshot.aiSettings {
+            let localUpdated = localAISettings?.updatedAt ?? .distantPast
+            if !aiSettingsDirty || remoteAI.updatedAt > localUpdated {
+                aiSettingsDirty = false
+                if remoteAI != localAISettings {
+                    adoptedAISettings = remoteAI
+                }
+            }
+        }
 
         // Sessions the server did not repeat are this device's own copies (same version).
         let unchanged = Set((snapshot.unchangedSessions ?? []).map { $0.lowercased() })
@@ -238,5 +296,6 @@ struct SyncLedger: Codable, Equatable {
 
         synced = Keys(sessions: remoteKeys, expressions: Set(remoteExpressions.keys), scenarios: Set(remoteScenarios.keys))
         lastSyncedAt = now
+        return adoptedAISettings
     }
 }

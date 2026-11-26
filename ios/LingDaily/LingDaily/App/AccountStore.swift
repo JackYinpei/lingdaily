@@ -3,15 +3,13 @@ import Combine
 import CryptoKit
 import SwiftUI
 
-/// Signed-in state for the production service. The session token lives in the
-/// Keychain; practice data syncs to this account through `SyncEngine`.
+/// Optional signed-in state for cloud sync across devices. The session token lives in
+/// the Keychain; practice data and encrypted AI settings sync through `SyncEngine`.
 @MainActor
 final class AccountStore: ObservableObject {
     @Published private(set) var session: AccountSession?
     @Published private(set) var isSigningIn = false
     @Published var errorMessage: String?
-    /// Debug builds paired with `npm run ios:dev` need no account.
-    let usesLocalDevelopment = AIConnectionConfiguration.bundled() != nil
     private var pendingNonce: String?
     private var rejected: NSObjectProtocol?
 
@@ -25,8 +23,6 @@ final class AccountStore: ObservableObject {
     }
 
     deinit { if let rejected { NotificationCenter.default.removeObserver(rejected) } }
-
-    var canPractice: Bool { usesLocalDevelopment || session != nil }
 
     /// Configures the Apple request with a fresh single-use nonce.
     func prepare(_ request: ASAuthorizationAppleIDRequest) {
@@ -56,7 +52,7 @@ final class AccountStore: ObservableObject {
             Task {
                 defer { isSigningIn = false }
                 do {
-                    let response = try await PracticeAPIClient(configuration: nil).signIn(AccountSignInRequest(
+                    let response = try await PracticeAPIClient().signIn(AccountSignInRequest(
                         identityToken: identityToken, nonce: nonce,
                         fullName: name.flatMap { $0.isEmpty ? nil : String($0.prefix(100)) }))
                     guard let session = response.session(appleUserID: credential.user), AccountKeychain.save(session) else {
@@ -92,7 +88,7 @@ final class AccountStore: ObservableObject {
             throw PracticeNetworkError.server("Apple 确认没有返回凭证，请重试。")
         }
         let code = credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
-        try await PracticeAPIClient(configuration: nil).deleteAccount(
+        try await PracticeAPIClient().deleteAccount(
             AccountDeletionRequest(identityToken: identityToken, nonce: nonce, authorizationCode: code))
         signOut()
     }
@@ -107,7 +103,7 @@ final class AccountStore: ObservableObject {
     }
 }
 
-/// The one account entry point, shared by the practice home and the profile page.
+/// Sign in with Apple entry point on the profile page.
 struct AppleSignInButton: View {
     @EnvironmentObject private var account: AccountStore
     @Environment(\.colorScheme) private var colorScheme

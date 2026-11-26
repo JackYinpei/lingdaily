@@ -1,6 +1,5 @@
 package com.qcy.lingdaily.core.realtime
 
-import java.net.URLEncoder
 import java.util.Base64
 import java.util.UUID
 import kotlinx.serialization.Serializable
@@ -20,14 +19,14 @@ import kotlinx.serialization.json.putJsonObject
 import com.qcy.lingdaily.core.model.AIFeedback
 import com.qcy.lingdaily.core.model.AILearningItem
 import com.qcy.lingdaily.core.model.AIPracticeRequest
-import com.qcy.lingdaily.core.model.IsoMillisSerializer
 import com.qcy.lingdaily.core.model.PartnerTemperament
 import com.qcy.lingdaily.core.model.PracticeMessage
 import com.qcy.lingdaily.core.model.PracticeSession
 import com.qcy.lingdaily.core.model.ReviewTarget
 import com.qcy.lingdaily.core.model.SavedExpression
-import com.qcy.lingdaily.core.model.nowMillis
 import com.qcy.lingdaily.core.model.prefix
+import com.qcy.lingdaily.core.network.AIProviderKind
+import com.qcy.lingdaily.core.network.DirectAI
 
 @Serializable
 data class LiveTokenRequest(
@@ -38,7 +37,6 @@ data class LiveTokenRequest(
     val messages: List<Message>,
     val model: String? = null,
     val pauseMs: Int? = null,
-    /** Omitted for standard and when empty, so default requests match older servers. */
     val level: String? = null,
     val attitude: String? = null,
     val temperament: PartnerTemperament? = null,
@@ -59,31 +57,32 @@ data class LiveTokenRequest(
     }
 }
 
+data class LiveConnectionConfig(
+    val provider: AIProviderKind,
+    val apiKey: String,
+    val baseURL: String,
+    val model: String,
+    val systemInstruction: String,
+    val geminiVoice: String,
+    val openAIVoice: String,
+    val pauseMs: Int,
+) {
+    fun webSocketURL(): String = try {
+        when (provider) {
+            AIProviderKind.GEMINI -> DirectAI.geminiLiveWebSocketURL(baseURL, apiKey)
+            AIProviderKind.OPENAI -> DirectAI.openAIRealtimeWebSocketURL(baseURL, model)
+        }
+    } catch (_: Exception) {
+        throw LiveProtocolException.invalid()
+    }
+}
+
 class LiveProtocolException(val kind: Kind) : Exception(kind.name) {
     enum class Kind { INVALID, OVERLOADED }
 
     companion object {
         fun invalid() = LiveProtocolException(Kind.INVALID)
         fun overloaded() = LiveProtocolException(Kind.OVERLOADED)
-    }
-}
-
-@Serializable
-data class LiveToken(val token: String, val model: String, val wsURL: String, val expiresAt: String) {
-    /** The only places a call may connect to: Google, or the two relays this project controls. */
-    fun connectionURL(now: Long = nowMillis()): String {
-        val expiry = IsoMillisSerializer.parse(expiresAt)
-        if (wsURL !in ENDPOINTS || token.isEmpty() || token.toByteArray().size > 4096
-            || model.isEmpty() || model.length > 100 || expiry == null || expiry <= now) throw LiveProtocolException.invalid()
-        return "$wsURL?access_token=${URLEncoder.encode(token, "UTF-8")}"
-    }
-
-    companion object {
-        private const val PATH = "/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained"
-        const val ENDPOINT = "wss://generativelanguage.googleapis.com$PATH"
-        const val RELAY_ENDPOINT = "wss://lingdailyapi-jp.yasobi.xyz$PATH"
-        const val LEGACY_RELAY_ENDPOINT = "wss://lingdailyapi.yasobi.xyz$PATH"
-        val ENDPOINTS = setOf(ENDPOINT, RELAY_ENDPOINT, LEGACY_RELAY_ENDPOINT)
     }
 }
 
@@ -145,23 +144,143 @@ sealed interface LiveEvent {
     data object Interrupted : LiveEvent
     data object TurnComplete : LiveEvent
     data object GoAway : LiveEvent
-    data class Transcription(val role: PracticeMessage.Role, val text: String, val finished: Boolean) : LiveEvent
+    /** Internal protocol signal when OpenAI Realtime finishes a tool-only turn and needs `response.create`. */
+    data object RequestContinuation : LiveEvent
+    data class Transcription(
+        val role: PracticeMessage.Role,
+        val text: String,
+        val finished: Boolean,
+        val replace: Boolean = false,
+    ) : LiveEvent
     class Audio(val pcm: ByteArray) : LiveEvent
     data class Tool(val call: LiveToolCall) : LiveEvent
     data class CancelledTools(val ids: List<String>) : LiveEvent
     data class Usage(val usage: LiveUsage) : LiveEvent
 }
 
+private fun buildToolDeclarations(uppercaseTypes: Boolean): JsonArray {
+    val objType = if (uppercaseTypes) "OBJECT" else "object"
+    val strType = if (uppercaseTypes) "STRING" else "string"
+    val arrType = if (uppercaseTypes) "ARRAY" else "array"
+    val intType = if (uppercaseTypes) "INTEGER" else "integer"
+
+    fun fn(name: String, description: String, parameters: JsonObject): JsonObject = buildJsonObject {
+        if (!uppercaseTypes) put("type", "function")
+        put("name", name)
+        put("description", description)
+        put("parameters", parameters)
+    }
+
+    return buildJsonArray {
+        add(fn(
+            name = "record_language_correction",
+            description = "Coach a specific learner sentence. original must exactly quote the learner transcript, never the partner.",
+            parameters = buildJsonObject {
+                put("type", objType)
+                putJsonObject("properties") {
+                    putJsonObject("original") { put("type", strType) }
+                    putJsonObject("corrected") { put("type", strType) }
+                    putJsonObject("explanation") { put("type", strType); put("description", "简短中文解释") }
+                    putJsonObject("category") {
+                        put("type", strType)
+                        putJsonArray("enum") {
+                            for (v in listOf("grammar", "word_choice", "naturalness", "other")) add(JsonPrimitive(v))
+                        }
+                    }
+                }
+                putJsonArray("required") {
+                    for (k in listOf("original", "corrected", "explanation", "category")) add(JsonPrimitive(k))
+                }
+            },
+        ))
+        add(fn(
+            name = "record_unfamiliar_learning_items",
+            description = "Record only expressions the learner lacked, asked about or got wrong. Never collect fluent correct expressions.",
+            parameters = buildJsonObject {
+                put("type", objType)
+                putJsonObject("properties") {
+                    putJsonObject("items") {
+                        put("type", arrType)
+                        putJsonObject("items") {
+                            put("type", objType)
+                            putJsonObject("properties") {
+                                putJsonObject("text") { put("type", strType) }
+                                putJsonObject("type") {
+                                    put("type", strType)
+                                    putJsonArray("enum") {
+                                        for (v in listOf("word", "phrase", "grammar", "other")) add(JsonPrimitive(v))
+                                    }
+                                }
+                                putJsonObject("meaning") { put("type", strType) }
+                            }
+                            putJsonArray("required") {
+                                for (k in listOf("text", "type", "meaning")) add(JsonPrimitive(k))
+                            }
+                        }
+                    }
+                }
+                putJsonArray("required") { add(JsonPrimitive("items")) }
+            },
+        ))
+        add(fn(
+            name = "mark_task_complete",
+            description = "Mark every task up to and including taskIndex (zero-based 0,1,2) complete. Call it as soon as the learner has addressed the current task, BEFORE moving on to the next one, and with taskIndex 2 before any closing remark or goodbye.",
+            parameters = buildJsonObject {
+                put("type", objType)
+                putJsonObject("properties") {
+                    putJsonObject("taskIndex") { put("type", intType) }
+                }
+                putJsonArray("required") { add(JsonPrimitive("taskIndex")) }
+            },
+        ))
+    }
+}
+
 object LiveCodec {
     const val MAX_MESSAGE_BYTES = 512 * 1024
 
-    /**
-     * The server-bound token supplies ALL configuration. The client cannot
-     * replace the system instruction, tools, voice, transcription or VAD.
-     */
-    fun setup(model: String): String = buildJsonObject {
-        putJsonObject("setup") { put("model", "models/$model") }
-    }.toString()
+    val LIVE_TOOLS: JsonArray = buildJsonArray {
+        add(buildJsonObject { put("functionDeclarations", buildToolDeclarations(uppercaseTypes = true)) })
+    }
+
+    /** Full client-side setup frame for Gemini Live direct BYOK sessions. */
+    fun setup(
+        model: String,
+        systemInstruction: String,
+        voiceName: String = DirectAI.DEFAULT_GEMINI_VOICE,
+        pauseMs: Int = LivePause.STANDARD,
+    ): String {
+        val cleanModel = model.trim().removePrefix("models/")
+        if (cleanModel.isEmpty()) throw LiveProtocolException.invalid()
+        return buildJsonObject {
+            putJsonObject("setup") {
+                put("model", "models/$cleanModel")
+                putJsonObject("generationConfig") {
+                    putJsonArray("responseModalities") { add(JsonPrimitive("AUDIO")) }
+                    putJsonObject("speechConfig") {
+                        putJsonObject("voiceConfig") {
+                            putJsonObject("prebuiltVoiceConfig") { put("voiceName", voiceName) }
+                        }
+                    }
+                }
+                putJsonObject("systemInstruction") {
+                    putJsonArray("parts") { add(buildJsonObject { put("text", systemInstruction) }) }
+                }
+                put("tools", LIVE_TOOLS)
+                putJsonObject("inputAudioTranscription") {}
+                putJsonObject("outputAudioTranscription") {}
+                putJsonObject("realtimeInputConfig") {
+                    putJsonObject("automaticActivityDetection") {
+                        put("disabled", false)
+                        put("startOfSpeechSensitivity", "START_SENSITIVITY_LOW")
+                        put("prefixPaddingMs", 300)
+                        put("endOfSpeechSensitivity", "END_SENSITIVITY_LOW")
+                        put("silenceDurationMs", LivePause.valid(pauseMs))
+                    }
+                }
+            }
+        }.toString()
+    }
 
     fun audio(pcm: ByteArray): String {
         if (pcm.isEmpty() || pcm.size > 3200 || pcm.size % 2 != 0) throw LiveProtocolException.invalid()
@@ -269,6 +388,235 @@ object LiveCodec {
     }
 }
 
+object OpenAIRealtimeCodec {
+    val TOOLS: JsonArray = buildToolDeclarations(uppercaseTypes = false)
+
+    private val BENIGN_ERROR_CODES = setOf(
+        "input_audio_buffer_commit_empty",
+        "response_cancel_not_active",
+        "conversation_already_has_active_response",
+    )
+
+    /** Learner speech transcription inside the GA Realtime session (the beta `OpenAI-Beta: realtime=v1` interface was shut down on 2026-05-12). */
+    const val TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
+
+    fun sessionUpdate(instructions: String, voice: String, pauseMs: Int = LivePause.STANDARD): String = buildJsonObject {
+        put("type", "session.update")
+        putJsonObject("session") {
+            put("type", "realtime")
+            putJsonArray("output_modalities") { add(JsonPrimitive("audio")) }
+            put("instructions", instructions)
+            putJsonObject("audio") {
+                putJsonObject("input") {
+                    putJsonObject("format") {
+                        put("type", "audio/pcm")
+                        put("rate", 24000)
+                    }
+                    putJsonObject("transcription") { put("model", TRANSCRIPTION_MODEL) }
+                    putJsonObject("turn_detection") {
+                        put("type", "server_vad")
+                        put("threshold", 0.6)
+                        put("prefix_padding_ms", 300)
+                        put("silence_duration_ms", LivePause.valid(pauseMs))
+                        put("create_response", true)
+                        put("interrupt_response", true)
+                    }
+                }
+                putJsonObject("output") {
+                    putJsonObject("format") {
+                        put("type", "audio/pcm")
+                        put("rate", 24000)
+                    }
+                    put("voice", voice)
+                }
+            }
+            put("tools", TOOLS)
+            put("tool_choice", "auto")
+        }
+    }.toString()
+
+    fun audioAppend(pcm24k: ByteArray): String {
+        if (pcm24k.isEmpty() || pcm24k.size > 4800 || pcm24k.size % 2 != 0) throw LiveProtocolException.invalid()
+        return buildJsonObject {
+            put("type", "input_audio_buffer.append")
+            put("audio", Base64.getEncoder().encodeToString(pcm24k))
+        }.toString()
+    }
+
+    fun textMessages(text: String): List<String> {
+        if (text.isEmpty() || text.length > 2000) throw LiveProtocolException.invalid()
+        val itemCreate = buildJsonObject {
+            put("type", "conversation.item.create")
+            putJsonObject("item") {
+                put("type", "message")
+                put("role", "user")
+                putJsonArray("content") {
+                    add(buildJsonObject {
+                        put("type", "input_text")
+                        put("text", text)
+                    })
+                }
+            }
+        }.toString()
+        return listOf(itemCreate, responseCreate())
+    }
+
+    fun responseCreate(): String = """{"type":"response.create"}"""
+
+    fun responseCancel(): String = """{"type":"response.cancel"}"""
+
+    fun toolResponse(call: LiveToolCall, accepted: Boolean): String = buildJsonObject {
+        put("type", "conversation.item.create")
+        putJsonObject("item") {
+            put("type", "function_call_output")
+            put("call_id", call.id)
+            put("output", if (accepted) """{"status":"accepted"}""" else """{"status":"rejected"}""")
+        }
+    }.toString()
+
+    fun parse(message: String, callNames: MutableMap<String, String> = mutableMapOf()): List<LiveEvent> {
+        if (message.length > LiveCodec.MAX_MESSAGE_BYTES) throw LiveProtocolException.invalid()
+        val root = try {
+            Json.parseToJsonElement(message) as? JsonObject
+        } catch (_: SerializationException) {
+            null
+        } ?: throw LiveProtocolException.invalid()
+        val type = root["type"].asString() ?: throw LiveProtocolException.invalid()
+        return when (type) {
+            "session.updated" -> listOf(LiveEvent.SetupComplete)
+            "input_audio_buffer.speech_started" -> listOf(LiveEvent.Interrupted)
+            "conversation.item.input_audio_transcription.delta" -> {
+                val delta = root["delta"].asString().orEmpty()
+                if (delta.length > 8000) throw LiveProtocolException.overloaded()
+                if (delta.isEmpty()) emptyList()
+                else listOf(LiveEvent.Transcription(PracticeMessage.Role.USER, delta, finished = false))
+            }
+            "conversation.item.input_audio_transcription.completed" -> {
+                val transcript = root["transcript"].asString().orEmpty().trim()
+                if (transcript.length > 8000) throw LiveProtocolException.overloaded()
+                listOf(LiveEvent.Transcription(PracticeMessage.Role.USER, transcript, finished = true, replace = true))
+            }
+            "response.audio.delta", "response.output_audio.delta" -> {
+                val raw = root["delta"].asString().orEmpty()
+                if (raw.isEmpty()) return emptyList()
+                val pcm = try {
+                    Base64.getDecoder().decode(raw)
+                } catch (_: IllegalArgumentException) {
+                    throw LiveProtocolException.invalid()
+                }
+                if (pcm.isEmpty()) return emptyList()
+                if (pcm.size % 2 != 0 || pcm.size > 240_000) throw LiveProtocolException.invalid()
+                listOf(LiveEvent.Audio(pcm))
+            }
+            "response.audio_transcript.delta", "response.output_audio_transcript.delta" -> {
+                val delta = root["delta"].asString().orEmpty()
+                if (delta.length > 8000) throw LiveProtocolException.overloaded()
+                if (delta.isEmpty()) emptyList()
+                else listOf(LiveEvent.Transcription(PracticeMessage.Role.PARTNER, delta, finished = false))
+            }
+            "response.audio_transcript.done", "response.output_audio_transcript.done" -> {
+                val transcript = root["transcript"].asString().orEmpty().trim()
+                if (transcript.length > 8000) throw LiveProtocolException.overloaded()
+                listOf(LiveEvent.Transcription(PracticeMessage.Role.PARTNER, transcript, finished = true, replace = true))
+            }
+            "response.output_item.added" -> {
+                val item = root["item"] as? JsonObject
+                if (item?.get("type").asString() == "function_call") {
+                    val callId = item?.get("call_id").asString()
+                    val name = item?.get("name").asString()
+                    if (!callId.isNullOrEmpty() && !name.isNullOrEmpty() && callNames.size < 256) {
+                        callNames[callId] = name
+                    }
+                }
+                emptyList()
+            }
+            "response.function_call_arguments.done" -> {
+                val callId = root["call_id"].asString() ?: throw LiveProtocolException.invalid()
+                val name = root["name"].asString() ?: callNames[callId] ?: throw LiveProtocolException.invalid()
+                if (callId.toByteArray().size > 128 || name.toByteArray().size > 80) throw LiveProtocolException.invalid()
+                val rawArgs = root["arguments"].asString().orEmpty()
+                val args = runCatching { Json.parseToJsonElement(rawArgs) as? JsonObject }.getOrNull() ?: JsonObject(emptyMap())
+                listOf(LiveEvent.Tool(LiveToolCall(callId, name, args)))
+            }
+            "response.done" -> {
+                val output = ((root["response"] as? JsonObject)?.get("output") as? JsonArray).orEmpty()
+                val hasFunctionCall = output.any { (it as? JsonObject)?.get("type").asString() == "function_call" }
+                val hasMessage = output.any { (it as? JsonObject)?.get("type").asString() == "message" }
+                if (hasFunctionCall && !hasMessage) listOf(LiveEvent.RequestContinuation)
+                else listOf(LiveEvent.TurnComplete)
+            }
+            "error" -> {
+                val code = (root["error"] as? JsonObject)?.get("code").asString()
+                if (code in BENIGN_ERROR_CODES) emptyList() else throw LiveProtocolException.invalid()
+            }
+            else -> emptyList()
+        }
+    }
+}
+
+/**
+ * Stateful 16 kHz -> 24 kHz (2:3) linear-interpolating resampler for mono signed PCM16 LE.
+ * Every 2 input samples produce 3 evenly-spaced output samples (320 -> 480 samples per 20 ms frame),
+ * keeping the previous sample across frame boundaries so consecutive frames join seamlessly.
+ */
+class Pcm16Resampler16To24 {
+    private var hasPrevious = false
+    private var previousSample = 0
+    private var hasLeftover = false
+    private var leftoverSample = 0
+
+    fun resample(pcm16k: ByteArray): ByteArray {
+        if (pcm16k.size % 2 != 0) throw LiveProtocolException.invalid()
+        if (pcm16k.isEmpty()) return ByteArray(0)
+        val incomingCount = pcm16k.size / 2
+        val totalSamples = incomingCount + (if (hasLeftover) 1 else 0)
+        val pairs = totalSamples / 2
+        val out = ByteArray(pairs * 6)
+
+        fun sampleAt(index: Int): Int {
+            val actual = if (hasLeftover) {
+                if (index == 0) return leftoverSample
+                index - 1
+            } else index
+            val low = pcm16k[actual * 2].toInt() and 0xFF
+            val high = pcm16k[actual * 2 + 1].toInt()
+            return ((high shl 8) or low).toShort().toInt()
+        }
+
+        fun writeSample(byteOffset: Int, value: Int) {
+            val clamped = value.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+            out[byteOffset] = (clamped and 0xFF).toByte()
+            out[byteOffset + 1] = ((clamped shr 8) and 0xFF).toByte()
+        }
+
+        for (pair in 0 until pairs) {
+            val a = sampleAt(pair * 2)
+            val b = sampleAt(pair * 2 + 1)
+            val prev = if (hasPrevious) previousSample else a
+            writeSample(pair * 6, (2 * prev + a) / 3)
+            writeSample(pair * 6 + 2, a)
+            writeSample(pair * 6 + 4, (a + 2 * b) / 3)
+            previousSample = b
+            hasPrevious = true
+        }
+
+        if (totalSamples % 2 == 1) {
+            leftoverSample = sampleAt(totalSamples - 1)
+            hasLeftover = true
+        } else {
+            hasLeftover = false
+        }
+        return out
+    }
+
+    fun reset() {
+        hasPrevious = false
+        previousSample = 0
+        hasLeftover = false
+        leftoverSample = 0
+    }
+}
+
 /** Late callbacks from an old connection or an interrupted reply carry an old generation. */
 class LiveGenerations {
     var connection = 0L
@@ -322,7 +670,7 @@ class LiveTranscriptReducer {
     private var interrupted = false
     private var inputTurnBoundary = false
 
-    fun update(role: PracticeMessage.Role, text: String, finished: Boolean): Segment {
+    fun update(role: PracticeMessage.Role, text: String, finished: Boolean, replace: Boolean = false): Segment {
         var segment = segments[role] ?: Segment(UUID.randomUUID(), "", false)
         if (role == PracticeMessage.Role.USER && inputTurnBoundary && !finished && text.isNotBlank()) {
             // Older model variants may omit finished. A non-final delta after
@@ -332,13 +680,17 @@ class LiveTranscriptReducer {
         } else if (segment.finalized) {
             // A new learner utterance can precede the interrupted notification.
             // Do not silently discard its first words while the partner speaks.
-            if (role == PracticeMessage.Role.USER && text.isNotBlank() && (!finished || !segment.text.startsWith(text))) {
+            if (role == PracticeMessage.Role.USER && text.isNotBlank() && (!finished || (!replace && !segment.text.startsWith(text)))) {
                 segment = Segment(UUID.randomUUID(), "", false)
             } else {
                 return segment
             }
         }
-        val merged = if (finished && text.startsWith(segment.text)) text else segment.text + text
+        val merged = when {
+            replace -> if (text.isNotEmpty()) text else segment.text
+            finished && text.startsWith(segment.text) -> text
+            else -> segment.text + text
+        }
         if (merged.length > 8000) throw LiveProtocolException.overloaded()
         segment = segment.copy(text = merged, finalized = finished)
         segments[role] = segment

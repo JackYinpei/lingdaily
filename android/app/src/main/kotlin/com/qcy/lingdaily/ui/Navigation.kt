@@ -80,6 +80,7 @@ sealed class Screen {
     class SignIn : Screen()
     class Interests : Screen()
     class AccountData : Screen()
+    class APISettings : Screen()
 }
 
 /** The stack of pages above the tabs. Pushing and popping slide horizontally. */

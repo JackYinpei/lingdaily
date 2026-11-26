@@ -79,7 +79,6 @@ fun ColumnScope.SummaryContent(session: PracticeSession) {
     val app = LocalApp.current
     val store = app.store
     val account = app.account
-    val settings = app.settings
     val colors = Brand.colors
     var reviewing by remember { mutableStateOf(false) }
     var reviewError by remember { mutableStateOf<String?>(null) }
@@ -98,17 +97,19 @@ fun ColumnScope.SummaryContent(session: PracticeSession) {
         if (newWords.isNotEmpty()) add("新词 ${newWords.size} 个")
     }.joinToString(" · ")
 
-    LaunchedEffect(session.id, account.session?.userID, settings.aiConsentGranted, reviewAttempt) {
+    val hasTextModel = app.aiSettings.settings.resolvedText != null
+
+    LaunchedEffect(session.id, account.session?.userID, hasTextModel, reviewAttempt) {
         reviewing = false
         reviewError = null
         fun latest() = store.archive.sessions.firstOrNull { it.id == session.id }
-        if (!account.canPractice || !settings.aiConsentGranted || (latest() ?: session).nextSentenceReview == null) return@LaunchedEffect
+        if (!hasTextModel || (latest() ?: session).nextSentenceReview == null) return@LaunchedEffect
         val owner = account.session?.userID
         reviewing = true
         try {
             while (true) {
                 val request = (latest() ?: session).nextSentenceReview ?: break
-                if (!account.canPractice || account.session?.userID != owner || !settings.aiConsentGranted) break
+                if (app.aiSettings.settings.resolvedText == null || account.session?.userID != owner) break
                 val records = app.api.reviewSentences(request)
                 if (account.session?.userID != owner) break
                 val current = latest() ?: break
@@ -158,8 +159,8 @@ fun ColumnScope.SummaryContent(session: PracticeSession) {
                     if (error != null) {
                         Text(error, style = Type.caption, color = colors.secondary)
                         SolidButton("重试表达建议", onClick = { reviewAttempt++ }, secondary = true, modifier = Modifier.testTag("retry-sentence-review"))
-                    } else if (!settings.aiConsentGranted && reviewed.nextSentenceReview != null) {
-                        Text("允许 AI 数据使用后，可为这些原话整理表达建议。", style = Type.caption, color = colors.secondary)
+                    } else if (!hasTextModel && reviewed.nextSentenceReview != null) {
+                        Text("在「接口设置」配置文字模型后，可为这些原话整理表达建议。", style = Type.caption, color = colors.secondary)
                     }
                     for (line in lines) Takeaway(line, session.scenario.title)
                 }

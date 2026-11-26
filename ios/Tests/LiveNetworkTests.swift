@@ -8,16 +8,16 @@ final class LiveNetworkTests: XCTestCase {
     func testRealConstrainedLiveWithSharedSwiftClient() async throws {
         guard ProcessInfo.processInfo.environment["LINGDAILY_LIVE_TEST"] == "1",
               let path = ProcessInfo.processInfo.environment["LINGDAILY_AI_TEST_CONFIG"] else {
-            throw XCTSkip("Set LINGDAILY_LIVE_TEST=1 and LINGDAILY_AI_TEST_CONFIG to use Gemini quota")
+            throw XCTSkip("Set LINGDAILY_LIVE_TEST=1 and LINGDAILY_AI_TEST_CONFIG (local AISettings JSON) to use model quota")
         }
-        let config = try JSONDecoder().decode(AIConnectionConfiguration.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        let settings = try AISettings.testConfiguration(at: path)
         let scenario = PracticeScenario(id: "synthetic", title: "Synthetic deadline rehearsal", subtitle: "Test", category: "Test",
             symbol: "mic", partner: "Alex", partnerRole: "Colleague", setting: "A fictional work conversation",
             steps: (0..<3).map { index in
                 .init(id: "\(index)", goal: ["Explain delay", "Propose Thursday", "Confirm agreement"][index], prompt: "Test",
                       translation: "测试", hint: "测试", keywords: "test", expression: "Test", meaning: "测试")
             })
-        let token = try await PracticeAPIClient(configuration: config, aiConsent: { true }).liveToken(for: PracticeSession(scenario: scenario, useAI: true))
+        let spec = try PracticeAPIClient(accountSession: { nil }, aiSettings: { settings }).liveConnection(for: PracticeSession(scenario: scenario, useAI: true))
         let client = LiveWebSocketClient()
         var continuation: AsyncStream<LiveEvent>.Continuation!
         let stream = AsyncStream<LiveEvent> { continuation = $0 }
@@ -27,7 +27,7 @@ final class LiveNetworkTests: XCTestCase {
             if !Task.isCancelled { events.finish() }
         }
         defer { timeout.cancel(); events.finish() }
-        try await client.connect(token, generation: 1,
+        try await client.connect(spec, generation: 1,
             handler: { event, _ in events.yield(event) }, failure: { _, _ in events.finish() })
         var setup = 0, audioBytes = 0, output = 0, turns = 0
         var tools = Set<String>()

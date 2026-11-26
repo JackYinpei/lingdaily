@@ -748,15 +748,15 @@ struct FeedbackNote: View {
     }
 }
 
-/// Chinese for Live notes, translated once per note and saved with it. Never asks for
-/// AI consent from a history page: without consent the note simply stays English-only.
+/// Chinese for Live notes, translated once per note when a text model is configured.
 @MainActor
 final class FeedbackMeanings: ObservableObject {
     @Published private(set) var loading: Set<UUID> = []
     private var attempted: Set<UUID> = []
 
     func fill(_ id: UUID, revised: String, using api: any PracticeServing, save: @escaping (String) -> Void) {
-        guard AIDataConsent.isGranted(), attempted.insert(id).inserted else { return }
+        guard (AISettingsKeychain.load() ?? AISettings()).resolvedText != nil,
+              attempted.insert(id).inserted else { return }
         loading.insert(id)
         Task {
             if let meaning = try? await api.translate(revised) { save(meaning) }

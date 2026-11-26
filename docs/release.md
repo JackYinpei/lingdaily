@@ -34,7 +34,7 @@ xcodebuild -project LingDaily.xcodeproj -scheme LingDaily -configuration Release
   -allowProvisioningUpdates archive
 ```
 
-先核对发布包：`Info.plist` 里的版本和构建号正确，`ITSAppUsesNonExemptEncryption=false`，包含 `PrivacyInfo.xcprivacy`，**不包含 `AIConnection.json`**（本机配对文件只进 Debug 包）。
+先核对发布包：`Info.plist` 里的版本和构建号正确，`ITSAppUsesNonExemptEncryption=false`，包含 `PrivacyInfo.xcprivacy` 和 `ScenarioCatalog.json`，**不包含 `AIConnection.json`**（2.0 起 App 已没有本机配对，留着这条检查防止旧配对文件被打包）。
 
 上传时用的 `ExportOptions.plist`：`method=app-store-connect`、`destination=upload`、`teamID=8AJ84729BZ`、`signingStyle=automatic`。
 
@@ -61,6 +61,8 @@ xcrun devicectl device install app --device <UDID> /tmp/ld-device/Build/Products
 手机锁屏时装得上，但不能自动启动，解锁后手动打开即可。
 
 ## 3. Android（自建更新）
+
+上传 COS 后测试者立刻就能更新，所以一定要在服务端部署成功之后再做这一步。
 
 App 启动时会读取 `https://deploy.shiying.sh.cn/lingdaily/latest.json`。如果里面的 `versionCode` 比本机的大，首页和「我的」会提示下载。
 

@@ -3,16 +3,16 @@
   "appleID": "6824758752",
   "bundleID": "com.qcy.LingDaily",
   "teamID": "8AJ84729BZ",
-  "version": "1.9",
-  "build": "30",
+  "version": "2.0",
+  "build": "35",
   "minimumIOS": "15.0",
   "platforms": [
     "iPhone",
     "iPad"
   ],
   "appStoreConnect": "https://appstoreconnect.apple.com/apps/6824758752/distribution",
-  "submissionStatus": "Uploaded; store version 1.9 not yet created or submitted (1.8 build 21 was uploaded but never submitted)",
-  "sourceCommit": "d20c0fa",
+  "submissionStatus": "Uploaded; store version 2.0 exists in App Store Connect (准备提交) but the build is not yet selected or submitted. App Store Connect shows 1.8 as 可分发 (2026-11-26 screenshot).",
+  "sourceCommit": "822327e",
   "category": "Education",
   "ageRating": "18+ (regional variations; legacy OS 17+)",
   "price": "Free",
@@ -25,7 +25,6 @@
     "EmailAddress",
     "UserID",
     "OtherUserContent",
-    "AudioData",
     "ProductInteraction"
   ],
   "privacyPurpose": "AppFunctionality",
@@ -37,25 +36,25 @@
   "screenshots": "screenshots/manifest.json",
   "uploadedScreenshotCount": 4,
   "checks": {
-    "swiftExecuted": 120,
+    "swiftExecuted": 126,
     "swiftSkipped": 3,
-    "iosAPITests": 109,
+    "androidUnitTests": 74,
+    "iosAPITests": 130,
     "eslint": "Passed with zero warnings",
-    "fullJSTests": "412-413 passed, 1 skipped; 5 web files not run locally (jsdom missing); tts-rest concurrency case flaky",
-    "isolatedMigrations": "Not run (no schema change)",
-    "productionBuild": "Passed",
-    "serverDeploy": "d20c0fa deployed; production catalog v5 verified before release notes",
+    "fullJSTests": "424 passed, 1 skipped; 5 web files not run locally (jsdom missing)",
+    "isolatedMigrations": "Passed on GitHub Actions (quality job of 822327e); not run locally (no Docker)",
+    "productionBuild": "Passed locally and on GitHub Actions",
+    "serverDeploy": "NOT deployed: deploy job of 822327e failed at 'Deploy to server' (SSH step, 6 s), same as 66ba1d8 on 2026-11-23. Production still runs 906dab4.",
     "deviceArchiveAndDistributionUpload": "Passed",
-    "releaseBundle": "1.9 (30), iOS 15+, privacy manifest present, no AIConnection.json, non-exempt encryption false",
-    "deviceInstall": "Development-signed Release 1.9 (30) installed on the user's iPhone 16 Pro",
-    "simulatorScreens": "First-run interests, consent after it, home ranking with 适合你, 和谁练 cast picker"
+    "releaseBundle": "2.0 (35), iOS 15+, privacy manifest present, ScenarioCatalog.json bundled, no AIConnection.json, non-exempt encryption false; binary has no server AI endpoint or relay domain"
   },
   "notes": [
-    "Build 1.9 (30) uploaded from the local Mac on 2026-11-23; App Store Connect version creation, build selection and submission are still manual.",
-    "1.9 adds first-run interests, interest-ranked home, 和谁练 cast swapping and partner VOICE rules (dea5880); it carries everything from 1.8.",
-    "1.8 (21) was uploaded but not submitted; submit 1.9 instead.",
-    "Not verified: Live voice tone per character on a device.",
-    "Build 30 skips ahead of Xcode Cloud, which keeps uploading its own builds on every main push.",
+    "2.0 (35) uploaded from the local Mac on 2026-11-26; build selection and submission in App Store Connect are still manual.",
+    "2.0 turns the app into a bring-your-own-key tool: no built-in model, key or server-side AI call. Scenarios and podcasts work without an account; AI starts after the learner enters a Gemini/OpenAI key in 我的 → 接口设置. Apple sign-in is optional (sync only).",
+    "Submit only after the server deploy of 822327e (or later) is live: 2.0 sends aiSettings in /api/ios/sync and the old server rejects it with 400.",
+    "Optional iOS 27 creative assets (header 3840x1646, search 3840x2560) are rendered by marketing/appstore-2026-11-26/render_creative.py (not in Git).",
+    "Not verified: real Gemini/OpenAI text and voice with a real key on a device.",
+    "Build 35 skips ahead of Xcode Cloud, which keeps uploading its own builds on every main push.",
     "Mac and Apple Vision Pro compatibility distribution remain disabled."
   ],
   "xcodeCloud": {
@@ -81,7 +80,7 @@
     "sourceCommit": "3dfefa7",
     "status": "Ready for Distribution (verified 2026-11-07)"
   },
-  "uploadedAt": "2026-11-23T11:11:21+08:00",
+  "uploadedAt": "2026-11-26T22:40:33+08:00",
   "skippedRelease": [
     {
       "version": "1.7",
@@ -96,6 +95,14 @@
       "sourceCommit": "ebab6b4",
       "uploadedAt": "2026-11-09T13:55:55+08:00",
       "status": "Uploaded, never submitted"
+    },
+    {
+      "version": "1.9",
+      "build": "30",
+      "sourceCommit": "d20c0fa",
+      "uploadedAt": "2026-11-23T11:11:21+08:00",
+      "status": "Uploaded, superseded by 2.0"
     }
-  ]
+  ],
+  "privacyNote": "2.0 is bring-your-own-key: microphone audio and AI request content go from the device straight to the learner's own Gemini/OpenAI endpoint, not to the developer, so AudioData is no longer collected by the developer. Signed-in accounts store the learner's API settings encrypted (user_ai_settings). Update the App Privacy answers in App Store Connect before submitting 2.0."
 }

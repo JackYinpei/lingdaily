@@ -1,6 +1,20 @@
 # LingDaily App Store 发布记录
 
-## 1.9（构建 30）：2026-11-23
+## 2.0（构建 35）：2026-11-26
+
+**2026-11-26 22:40:33（Asia/Shanghai）本机签名 Release 归档（版本提交 `822327e`）上传成功（`Upload succeeded`）。App Store Connect 里已有 2.0 商店版本（准备提交），尚未选择构建、填写更新说明和提交审核。1.9（构建 30）没有送审，由 2.0 取代。**
+
+- 2.0 改为自带接口（BYOK）的口语练习工具：App 不内置任何模型、API Key 或服务端 AI 调用。不登录、不填 Key 也能浏览全部 25 个内置场景（打包在 App 内）和收听每日播客；在「我的 → 接口设置」填入 Google Gemini 和/或 OpenAI 的 Key 与模型后，文字练习、实时语音、复盘、新建场景、翻译和卡壳提示都由手机直连所填接口。OpenAI 实时语音使用 GA Realtime 接口（旧的 `OpenAI-Beta: realtime=v1` 已于 2026-05-12 下线）。
+- Apple 登录改为可选，只用于云同步；接口设置在服务端按用户加密保存（`user_ai_settings`）。去掉了 AI 数据授权页、模型选择与用量页。
+- **送审前提：服务端 `822327e` 必须已部署。** 2.0 的同步会带 `aiSettings`，旧服务端的 strict schema 会返回 400。本次推送的 GitHub Actions 里质量门禁（含隔离迁移测试）和镜像构建都通过，但 `deploy` 的「Deploy to server」SSH 步骤 6 秒就失败（与 2026-11-23 `66ba1d8` 相同），线上仍是最后一次成功部署的 `906dab4`，`/privacy` 仍是旧文案。
+- 送审前还需：在 App Store Connect 更新「App 隐私」（开发者不再收集音频数据；AI 请求内容由用户自己的接口处理）；在 Supabase 执行 `supabase/migrations/202611260001_user_ai_settings.sql`（未执行时同步照常，只是不保存接口设置）。审核备注可说明：App 不提供 AI 服务，审核需自备 Gemini 或 OpenAI Key 才能体验 AI 功能，场景与播客无需 Key。
+- 验证：Swift 126 项（3 个联网测试跳过，0 失败）；Android 单测 74 项；iOS/Android API Vitest 130 项；ESLint 零 warning；生产构建通过；全量 Vitest 424 通过 1 跳过（5 个网页测试文件因本机缺 `jsdom` 未运行）；隔离迁移测试本机无 Docker 未运行，GitHub Actions 上通过。
+- 发布包核实为 `com.qcy.LingDaily` / `2.0` / `35`，最低 iOS 15，包含隐私清单与 `ScenarioCatalog.json`，`ITSAppUsesNonExemptEncryption=false`，不包含 `AIConnection.json`；二进制里没有服务端 AI 接口路径，也没有写死东京中转域名。
+- 可选的 iOS 27 创意素材（产品页标题 3840 × 1646、搜索结果 3840 × 2560）由 `marketing/appstore-2026-11-26/render_creative.py` 生成，不纳入 Git。
+- 未验证：用真实 Key 在真机上的 Gemini / OpenAI 文字与实时语音（尤其 OpenAI GA Realtime）。
+- 归档及日志：`/tmp/LingDaily-2.0-35.xcarchive`、`/tmp/lingdaily-20-*.log`，不纳入 Git。
+
+## 1.9（构建 30，已上传、未送审，由 2.0 取代）：2026-11-23
 
 **2026-11-23 11:11:21（Asia/Shanghai）本机签名 Release 归档（版本提交 `d20c0fa`）上传成功（`Upload succeeded`）。尚未在 App Store Connect 创建 1.9 商店版本、关联构建和提交审核。1.8（构建 21）上传后没有送审，直接由 1.9 取代。**
 

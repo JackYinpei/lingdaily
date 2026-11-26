@@ -11,7 +11,7 @@
     "iPad"
   ],
   "appStoreConnect": "https://appstoreconnect.apple.com/apps/6824758752/distribution",
-  "submissionStatus": "Uploaded; store version 2.0 exists in App Store Connect (准备提交) but the build is not yet selected or submitted. App Store Connect shows 1.8 as 可分发 (2026-11-26 screenshot).",
+  "submissionStatus": "Uploaded; store version 2.0 exists in App Store Connect (准备提交) but the build is not yet selected or submitted. Server prerequisite met.",
   "sourceCommit": "822327e",
   "category": "Education",
   "ageRating": "18+ (regional variations; legacy OS 17+)",
@@ -44,7 +44,7 @@
     "fullJSTests": "424 passed, 1 skipped; 5 web files not run locally (jsdom missing)",
     "isolatedMigrations": "Passed on GitHub Actions (quality job of 822327e); not run locally (no Docker)",
     "productionBuild": "Passed locally and on GitHub Actions",
-    "serverDeploy": "NOT deployed: deploy job of 822327e failed at 'Deploy to server' (SSH step, 6 s), same as 66ba1d8 on 2026-11-23. Production still runs 906dab4.",
+    "serverDeploy": "a42f3a3 deployed 2026-11-26 23:27 after freeing the Tokyo server disk (13 dangling images; 100% -> 34%); production /privacy shows the BYOK text",
     "deviceArchiveAndDistributionUpload": "Passed",
     "releaseBundle": "2.0 (35), iOS 15+, privacy manifest present, ScenarioCatalog.json bundled, no AIConnection.json, non-exempt encryption false; binary has no server AI endpoint or relay domain",
     "productionMigration": "202611260001_user_ai_settings applied 2026-11-26; postflight 19 PASS / 0 non-PASS, row counts match preflight"
@@ -52,7 +52,6 @@
   "notes": [
     "2.0 (35) uploaded from the local Mac on 2026-11-26; build selection and submission in App Store Connect are still manual.",
     "2.0 turns the app into a bring-your-own-key tool: no built-in model, key or server-side AI call. Scenarios and podcasts work without an account; AI starts after the learner enters a Gemini/OpenAI key in 我的 → 接口设置. Apple sign-in is optional (sync only).",
-    "Submit only after the server deploy of 822327e (or later) is live: 2.0 sends aiSettings in /api/ios/sync and the old server rejects it with 400.",
     "Optional iOS 27 creative assets (header 3840x1646, search 3840x2560) are rendered by marketing/appstore-2026-11-26/render_creative.py (not in Git).",
     "Not verified: real Gemini/OpenAI text and voice with a real key on a device.",
     "Build 35 skips ahead of Xcode Cloud, which keeps uploading its own builds on every main push.",
@@ -106,5 +105,12 @@
     }
   ],
   "privacyNote": "2.0 is bring-your-own-key: microphone audio and AI request content go from the device straight to the learner's own Gemini/OpenAI endpoint, not to the developer, so AudioData is no longer collected by the developer. Signed-in accounts store the learner's API settings encrypted (user_ai_settings). Update the App Privacy answers in App Store Connect before submitting 2.0.",
-  "reviewNotes": "ios/AppStore/REVIEW_NOTES.md (needs a quota-limited test Gemini key)"
+  "reviewNotes": "ios/AppStore/REVIEW_NOTES.md (needs a quota-limited test Gemini key)",
+  "androidRelease": {
+    "version": "1.7",
+    "versionCode": 8,
+    "publishedAt": "2026-11-26T23:28:51+08:00",
+    "sha256": "5167b08f3902e483460d7c10bfb38586c361bf4b59ff582aba1ef7e5d2c32d27",
+    "signerMatches": "1.6 (same certificate)"
+  }
 }

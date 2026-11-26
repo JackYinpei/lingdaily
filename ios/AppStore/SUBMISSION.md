@@ -6,7 +6,7 @@
 
 - 2.0 改为自带接口（BYOK）的口语练习工具：App 不内置任何模型、API Key 或服务端 AI 调用。不登录、不填 Key 也能浏览全部 25 个内置场景（打包在 App 内）和收听每日播客；在「我的 → 接口设置」填入 Google Gemini 和/或 OpenAI 的 Key 与模型后，文字练习、实时语音、复盘、新建场景、翻译和卡壳提示都由手机直连所填接口。OpenAI 实时语音使用 GA Realtime 接口（旧的 `OpenAI-Beta: realtime=v1` 已于 2026-05-12 下线）。
 - Apple 登录改为可选，只用于云同步；接口设置在服务端按用户加密保存（`user_ai_settings`）。去掉了 AI 数据授权页、模型选择与用量页。
-- **送审前提：服务端 `822327e` 必须已部署。** 2.0 的同步会带 `aiSettings`，旧服务端的 strict schema 会返回 400。本次推送的 GitHub Actions 里质量门禁（含隔离迁移测试）和镜像构建都通过，但 `deploy` 的「Deploy to server」SSH 步骤 6 秒就失败（与 2026-11-23 `66ba1d8` 相同），线上仍是最后一次成功部署的 `906dab4`，`/privacy` 仍是旧文案。
+- 服务端已部署（送审前提已满足）：2.0 的同步会带 `aiSettings`，旧服务端会返回 400。`822327e`、`fa81d21` 两次部署都在「Deploy to server」失败，原因是东京服务器根分区被 13 个无标签旧镜像（约 1.77GB/个）占满（`no space left on device`）；`docker image prune -f` 后从 100% 降到 34%，`a42f3a3` 于 2026-11-26 23:27 部署成功，线上 `/privacy` 已是新文案。同日 Android 1.7（versionCode 8）已发布到 COS，`latest.json` 与公开 APK 的 SHA-256 已核对。
 - 数据库迁移 `202611260001_user_ai_settings` 已于 2026-11-26 在生产执行（从东京服务器经 Supabase 的 SQL 接口整份执行）。preflight 唯一的 BLOCKER `chat_history_invalid_sources=8` 是 iOS `practice` 行，生产 CHECK 自 `202610050001` 起已允许，属于 preflight 脚本没跟上，已修正；迁移后 postflight 19 项 PASS、0 项非 PASS，各表行数与 preflight 一致，`user_ai_settings` 开启 RLS 且 anon/authenticated 无权限。
 - 送审前还需：在 App Store Connect 更新「App 隐私」（开发者不再收集音频数据；AI 请求内容由用户自己的接口处理）；审核备注见 `ios/AppStore/REVIEW_NOTES.md`，需填入一个限额的审核专用 Gemini Key，审核结束后作废。
 - 验证：Swift 126 项（3 个联网测试跳过，0 失败）；Android 单测 74 项；iOS/Android API Vitest 130 项；ESLint 零 warning；生产构建通过；全量 Vitest 424 通过 1 跳过（5 个网页测试文件因本机缺 `jsdom` 未运行）；隔离迁移测试本机无 Docker 未运行，GitHub Actions 上通过。

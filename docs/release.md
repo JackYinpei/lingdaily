@@ -25,6 +25,8 @@ cd android && ./gradlew :app:testDebugUnitTest :app:assembleDebug
 curl -s https://lingdaily.yasobi.xyz/api/ios/scenarios | python3 -c "import json,sys; print(json.load(sys.stdin)['version'])"
 ```
 
+部署任务的「Deploy to server」步骤几秒就失败、日志里有 `no space left on device`：服务器磁盘被历次部署留下的无标签旧镜像占满（流程为了回滚不自动清理）。登录服务器执行 `df -h /` 确认后，用 `docker image prune -f` 只删无标签镜像（保留正在运行的 `latest` 和带标签的回滚镜像），再推送一次 main 或重跑任务。
+
 ## 2. iOS（App Store）
 
 ```bash

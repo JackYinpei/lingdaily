@@ -1,49 +1,38 @@
 package com.qcy.lingdaily.ui.settings
 
-import androidx.compose.foundation.clickable
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
 import com.qcy.lingdaily.core.network.AIProviderConfiguration
 import com.qcy.lingdaily.core.network.AIProviderKind
+import com.qcy.lingdaily.core.network.AISettings
 import com.qcy.lingdaily.ui.AppIcons
 import com.qcy.lingdaily.ui.AppTextField
 import com.qcy.lingdaily.ui.Brand
@@ -55,252 +44,164 @@ import com.qcy.lingdaily.ui.ReadableColumn
 import com.qcy.lingdaily.ui.Screen
 import com.qcy.lingdaily.ui.ScreenScaffold
 import com.qcy.lingdaily.ui.Segmented
+import com.qcy.lingdaily.ui.SolidButton
 import com.qcy.lingdaily.ui.SurfaceCard
 import com.qcy.lingdaily.ui.TextAction
 import com.qcy.lingdaily.ui.Type
-import com.qcy.lingdaily.ui.medium
 import com.qcy.lingdaily.ui.semibold
 
-private enum class ModelSlot { TEXT, LIVE }
+/** What 保存 stores: trimmed fields, default models in empty slots, one provider for text and voice. */
+private fun AISettings.forSaving(): AISettings = copy(
+    voiceProvider = textProvider,
+    gemini = gemini.sanitized().withDefaultModels(AIProviderKind.GEMINI),
+    openai = openai.sanitized().withDefaultModels(AIProviderKind.OPENAI),
+)
 
 /**
- * BYOK provider configuration: Google Gemini & OpenAI API keys, optional custom base URLs,
- * text & realtime voice model IDs, model list fetching, and active provider selection.
+ * BYOK provider configuration: the provider used for both text and voice, its API key, an
+ * optional base URL and the models (prefilled with the newest ones). Nothing applies until 保存.
  */
 @Composable
 fun APISettingsScreen(screen: Screen.APISettings) {
     val app = LocalApp.current
     val navigator = LocalNavigator.current
     val store = app.aiSettings
-    val settings = store.settings
     val colors = Brand.colors
     val focus = LocalFocusManager.current
-    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
-    var activeTab by rememberSaveable { mutableStateOf(settings.textProvider) }
-    var showKey by rememberSaveable(activeTab) { mutableStateOf(false) }
-    var fetching by remember { mutableStateOf(false) }
-    var fetchNotice by remember(activeTab) { mutableStateOf<String?>(null) }
-    var fetchError by remember(activeTab) { mutableStateOf<String?>(null) }
-    val fetchedModels = remember { mutableStateMapOf<AIProviderKind, List<String>>() }
-    var pickerSlot by remember { mutableStateOf<ModelSlot?>(null) }
-
-    val config = settings.configuration(activeTab)
-    val availableModels = fetchedModels[activeTab].orEmpty()
+    var draft by remember { mutableStateOf(store.settings.forSaving()) }
+    var showKey by rememberSaveable { mutableStateOf(false) }
+    var confirmLeave by remember { mutableStateOf(false) }
+    val provider = draft.provider
+    val config = draft.configuration(provider)
+    val dirty = draft.forSaving().copy(updatedAt = 0L) != store.settings.forSaving().copy(updatedAt = 0L)
 
     fun updateCurrent(transform: (AIProviderConfiguration) -> AIProviderConfiguration) {
-        store.update { current ->
-            current.withConfiguration(activeTab, transform(current.configuration(activeTab)))
-        }
+        draft = draft.withConfiguration(provider, transform(config))
     }
 
-    fun fetchModels(openSlot: ModelSlot = ModelSlot.TEXT) {
-        if (fetching || config.apiKey.trim().isEmpty()) return
+    fun save() {
         focus.clearFocus()
-        fetching = true
-        fetchNotice = null
-        fetchError = null
-        val provider = activeTab
-        val apiKey = config.apiKey
-        val baseURL = config.baseURL
-        scope.launch {
-            try {
-                val list = app.api.fetchAvailableModels(provider, apiKey, baseURL)
-                fetchedModels[provider] = list
-                if (list.isEmpty()) {
-                    fetchError = "接口返回了空的模型列表，可直接手动输入模型名称。"
-                } else {
-                    fetchNotice = "已拉取 ${list.size} 个模型，点选即可填入。"
-                    pickerSlot = openSlot
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                fetchError = error.message ?: "拉取模型列表失败，请检查密钥与接口地址。"
-            } finally {
-                fetching = false
-            }
+        val saved = draft.forSaving()
+        store.update { saved }
+        val message = if (saved.configuration(saved.provider).apiKey.isEmpty()) {
+            "已保存。填写 API Key 后才能使用 AI 功能"
+        } else {
+            "已保存，文字对话和语音通话都使用 ${saved.provider.title}"
         }
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        navigator.close(screen)
     }
 
-    ScreenScaffold(title = "接口设置", onBack = { navigator.close(screen) }) {
+    fun leave() {
+        if (dirty) confirmLeave = true else navigator.close(screen)
+    }
+
+    BackHandler(enabled = dirty) { confirmLeave = true }
+
+    ScreenScaffold(
+        title = "接口设置",
+        onBack = ::leave,
+        bottomBar = {
+            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp)) {
+                SolidButton("保存", onClick = ::save, modifier = Modifier.testTag("save-api-settings"))
+            }
+        },
+    ) {
         ReadableColumn(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Column(
                 Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
-                // Provider configuration editor
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("使用的服务商", style = Type.subheadline.semibold, color = colors.ink)
                     Segmented(
                         options = listOf(AIProviderKind.GEMINI to "Google Gemini", AIProviderKind.OPENAI to "OpenAI"),
-                        selected = activeTab,
+                        selected = provider,
                         modifier = Modifier.testTag("api-provider-tab"),
-                    ) { activeTab = it }
-
-                    SurfaceCard(spacing = 16.dp) {
-                        // API Key
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("API Key", style = Type.subheadline.semibold, color = colors.ink)
-                            AppTextField(
-                                value = config.apiKey,
-                                onValueChange = { value -> updateCurrent { it.copy(apiKey = value) } },
-                                placeholder = if (activeTab == AIProviderKind.GEMINI) "粘贴 Google Gemini API Key" else "粘贴 OpenAI API Key",
-                                limit = 512,
-                                keyboardOptions = KeyboardOptions(
-                                    capitalization = KeyboardCapitalization.None,
-                                    autoCorrectEnabled = false,
-                                    keyboardType = KeyboardType.Password,
-                                    imeAction = ImeAction.Next,
-                                ),
-                                visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
-                                modifier = Modifier.testTag("api-key-field"),
-                                trailing = {
-                                    if (config.apiKey.isNotEmpty()) {
-                                        IconAction(AppIcons.Close, "清空 API Key", width = 36.dp, height = 36.dp, iconSize = 16.dp) {
-                                            updateCurrent { it.copy(apiKey = "") }
-                                        }
-                                    }
-                                    TextAction(
-                                        text = if (showKey) "隐藏" else "显示",
-                                        style = Type.caption,
-                                        modifier = Modifier.padding(horizontal = 8.dp),
-                                    ) { showKey = !showKey }
-                                },
-                            )
-                        }
-
-                        // Base URL
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("接口地址", style = Type.subheadline.semibold, color = colors.ink)
-                                Text("可选", style = Type.caption, color = colors.secondary)
-                            }
-                            AppTextField(
-                                value = config.baseURL,
-                                onValueChange = { value -> updateCurrent { it.copy(baseURL = value) } },
-                                placeholder = "留空使用官方地址，可填自定义反代",
-                                limit = 512,
-                                keyboardOptions = KeyboardOptions(
-                                    capitalization = KeyboardCapitalization.None,
-                                    autoCorrectEnabled = false,
-                                    keyboardType = KeyboardType.Uri,
-                                    imeAction = ImeAction.Next,
-                                ),
-                                modifier = Modifier.testTag("api-base-url-field"),
-                                trailing = if (config.baseURL.isNotEmpty()) ({
-                                    IconAction(AppIcons.Close, "清空接口地址", width = 36.dp, height = 36.dp, iconSize = 16.dp) {
-                                        updateCurrent { it.copy(baseURL = "") }
-                                    }
-                                }) else null,
-                            )
-                        }
-
-                        Hairline()
-
-                        // Text Model
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("文字模型", style = Type.subheadline.semibold, color = colors.ink, modifier = Modifier.weight(1f))
-                                if (availableModels.isNotEmpty()) {
-                                    TextAction("选择模型", color = colors.accent, style = Type.caption.medium, minHeight = 32.dp) {
-                                        pickerSlot = ModelSlot.TEXT
-                                    }
-                                }
-                            }
-                            AppTextField(
-                                value = config.textModel,
-                                onValueChange = { value -> updateCurrent { it.copy(textModel = value) } },
-                                placeholder = if (activeTab == AIProviderKind.GEMINI) "例：gemini-2.5-flash" else "例：gpt-4o-mini",
-                                limit = 120,
-                                keyboardOptions = KeyboardOptions(
-                                    capitalization = KeyboardCapitalization.None,
-                                    autoCorrectEnabled = false,
-                                    keyboardType = KeyboardType.Ascii,
-                                    imeAction = ImeAction.Next,
-                                ),
-                                modifier = Modifier.testTag("api-text-model-field"),
-                                trailing = if (config.textModel.isNotEmpty()) ({
-                                    IconAction(AppIcons.Close, "清空文字模型", width = 36.dp, height = 36.dp, iconSize = 16.dp) {
-                                        updateCurrent { it.copy(textModel = "") }
-                                    }
-                                }) else null,
-                            )
-                        }
-
-                        // Live Voice Model
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("实时语音模型", style = Type.subheadline.semibold, color = colors.ink, modifier = Modifier.weight(1f))
-                                if (availableModels.isNotEmpty()) {
-                                    TextAction("选择模型", color = colors.accent, style = Type.caption.medium, minHeight = 32.dp) {
-                                        pickerSlot = ModelSlot.LIVE
-                                    }
-                                }
-                            }
-                            AppTextField(
-                                value = config.liveModel,
-                                onValueChange = { value -> updateCurrent { it.copy(liveModel = value) } },
-                                placeholder = if (activeTab == AIProviderKind.GEMINI) {
-                                    "例：gemini-2.5-flash-native-audio-latest"
-                                } else {
-                                    "例：gpt-4o-realtime-preview"
-                                },
-                                limit = 120,
-                                keyboardOptions = KeyboardOptions(
-                                    capitalization = KeyboardCapitalization.None,
-                                    autoCorrectEnabled = false,
-                                    keyboardType = KeyboardType.Ascii,
-                                    imeAction = ImeAction.Done,
-                                ),
-                                modifier = Modifier.testTag("api-live-model-field"),
-                                trailing = if (config.liveModel.isNotEmpty()) ({
-                                    IconAction(AppIcons.Close, "清空实时语音模型", width = 36.dp, height = 36.dp, iconSize = 16.dp) {
-                                        updateCurrent { it.copy(liveModel = "") }
-                                    }
-                                }) else null,
-                            )
-                        }
-
-                        // Fetch model list action
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (fetching) {
-                                CircularProgressIndicator(Modifier.size(16.dp), color = colors.ink, strokeWidth = 2.dp)
-                                Spacer(Modifier.width(8.dp))
-                            }
-                            TextAction(
-                                text = if (fetching) "正在拉取模型列表…" else "从接口拉取模型列表",
-                                icon = if (fetching) null else AppIcons.Refresh,
-                                color = colors.ink,
-                                style = Type.subheadline.medium,
-                                enabled = config.apiKey.trim().isNotEmpty() && !fetching,
-                                modifier = Modifier.testTag("fetch-models"),
-                                onClick = { fetchModels() },
-                            )
-                        }
-                        fetchNotice?.let { Text(it, style = Type.caption, color = colors.secondary) }
-                        fetchError?.let { Text(it, style = Type.caption, color = colors.accent) }
+                    ) { chosen ->
+                        draft = draft.copy(textProvider = chosen, voiceProvider = chosen)
+                        showKey = false
                     }
+                    Text("文字对话和语音通话都使用这里选中的服务商。", style = Type.caption, color = colors.secondary)
                 }
 
-                // Active provider selectors
-                SurfaceCard(spacing = 14.dp) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("文字对话服务商", style = Type.subheadline.semibold, color = colors.ink)
-                        Segmented(
-                            options = listOf(AIProviderKind.GEMINI to "Gemini", AIProviderKind.OPENAI to "OpenAI"),
-                            selected = settings.textProvider,
-                            modifier = Modifier.testTag("text-provider-select"),
-                        ) { chosen -> store.update { it.copy(textProvider = chosen) } }
+                SurfaceCard(spacing = 16.dp) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("API Key", style = Type.subheadline.semibold, color = colors.ink)
+                        AppTextField(
+                            value = config.apiKey,
+                            onValueChange = { value -> updateCurrent { it.copy(apiKey = value) } },
+                            placeholder = "粘贴 ${provider.title} API Key",
+                            limit = 512,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.None,
+                                autoCorrectEnabled = false,
+                                keyboardType = KeyboardType.Password,
+                                imeAction = ImeAction.Next,
+                            ),
+                            visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                            modifier = Modifier.testTag("api-key-field"),
+                            trailing = {
+                                if (config.apiKey.isNotEmpty()) {
+                                    IconAction(AppIcons.Close, "清空 API Key", width = 36.dp, height = 36.dp, iconSize = 16.dp) {
+                                        updateCurrent { it.copy(apiKey = "") }
+                                    }
+                                }
+                                TextAction(
+                                    text = if (showKey) "隐藏" else "显示",
+                                    style = Type.caption,
+                                    modifier = Modifier.padding(horizontal = 8.dp),
+                                ) { showKey = !showKey }
+                            },
+                        )
                     }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("接口地址", style = Type.subheadline.semibold, color = colors.ink)
+                            Text("可选", style = Type.caption, color = colors.secondary)
+                        }
+                        AppTextField(
+                            value = config.baseURL,
+                            onValueChange = { value -> updateCurrent { it.copy(baseURL = value) } },
+                            placeholder = "留空走默认的东京中转，也可填自己的地址",
+                            limit = 512,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.None,
+                                autoCorrectEnabled = false,
+                                keyboardType = KeyboardType.Uri,
+                                imeAction = ImeAction.Next,
+                            ),
+                            modifier = Modifier.testTag("api-base-url-field"),
+                            trailing = if (config.baseURL.isNotEmpty()) ({
+                                IconAction(AppIcons.Close, "清空接口地址", width = 36.dp, height = 36.dp, iconSize = 16.dp) {
+                                    updateCurrent { it.copy(baseURL = "") }
+                                }
+                            }) else null,
+                        )
+                    }
+
                     Hairline()
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("语音通话服务商", style = Type.subheadline.semibold, color = colors.ink)
-                        Segmented(
-                            options = listOf(AIProviderKind.GEMINI to "Gemini", AIProviderKind.OPENAI to "OpenAI"),
-                            selected = settings.voiceProvider,
-                            modifier = Modifier.testTag("voice-provider-select"),
-                        ) { chosen -> store.update { it.copy(voiceProvider = chosen) } }
-                    }
+
+                    ModelField(
+                        title = "文字模型",
+                        value = config.textModel,
+                        defaultModel = provider.defaultTextModel,
+                        note = "用于文字练习、复盘、生成场景和翻译。",
+                        tag = "api-text-model-field",
+                        imeAction = ImeAction.Next,
+                    ) { value -> updateCurrent { it.copy(textModel = value) } }
+
+                    ModelField(
+                        title = "实时语音模型",
+                        value = config.liveModel,
+                        defaultModel = provider.defaultLiveModel,
+                        note = "用于语音通话。",
+                        tag = "api-live-model-field",
+                        imeAction = ImeAction.Done,
+                    ) { value -> updateCurrent { it.copy(liveModel = value) } }
                 }
 
                 Text(
@@ -312,96 +213,48 @@ fun APISettingsScreen(screen: Screen.APISettings) {
         }
     }
 
-    pickerSlot?.let { initialSlot ->
-        ModelPickerDialog(
-            provider = activeTab,
-            models = availableModels,
-            initialSlot = initialSlot,
-            currentTextModel = config.textModel,
-            currentLiveModel = config.liveModel,
-            onPick = { slot, modelId ->
-                updateCurrent { current ->
-                    when (slot) {
-                        ModelSlot.TEXT -> current.copy(textModel = modelId)
-                        ModelSlot.LIVE -> current.copy(liveModel = modelId)
-                    }
-                }
-                pickerSlot = null
+    if (confirmLeave) {
+        AlertDialog(
+            onDismissRequest = { confirmLeave = false },
+            title = { Text("保存修改？") },
+            text = { Text("接口设置有未保存的修改。") },
+            confirmButton = { TextButton(onClick = { confirmLeave = false; save() }) { Text("保存", color = colors.ink) } },
+            dismissButton = {
+                TextButton(onClick = { confirmLeave = false; navigator.close(screen) }) { Text("不保存", color = colors.secondary) }
             },
-            onDismiss = { pickerSlot = null },
         )
     }
 }
 
 @Composable
-private fun ModelPickerDialog(
-    provider: AIProviderKind,
-    models: List<String>,
-    initialSlot: ModelSlot,
-    currentTextModel: String,
-    currentLiveModel: String,
-    onPick: (ModelSlot, String) -> Unit,
-    onDismiss: () -> Unit,
+private fun ModelField(
+    title: String,
+    value: String,
+    defaultModel: String,
+    note: String,
+    tag: String,
+    imeAction: ImeAction,
+    onChange: (String) -> Unit,
 ) {
     val colors = Brand.colors
-    var slot by remember { mutableStateOf(initialSlot) }
-    var filter by remember { mutableStateOf("") }
-    val filtered = remember(models, filter) {
-        val q = filter.trim().lowercase()
-        if (q.isEmpty()) models else models.filter { it.lowercase().contains(q) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, style = Type.subheadline.semibold, color = colors.ink)
+        AppTextField(
+            value = value,
+            onValueChange = onChange,
+            placeholder = defaultModel,
+            limit = 120,
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.None,
+                autoCorrectEnabled = false,
+                keyboardType = KeyboardType.Ascii,
+                imeAction = imeAction,
+            ),
+            modifier = Modifier.testTag(tag),
+            trailing = if (value.trim() != defaultModel) ({
+                TextAction(text = "恢复默认", style = Type.caption, modifier = Modifier.padding(horizontal = 8.dp)) { onChange(defaultModel) }
+            }) else null,
+        )
+        Text("${note}默认 $defaultModel（目前最新），一般不用改。", style = Type.caption, color = colors.secondary)
     }
-    val currentId = if (slot == ModelSlot.TEXT) currentTextModel.trim() else currentLiveModel.trim()
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("${provider.title} 模型列表") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Segmented(
-                    options = listOf(ModelSlot.TEXT to "填入文字模型", ModelSlot.LIVE to "填入实时语音模型"),
-                    selected = slot,
-                ) { slot = it }
-                if (models.size > 6) {
-                    AppTextField(
-                        value = filter,
-                        onValueChange = { filter = it },
-                        placeholder = "筛选模型名称…",
-                        minHeight = 40.dp,
-                        textStyle = Type.subheadline,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.None,
-                            autoCorrectEnabled = false,
-                        ),
-                    )
-                }
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
-                    if (filtered.isEmpty()) {
-                        item {
-                            Text("没有匹配的模型", style = Type.caption, color = colors.secondary, modifier = Modifier.padding(vertical = 16.dp))
-                        }
-                    }
-                    items(filtered, key = { it }) { id ->
-                        val selected = id == currentId
-                        Row(
-                            Modifier.fillMaxWidth().heightIn(min = 42.dp).clickable(role = Role.Button) { onPick(slot, id) },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                id,
-                                style = if (selected) Type.subheadline.semibold else Type.subheadline,
-                                color = if (selected) colors.accent else colors.ink,
-                                modifier = Modifier.weight(1f),
-                            )
-                            if (selected) {
-                                Icon(AppIcons.Check, null, Modifier.size(16.dp), tint = colors.accent)
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭", color = colors.ink) }
-        },
-    )
 }

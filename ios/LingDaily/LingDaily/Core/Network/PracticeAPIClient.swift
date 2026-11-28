@@ -62,7 +62,6 @@ protocol PracticeServing {
     func suggest(for session: PracticeSession) async throws -> LiveSuggestion
     func liveConnection(for session: PracticeSession) throws -> LiveConnectionSpec
     func scenarioIdeas(avoiding shown: [String], interests: [String]) async throws -> [String]
-    func fetchAvailableModels(provider: AIProviderKind, apiKey: String, baseURL: String) async throws -> [String]
 }
 
 private struct ServerFailure: Decodable { let message: String }
@@ -346,24 +345,6 @@ final class PracticeAPIClient: PracticeServing {
             parse: DirectAIPrompts.parseIdeas
         )
         return ideas
-    }
-
-    func fetchAvailableModels(provider: AIProviderKind, apiKey: String, baseURL: String) async throws -> [String] {
-        let urlRequest = try DirectAICodec.modelsRequest(provider: provider, baseURL: baseURL, apiKey: apiKey)
-        do {
-            let (data, http) = try await aiTransport(urlRequest)
-            try Task.checkCancellation()
-            guard data.count <= 2 * 1024 * 1024 else { throw PracticeNetworkError.invalidReply }
-            return try DirectAICodec.parseModelsResponse(provider: provider, data: data, statusCode: http.statusCode)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as URLError where error.code == .cancelled {
-            throw CancellationError()
-        } catch let error as PracticeNetworkError {
-            throw error
-        } catch {
-            throw PracticeNetworkError.unavailable
-        }
     }
 
     // MARK: - Private Transport Helpers

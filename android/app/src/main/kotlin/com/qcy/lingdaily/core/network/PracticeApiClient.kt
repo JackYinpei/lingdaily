@@ -76,7 +76,6 @@ interface PracticeServing {
     suspend fun translate(text: String): String
     suspend fun suggest(session: PracticeSession): LiveSuggestion
     suspend fun scenarioIdeas(avoiding: List<String>, interests: List<String>): List<String>
-    suspend fun fetchAvailableModels(provider: AIProviderKind, apiKey: String, baseURL: String): List<String>
     fun liveConnection(session: PracticeSession): LiveConnectionConfig
 
     /** Fallback read-aloud audio (WAV or MP3) when local device TTS is unavailable. */
@@ -326,31 +325,6 @@ class PracticeApiClient(
             invalidMessage = "这一批没生成好，请再点一次。",
         ) { raw -> DirectAI.parseIdeas(raw) }
         return ideas
-    }
-
-    override suspend fun fetchAvailableModels(provider: AIProviderKind, apiKey: String, baseURL: String): List<String> {
-        val key = apiKey.trim()
-        if (key.isEmpty()) throw PracticeNetworkException.notConfigured("请先填写 API Key。")
-        return when (provider) {
-            AIProviderKind.GEMINI -> {
-                val request = Request.Builder()
-                    .url(DirectAI.geminiModelsURL(baseURL))
-                    .header("x-goog-api-key", key)
-                    .get()
-                    .build()
-                val body = executeDirect(request, model = null, maxBytes = 2 * 1024 * 1024).decodeToString()
-                DirectAI.parseGeminiModelsList(body)
-            }
-            AIProviderKind.OPENAI -> {
-                val request = Request.Builder()
-                    .url(DirectAI.openAIModelsURL(baseURL))
-                    .header("Authorization", "Bearer $key")
-                    .get()
-                    .build()
-                val body = executeDirect(request, model = null, maxBytes = 2 * 1024 * 1024).decodeToString()
-                DirectAI.parseOpenAIModelsList(body)
-            }
-        }
     }
 
     override suspend fun speech(text: String, partner: String?): ByteArray {

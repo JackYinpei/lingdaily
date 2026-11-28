@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-已实现：场景首页（分类、继续练习）、独立的「播客」Tab（今日播客、生词、聊聊这条新闻、往期）、准备页（难度、对方脾气二维面板、目标/背景、词库带词）、文字逐轮练习（提示三级、更自然的说法、再说一次、听写、朗读）、Gemini Live 语音通话（字幕、纠错批注、自动收词、任务进度、打断、静音、卡住时的建议）、总结与逐句复盘、学习页（练习记录、词库、看中文说英文的复习）、新建场景、今日生词、每日/对话前提醒、接口设置（Gemini / OpenAI，可获取模型列表）、可选登录与云同步、退出登录与删除账号。
+已实现：场景首页（分类、继续练习）、独立的「播客」Tab（今日播客、生词、聊聊这条新闻、往期）、准备页（难度、对方脾气二维面板、目标/背景、词库带词）、文字逐轮练习（提示三级、更自然的说法、再说一次、听写、朗读）、Gemini Live 语音通话（字幕、纠错批注、自动收词、任务进度、打断、静音、卡住时的建议）、总结与逐句复盘、学习页（练习记录、词库、看中文说英文的复习）、新建场景、今日生词、每日/对话前提醒、接口设置（Gemini 或 OpenAI 二选一，模型预填最新，点保存生效）、可选登录与云同步、退出登录与删除账号。
 
 Release 包和 Debug 包行为相同：场景与播客来自线上公开接口（场景另打包在 `res/raw/scenario_catalog.json`，离线首启也有全部 25 个），AI 请求只发往用户填写的接口。Android 没有原生 Apple 登录，账号用网页账号的邮箱或手机号和密码（见下文“账号”），登录是可选的。
 
@@ -34,8 +34,8 @@ cd android
 
 - 实现：`core/network/AISettings.kt`（数据与 Keystore 加密存储）、`core/network/DirectAI.kt`（prompt、schema、请求体、校验，与服务端 `app/lib/ios/*.js` 一致）、`ui/settings/APISettingsScreen.kt`。
 - Gemini：文字 `POST {base}/v1beta/models/{model}:generateContent`（Key 在 `x-goog-api-key` 头），实时语音 `wss://{base}/ws/…BidiGenerateContent?key=`。OpenAI：文字 `POST {base}/v1/chat/completions`，实时语音 `wss://{base}/v1/realtime?model=`（GA 接口；`OpenAI-Beta: realtime=v1` 已于 2026-05-12 下线），音频重采样为 24 kHz。
-- 东京中转可选：Base URL 填 `https://lingdailyapi-jp.yasobi.xyz`（Gemini）或 `https://lingdailyapi-jp.yasobi.xyz/openai`（OpenAI）。只接受 `https://`，`http://` 仅限本机和私有局域网（模拟器访问电脑可用 `http://10.0.2.2:端口`）。
-- 文字和语音各选一个供应商，选中的那家没配好时自动用另一家。登录后接口设置随 `/api/ios/sync` 加密同步；退出登录、删除账号或换账号时清除本机副本。
+- 默认走东京中转：接口地址留空时，Gemini 走 `https://lingdailyapi-jp.yasobi.xyz`，OpenAI 走 `https://lingdailyapi-jp.yasobi.xyz/openai`（`DirectAI.DEFAULT_GEMINI_BASE_URL/DEFAULT_OPENAI_BASE_URL`），因为国内手机网络连不上官方接口；用户填了自己的地址才用他的。只接受 `https://`，`http://` 仅限本机和私有局域网（模拟器访问电脑可用 `http://10.0.2.2:端口`）。
+- 顶部选的服务商同时用于文字和语音，不回退到另一家；模型预填目前最新的（`AIProviderKind.defaultTextModel/defaultLiveModel`），只填 Key 即可。改动点「保存」才生效（有提示），返回时有未保存的修改会先问。Gemini 3 文字请求带 `thinkingLevel: low`（快约 3 倍），GPT-5 及以后的模型不发 `temperature`。登录后接口设置随 `/api/ios/sync` 加密同步；退出登录、删除账号或换账号时清除本机副本。
 
 ## 签名与分发
 

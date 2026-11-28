@@ -1,61 +1,66 @@
 import SwiftUI
 
+/// BYOK provider configuration: the provider used for both text and voice, its API key, an
+/// optional base URL and the models (prefilled with the newest ones). Nothing applies until 保存.
 struct APISettingsView: View {
     @EnvironmentObject private var aiSettings: AISettingsStore
-    @Environment(\.practiceService) private var api
     @Environment(\.dismiss) private var dismiss
 
     @State private var draft = AISettings()
-    @State private var editingProvider: AIProviderKind = .gemini
     @State private var revealsKey = false
-    @State private var fetchedModels: [AIProviderKind: [String]] = [:]
-    @State private var fetchingModels = false
-    @State private var fetchError: String?
-    @State private var fetchTask: Task<Void, Never>?
     @State private var loaded = false
+    @State private var confirmsLeaving = false
+    @State private var savedMessage: String?
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
         case apiKey, baseURL, textModel, liveModel
     }
 
+    /// What 保存 stores: trimmed fields, default models in empty slots, one provider for text and voice.
+    private static func forSaving(_ settings: AISettings) -> AISettings {
+        var next = settings.sanitized().withDefaultModels()
+        next.voiceProvider = next.textProvider
+        return next
+    }
+
+    private var provider: AIProviderKind { draft.provider }
+
     private var currentConfig: AIProviderConfiguration {
-        draft.configuration(for: editingProvider)
+        draft.configuration(for: provider)
     }
 
-    private var availableModels: [String] {
-        fetchedModels[editingProvider] ?? []
+    private var isDirty: Bool {
+        loaded && !Self.forSaving(draft).hasSameContent(as: Self.forSaving(aiSettings.settings))
     }
 
-    private var sortedVoiceModels: [String] {
-        let keywords = ["live", "realtime", "audio"]
-        return availableModels.sorted { lhs, rhs in
-            let lMatch = keywords.contains { lhs.lowercased().contains($0) }
-            let rMatch = keywords.contains { rhs.lowercased().contains($0) }
-            if lMatch != rMatch { return lMatch }
-            return false
-        }
+    private var providerSelection: Binding<AIProviderKind> {
+        Binding(get: { draft.textProvider }, set: { chosen in
+            draft.textProvider = chosen
+            draft.voiceProvider = chosen
+            revealsKey = false
+        })
     }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             PageBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("配置服务商").font(.headline).foregroundColor(Brand.ink)
-                        Picker("配置服务商", selection: $editingProvider) {
+                        Text("使用的服务商").font(.headline).foregroundColor(Brand.ink)
+                        Picker("使用的服务商", selection: providerSelection) {
                             ForEach(AIProviderKind.allCases) { provider in
                                 Text(provider.title).tag(provider)
                             }
                         }
                         .pickerStyle(.segmented)
                         .accessibilityIdentifier("api-provider-Segment")
+                        Text("文字对话和语音通话都使用这里选中的服务商。")
+                            .font(.caption).foregroundColor(Brand.secondary)
                     }
 
                     providerConfigurationCard
-
-                    activeProvidersCard
 
                     Text("密钥仅加密保存在本机（登录账号后会加密同步到你的个人账号），对话直连你配置的模型接口。")
                         .font(.caption)
@@ -68,16 +73,25 @@ struct APISettingsView: View {
                 .padding(.bottom, 28)
                 .readableColumn()
             }
+            if let savedMessage {
+                Label(savedMessage, systemImage: "checkmark.circle.fill")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(Brand.onInk)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(Brand.ink))
+                    .padding(.top, 12)
+                    .padding(.horizontal, 20)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .accessibilityIdentifier("api-settings-saved")
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
-                Button("保存设置") {
-                    focusedField = nil
-                    saveIfChanged()
-                    dismiss()
-                }
-                .buttonStyle(SolidButtonStyle())
-                .accessibilityIdentifier("save-api-settings")
+                Button("保存") { save() }
+                    .buttonStyle(SolidButtonStyle())
+                    .disabled(savedMessage != nil)
+                    .accessibilityIdentifier("save-api-settings")
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
@@ -85,27 +99,21 @@ struct APISettingsView: View {
             .readableColumn()
             .background(Brand.page)
         }
-        .navigationBack(title: "接口设置", onReturn: saveIfChanged) {
+        .navigationBack(title: "接口设置", requiresConfirmation: isDirty) {
             focusedField = nil
-            saveIfChanged()
-            dismiss()
+            if isDirty { confirmsLeaving = true } else { dismiss() }
+        }
+        .alert("保存修改？", isPresented: $confirmsLeaving) {
+            Button("保存") { save() }
+            Button("不保存", role: .destructive) { dismiss() }
+            Button("继续编辑", role: .cancel) {}
+        } message: {
+            Text("接口设置有未保存的修改。")
         }
         .onAppear {
             guard !loaded else { return }
+            draft = Self.forSaving(aiSettings.settings)
             loaded = true
-            draft = aiSettings.settings
-            if !draft.gemini.hasAnyValue && draft.openai.hasAnyValue {
-                editingProvider = .openai
-            } else {
-                editingProvider = draft.textProvider
-            }
-        }
-        .onChange(of: editingProvider) { _ in
-            revealsKey = false
-            fetchError = nil
-        }
-        .onDisappear {
-            fetchTask?.cancel()
         }
     }
 
@@ -131,9 +139,9 @@ struct APISettingsView: View {
                 }
                 Group {
                     if revealsKey {
-                        TextField("粘贴 \(editingProvider.title) API Key", text: binding(\.apiKey, limit: 512))
+                        TextField("粘贴 \(provider.title) API Key", text: binding(\.apiKey, limit: 512))
                     } else {
-                        SecureField("粘贴 \(editingProvider.title) API Key", text: binding(\.apiKey, limit: 512))
+                        SecureField("粘贴 \(provider.title) API Key", text: binding(\.apiKey, limit: 512))
                     }
                 }
                 .textInputAutocapitalization(.never)
@@ -153,7 +161,7 @@ struct APISettingsView: View {
                             .font(.caption).foregroundColor(Brand.secondary)
                     }
                 }
-                TextField("留空使用官方地址，可填自定义反代", text: binding(\.baseURL, limit: 512))
+                TextField("留空走默认的东京中转，也可填自己的地址", text: binding(\.baseURL, limit: 512))
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .disableAutocorrection(true)
@@ -162,128 +170,43 @@ struct APISettingsView: View {
                     .accessibilityIdentifier("api-base-url-field")
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("文字模型").font(.subheadline.weight(.semibold)).foregroundColor(Brand.ink)
-                    Spacer()
-                    if !availableModels.isEmpty {
-                        modelPickerMenu(models: availableModels) { chosen in
-                            updateCurrent { $0.textModel = chosen }
-                        }
-                    }
-                }
-                TextField(editingProvider == .gemini ? "例：gemini-2.5-flash" : "例：gpt-4o-mini",
-                          text: binding(\.textModel, limit: 120))
-                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                    .focused($focusedField, equals: .textModel)
-                    .inputSurface()
-                    .accessibilityIdentifier("api-text-model-field")
-                Text("用于逐句练习、生成场景、单句翻译与复盘建议。")
-                    .font(.caption2).foregroundColor(Brand.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("实时语音模型").font(.subheadline.weight(.semibold)).foregroundColor(Brand.ink)
-                    Spacer()
-                    if !sortedVoiceModels.isEmpty {
-                        modelPickerMenu(models: sortedVoiceModels) { chosen in
-                            updateCurrent { $0.liveModel = chosen }
-                        }
-                    }
-                }
-                TextField(editingProvider == .gemini ? "例：gemini-2.5-flash-native-audio-latest" : "例：gpt-4o-realtime-preview",
-                          text: binding(\.liveModel, limit: 120))
-                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                    .focused($focusedField, equals: .liveModel)
-                    .inputSurface()
-                    .accessibilityIdentifier("api-live-model-field")
-                Text("用于双向实时语音通话（WebSocket 直连）。")
-                    .font(.caption2).foregroundColor(Brand.secondary)
-            }
-
             Brand.line.frame(height: 1)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Button(action: fetchModels) {
-                    HStack(spacing: 8) {
-                        if fetchingModels {
-                            ProgressView().scaleEffect(0.85)
-                        } else {
-                            Image(systemName: "arrow.down.circle")
-                        }
-                        Text(fetchingModels ? "正在拉取模型列表…" : "从接口拉取模型列表")
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundColor(Brand.ink)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .overlay(Capsule().stroke(Brand.line, lineWidth: 1.5))
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(currentConfig.trimmed.apiKey.isEmpty || fetchingModels)
-                .opacity(currentConfig.trimmed.apiKey.isEmpty ? 0.4 : 1)
-                .accessibilityIdentifier("fetch-models-button")
+            modelField(title: "文字模型", keyPath: \.textModel, defaultModel: provider.defaultTextModel,
+                       note: "用于文字练习、复盘、生成场景和翻译。", field: .textModel, identifier: "api-text-model-field")
 
-                if let fetchError {
-                    Text(fetchError).font(.caption).foregroundColor(Brand.accent).lineSpacing(2)
-                } else if !availableModels.isEmpty {
-                    Text("已获取 \(availableModels.count) 个模型，可点上方「从列表选择」快速填入，也可直接手动输入。")
-                        .font(.caption).foregroundColor(Brand.secondary).lineSpacing(2)
-                }
-            }
+            modelField(title: "实时语音模型", keyPath: \.liveModel, defaultModel: provider.defaultLiveModel,
+                       note: "用于语音通话。", field: .liveModel, identifier: "api-live-model-field")
         }
         .surfaceCard()
     }
 
-    private var activeProvidersCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("当前启用服务商").font(.headline).foregroundColor(Brand.ink)
-            VStack(alignment: .leading, spacing: 8) {
-                Text("文字对话服务商").font(.subheadline).foregroundColor(Brand.ink)
-                Picker("文字对话服务商", selection: $draft.textProvider) {
-                    ForEach(AIProviderKind.allCases) { provider in
-                        Text(provider.title).tag(provider)
-                    }
+    private func modelField(title: String, keyPath: WritableKeyPath<AIProviderConfiguration, String>, defaultModel: String,
+                            note: String, field: Field, identifier: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title).font(.subheadline.weight(.semibold)).foregroundColor(Brand.ink)
+                Spacer()
+                if currentConfig[keyPath: keyPath].trimmingCharacters(in: .whitespacesAndNewlines) != defaultModel {
+                    Button("恢复默认") { updateCurrent { $0[keyPath: keyPath] = defaultModel } }
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(Brand.accent)
                 }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("active-text-provider")
             }
-            Brand.line.frame(height: 1)
-            VStack(alignment: .leading, spacing: 8) {
-                Text("语音通话服务商").font(.subheadline).foregroundColor(Brand.ink)
-                Picker("语音通话服务商", selection: $draft.voiceProvider) {
-                    ForEach(AIProviderKind.allCases) { provider in
-                        Text(provider.title).tag(provider)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("active-voice-provider")
-            }
-        }
-        .surfaceCard()
-    }
-
-    private func modelPickerMenu(models: [String], onSelect: @escaping (String) -> Void) -> some View {
-        Menu {
-            ForEach(models, id: \.self) { modelID in
-                Button(modelID) { onSelect(modelID) }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Text("从列表选择")
-                Image(systemName: "chevron.up.chevron.down").font(.caption2)
-            }
-            .font(.caption.weight(.medium))
-            .foregroundColor(Brand.accent)
+            TextField(defaultModel, text: binding(keyPath, limit: 120))
+                .textInputAutocapitalization(.never)
+                .disableAutocorrection(true)
+                .focused($focusedField, equals: field)
+                .inputSurface()
+                .accessibilityIdentifier(identifier)
+            Text("\(note)默认 \(defaultModel)（目前最新），一般不用改。")
+                .font(.caption2).foregroundColor(Brand.secondary)
         }
     }
 
     private func binding(_ keyPath: WritableKeyPath<AIProviderConfiguration, String>, limit: Int) -> Binding<String> {
         Binding(
-            get: { draft.configuration(for: editingProvider)[keyPath: keyPath] },
+            get: { draft.configuration(for: provider)[keyPath: keyPath] },
             set: { newValue in
                 let clipped = String(newValue.prefix(limit))
                 updateCurrent { $0[keyPath: keyPath] = clipped }
@@ -292,50 +215,24 @@ struct APISettingsView: View {
     }
 
     private func updateCurrent(_ mutate: (inout AIProviderConfiguration) -> Void) {
-        var config = draft.configuration(for: editingProvider)
+        var config = draft.configuration(for: provider)
         mutate(&config)
-        draft.setConfiguration(config, for: editingProvider)
+        draft.setConfiguration(config, for: provider)
     }
 
-    private func fetchModels() {
-        let provider = editingProvider
-        let config = draft.configuration(for: provider).trimmed
-        guard !config.apiKey.isEmpty, !fetchingModels else { return }
+    private func save() {
         focusedField = nil
-        fetchingModels = true
-        fetchError = nil
-        fetchTask?.cancel()
-        fetchTask = Task {
-            defer { fetchingModels = false }
-            do {
-                let list = try await api.fetchAvailableModels(provider: provider, apiKey: config.apiKey, baseURL: config.baseURL)
-                guard !Task.isCancelled else { return }
-                fetchedModels[provider] = list
-            } catch is CancellationError {
-            } catch {
-                guard !Task.isCancelled else { return }
-                fetchError = error.localizedDescription
-            }
+        let next = Self.forSaving(draft)
+        if !next.hasSameContent(as: Self.forSaving(aiSettings.settings)) {
+            aiSettings.update(next)
         }
-    }
-
-    private func saveIfChanged() {
-        var next = draft.sanitized()
-        // If only one provider has a complete text/voice setup, align the active selector to it.
-        if !next.configuration(for: next.textProvider).hasTextConfiguration {
-            let other: AIProviderKind = next.textProvider == .gemini ? .openai : .gemini
-            if next.configuration(for: other).hasTextConfiguration {
-                next.textProvider = other
-            }
+        draft = next
+        withAnimation(.easeOut(duration: 0.2)) {
+            savedMessage = next.configuration(for: next.provider).apiKey.isEmpty
+                ? "已保存。填写 API Key 后才能使用 AI 功能"
+                : "已保存，文字对话和语音通话都使用 \(next.provider.title)"
         }
-        if !next.configuration(for: next.voiceProvider).hasVoiceConfiguration {
-            let other: AIProviderKind = next.voiceProvider == .gemini ? .openai : .gemini
-            if next.configuration(for: other).hasVoiceConfiguration {
-                next.voiceProvider = other
-            }
-        }
-        guard !next.hasSameContent(as: aiSettings.settings) else { return }
-        aiSettings.update(next)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { dismiss() }
     }
 }
 

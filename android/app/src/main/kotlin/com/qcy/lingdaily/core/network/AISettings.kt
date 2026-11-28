@@ -14,6 +14,10 @@ enum class AIProviderKind {
     val title: String get() = if (this == GEMINI) "Google Gemini" else "OpenAI"
     val shortTitle: String get() = if (this == GEMINI) "Gemini" else "OpenAI"
     val other: AIProviderKind get() = if (this == GEMINI) OPENAI else GEMINI
+
+    /** Prefilled newest models (checked end to end with the app's real requests on 2026-11-28). */
+    val defaultTextModel: String get() = if (this == GEMINI) "gemini-3.8-flash" else "gpt-6.2-sol"
+    val defaultLiveModel: String get() = if (this == GEMINI) "gemini-3.8-live" else "gpt-realtime-2.1"
 }
 
 @Serializable
@@ -27,11 +31,11 @@ data class AIProviderConfiguration(
         get() = apiKey.trim().isNotEmpty() || baseURL.trim().isNotEmpty()
             || textModel.trim().isNotEmpty() || liveModel.trim().isNotEmpty()
 
-    val isTextConfigured: Boolean
-        get() = apiKey.trim().isNotEmpty() && textModel.trim().isNotEmpty()
-
-    val isVoiceConfigured: Boolean
-        get() = apiKey.trim().isNotEmpty() && liveModel.trim().isNotEmpty()
+    /** Empty model fields become the provider's default models. */
+    fun withDefaultModels(provider: AIProviderKind): AIProviderConfiguration = copy(
+        textModel = textModel.ifBlank { provider.defaultTextModel },
+        liveModel = liveModel.ifBlank { provider.defaultLiveModel },
+    )
 
     fun sanitized(): AIProviderConfiguration = AIProviderConfiguration(
         apiKey = apiKey.trim().prefix(512),
@@ -68,25 +72,25 @@ data class AISettings(
     val hasAnyValue: Boolean
         get() = gemini.hasAnyValue || openai.hasAnyValue
 
-    val resolvedText: ResolvedProvider?
+    /** The provider chosen in 接口设置; text and voice both use it (`voiceProvider` mirrors it for sync). */
+    val provider: AIProviderKind get() = textProvider
+
+    /** Both providers with empty model fields filled with their defaults. */
+    fun withDefaultModels(): AISettings = copy(
+        gemini = gemini.withDefaultModels(AIProviderKind.GEMINI),
+        openai = openai.withDefaultModels(AIProviderKind.OPENAI),
+    )
+
+    /** The chosen provider once it has an API key; empty models fall back to its defaults. */
+    private val resolved: ResolvedProvider?
         get() {
-            val primary = configuration(textProvider)
-            if (primary.isTextConfigured) return ResolvedProvider(textProvider, primary.sanitized())
-            val fallbackKind = textProvider.other
-            val fallback = configuration(fallbackKind)
-            if (fallback.isTextConfigured) return ResolvedProvider(fallbackKind, fallback.sanitized())
-            return null
+            val config = configuration(provider).sanitized().withDefaultModels(provider)
+            return if (config.apiKey.isEmpty()) null else ResolvedProvider(provider, config)
         }
 
-    val resolvedVoice: ResolvedProvider?
-        get() {
-            val primary = configuration(voiceProvider)
-            if (primary.isVoiceConfigured) return ResolvedProvider(voiceProvider, primary.sanitized())
-            val fallbackKind = voiceProvider.other
-            val fallback = configuration(fallbackKind)
-            if (fallback.isVoiceConfigured) return ResolvedProvider(fallbackKind, fallback.sanitized())
-            return null
-        }
+    val resolvedText: ResolvedProvider? get() = resolved
+
+    val resolvedVoice: ResolvedProvider? get() = resolved
 
     val isAnyConfigured: Boolean
         get() = resolvedText != null || resolvedVoice != null

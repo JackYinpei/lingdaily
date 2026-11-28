@@ -21,7 +21,7 @@ export default function PrivacyPage() {
         <h2 id="app">iOS / Android App 数据处理</h2>
         <p>App 本身不提供 AI 模型服务，也不内置任何模型或 API Key。不填写接口时可以浏览内置场景、收听每日播客；文字练习、实时语音、复盘、新建场景、翻译和建议等 AI 功能，只有在你于「我的 → 接口设置」填入自己的 Google Gemini 或 OpenAI API Key 后才可使用。App 面向成年人（App Store 年龄分级 18+）。</p>
         <h2>你配置的模型接口</h2>
-        <p>填写接口后，练习文字、场景描述、目标、背景及相关上下文，以及实时语音时的麦克风音频，由你的设备直接发送到你填写的接口地址：默认是 Google 或 OpenAI 官方地址，也可以是你填写的其他地址（包括我们提供的东京中转）；不经过 LingDaily 的应用服务器。这些请求使用你自己的账号和额度，其处理和保留受相应服务商的条款约束（<a href="https://ai.google.dev/gemini-api/terms">Gemini API 条款</a>、<a href="https://policies.google.com/privacy">Google 隐私政策</a>、<a href="https://openai.com/policies/row-terms-of-use/">OpenAI 使用条款</a>、<a href="https://openai.com/policies/row-privacy-policy/">OpenAI 隐私政策</a>），我们不承诺第三方零留存。东京中转只转发请求，不记录请求内容、地址或密钥，数据可能因此跨境传输。请勿输入身份凭证、商业机密或其他敏感信息。</p>
+        <p>填写接口后，练习文字、场景描述、目标、背景及相关上下文，以及实时语音时的麦克风音频，由你的设备发送到你选择的服务商：接口地址留空时，经我们在东京的中转服务器转发到 Google 或 OpenAI；你填写了其他地址（官方地址或你自己的中转）时，直接发送到该地址。这些请求不经过 LingDaily 的应用服务器。这些请求使用你自己的账号和额度，其处理和保留受相应服务商的条款约束（<a href="https://ai.google.dev/gemini-api/terms">Gemini API 条款</a>、<a href="https://policies.google.com/privacy">Google 隐私政策</a>、<a href="https://openai.com/policies/row-terms-of-use/">OpenAI 使用条款</a>、<a href="https://openai.com/policies/row-privacy-policy/">OpenAI 隐私政策</a>），我们不承诺第三方零留存。东京中转只转发请求，不记录请求内容、地址或密钥，数据可能因此跨境传输。请勿输入身份凭证、商业机密或其他敏感信息。</p>
         <p>API Key、接口地址和模型名称加密保存在本设备（iOS Keychain、Android Keystore）。登录后会同步到你的账号：服务端用按账号派生的密钥加密后保存，只在你本人登录时返回，用于在你的其他设备上恢复设置。</p>
         <h2>账号与云端记录</h2>
         <p>账号是可选的，只用于云同步和删除账号。iOS 使用 Apple 登录，我们接收 Apple 提供的账号标识、已验证邮箱（可为隐藏邮箱）及你选择提供的姓名；Android 使用 LingDaily 账号的邮箱或手机号和密码（手机号不发送短信验证）。会话凭据加密保存在本设备。账号服务和练习数据使用 Supabase。</p>

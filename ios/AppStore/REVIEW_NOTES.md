@@ -1,5 +1,7 @@
 # App Review notes (2.0)
 
+These steps describe the settings page with the 保存 button and prefilled models (iOS 2.0 build 36 or later).
+
 Paste the English block into App Store Connect → App Review Information → Notes (limit 4000
 characters). Replace `<TEST KEY>` with a dedicated, quota-limited Gemini key before submitting,
 and revoke it after review. Never commit a real key here.
@@ -14,11 +16,9 @@ No sign-in is required.
 
 To test the AI features with the key we provide for App Review (limited quota):
 1. Open 我的 (Me) → 接口设置 (API settings).
-2. Select "Google Gemini". Paste the key into "API Key". Leave 接口地址 (base URL) empty to use Google's official endpoint.
-3. 文字模型 (text model): gemini-3.1-flash-lite
-   实时语音模型 (real-time voice model): gemini-3.1-flash-live-preview
-   (Or tap 从接口拉取模型列表 to choose from the list.)
-4. Tap 保存设置 (Save).
+2. Under 使用的服务商 (provider), keep "Google Gemini" selected.
+3. Paste the key below into "API Key". Leave 接口地址 (base URL) empty; the app then reaches Google through our relay server. The models are prefilled (text gemini-3.8-flash, real-time voice gemini-3.8-live); no change is needed.
+4. Tap 保存 (Save). A confirmation appears.
 5. Go to 练习, open any scenario (for example 航班取消了 "Flight cancelled") and tap 文字对话 (text chat) or 语音通话 (voice call). The voice call asks for microphone permission; then speak English with the role-play partner.
 
 Test Gemini API key: <TEST KEY>
@@ -39,9 +39,9 @@ LingDaily 2.0 是英语口语练习工具。App 不提供、也不托管任何 A
 
 用审核专用 Key（有额度限制）体验 AI 功能：
 1. 打开「我的 → 接口设置」。
-2. 选「Google Gemini」，把 Key 粘贴到「API Key」，接口地址留空（直连 Google 官方）。
-3. 文字模型：gemini-3.1-flash-lite；实时语音模型：gemini-3.1-flash-live-preview（也可点「从接口拉取模型列表」选择）。
-4. 点「保存设置」。
+2. 「使用的服务商」保持「Google Gemini」。
+3. 把 Key 粘贴到「API Key」，接口地址留空（经我们的中转服务器连接 Google）。模型已预填（文字 gemini-3.8-flash，实时语音 gemini-3.8-live），不用改。
+4. 点「保存」，会有保存成功的提示。
 5. 回到「练习」，打开任一场景（如「航班取消了」），点「文字对话」或「语音通话」。语音通话会请求麦克风权限，之后用英语和对方对话。
 
 审核用 Gemini Key：<TEST KEY>

@@ -5,6 +5,10 @@ enum AIProviderKind: String, Codable, CaseIterable, Identifiable {
     case gemini, openai
     var id: String { rawValue }
     var title: String { self == .gemini ? "Google Gemini" : "OpenAI" }
+
+    /// Prefilled newest models (checked end to end with the app's real requests on 2026-11-28).
+    var defaultTextModel: String { self == .gemini ? "gemini-3.8-flash" : "gpt-6.2-sol" }
+    var defaultLiveModel: String { self == .gemini ? "gemini-3.8-live" : "gpt-realtime-2.1" }
 }
 
 struct AIProviderConfiguration: Codable, Equatable {
@@ -46,14 +50,12 @@ struct AIProviderConfiguration: Codable, Equatable {
         return !clean.apiKey.isEmpty || !clean.baseURL.isEmpty || !clean.textModel.isEmpty || !clean.liveModel.isEmpty
     }
 
-    var hasTextConfiguration: Bool {
-        let clean = trimmed
-        return !clean.apiKey.isEmpty && !clean.textModel.isEmpty
-    }
-
-    var hasVoiceConfiguration: Bool {
-        let clean = trimmed
-        return !clean.apiKey.isEmpty && !clean.liveModel.isEmpty
+    /// Empty model fields become the provider's default models.
+    func withDefaultModels(for provider: AIProviderKind) -> AIProviderConfiguration {
+        var filled = self
+        if filled.textModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { filled.textModel = provider.defaultTextModel }
+        if filled.liveModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { filled.liveModel = provider.defaultLiveModel }
+        return filled
     }
 }
 
@@ -128,31 +130,26 @@ struct AISettings: Codable, Equatable {
         gemini.hasAnyValue || openai.hasAnyValue
     }
 
-    var resolvedText: (provider: AIProviderKind, config: AIProviderConfiguration)? {
-        let primary = configuration(for: textProvider).trimmed
-        if primary.hasTextConfiguration {
-            return (textProvider, primary)
-        }
-        let fallbackProvider: AIProviderKind = textProvider == .gemini ? .openai : .gemini
-        let fallback = configuration(for: fallbackProvider).trimmed
-        if fallback.hasTextConfiguration {
-            return (fallbackProvider, fallback)
-        }
-        return nil
+    /// The provider chosen in 接口设置; text and voice both use it (`voiceProvider` mirrors it for sync).
+    var provider: AIProviderKind { textProvider }
+
+    /// Both providers with empty model fields filled with their defaults.
+    func withDefaultModels() -> AISettings {
+        var filled = self
+        filled.gemini = gemini.withDefaultModels(for: .gemini)
+        filled.openai = openai.withDefaultModels(for: .openai)
+        return filled
     }
 
-    var resolvedVoice: (provider: AIProviderKind, config: AIProviderConfiguration)? {
-        let primary = configuration(for: voiceProvider).trimmed
-        if primary.hasVoiceConfiguration {
-            return (voiceProvider, primary)
-        }
-        let fallbackProvider: AIProviderKind = voiceProvider == .gemini ? .openai : .gemini
-        let fallback = configuration(for: fallbackProvider).trimmed
-        if fallback.hasVoiceConfiguration {
-            return (fallbackProvider, fallback)
-        }
-        return nil
+    /// The chosen provider once it has an API key; empty models fall back to its defaults.
+    private var resolved: (provider: AIProviderKind, config: AIProviderConfiguration)? {
+        let config = configuration(for: provider).trimmed.withDefaultModels(for: provider)
+        return config.apiKey.isEmpty ? nil : (provider, config)
     }
+
+    var resolvedText: (provider: AIProviderKind, config: AIProviderConfiguration)? { resolved }
+
+    var resolvedVoice: (provider: AIProviderKind, config: AIProviderConfiguration)? { resolved }
 
     var isAnyConfigured: Bool {
         resolvedText != nil || resolvedVoice != nil
@@ -217,8 +214,10 @@ enum AISettingsKeychain {
 
 /// Normalizes official and custom provider base URLs for HTTPS and WebSocket connections.
 enum AIEndpointNormalizer {
-    static let officialGeminiBase = "https://generativelanguage.googleapis.com"
-    static let officialOpenAIBase = "https://api.openai.com"
+    /// An empty base URL uses the project's Tokyo relay (phones in mainland China cannot reach the
+    /// official endpoints); a URL the learner enters, official or their own relay, replaces it.
+    static let defaultGeminiBase = "https://lingdailyapi-jp.yasobi.xyz"
+    static let defaultOpenAIBase = "https://lingdailyapi-jp.yasobi.xyz/openai"
 
     /// Strict query encoding: `URLComponents.queryItems` leaves `+` alone, which servers read as a space.
     private static func queryValue(_ raw: String) -> String? {
@@ -274,7 +273,7 @@ enum AIEndpointNormalizer {
     }
 
     static func cleanGeminiBaseURL(_ raw: String) throws -> String {
-        var components = try parseOriginAndPath(raw, defaultOrigin: officialGeminiBase)
+        var components = try parseOriginAndPath(raw, defaultOrigin: defaultGeminiBase)
         for suffix in ["/v1beta", "/v1alpha"] {
             if components.path.hasSuffix(suffix) {
                 components.path = String(components.path.dropLast(suffix.count))
@@ -328,7 +327,7 @@ enum AIEndpointNormalizer {
     }
 
     static func cleanOpenAIV1BaseURL(_ raw: String) throws -> String {
-        var components = try parseOriginAndPath(raw, defaultOrigin: officialOpenAIBase)
+        var components = try parseOriginAndPath(raw, defaultOrigin: defaultOpenAIBase)
         if components.path.hasSuffix("/chat/completions") {
             components.path = String(components.path.dropLast("/chat/completions".count))
         }

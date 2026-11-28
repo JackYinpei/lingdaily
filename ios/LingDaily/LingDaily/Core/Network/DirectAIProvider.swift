@@ -549,9 +549,21 @@ enum DirectAICodec {
         return string
     }
 
+    /// Reasoning models (o-series, GPT-5 and later) reject any temperature but the default.
     static func omitsOpenAITemperature(model: String) -> Bool {
         let lower = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return ["o1", "o3", "o4", "gpt-5"].contains { lower.hasPrefix($0) }
+        if lower.range(of: #"^o\d"#, options: .regularExpression) != nil { return true }
+        guard let match = lower.range(of: #"^gpt-(\d+)"#, options: .regularExpression),
+              let major = Int(lower[match].dropFirst(4)) else { return false }
+        return major >= 5
+    }
+
+    /// Gemini 2.5 can skip thinking; Gemini 3 cannot, but thinks far less (and answers 3x faster) at "low".
+    static func geminiThinkingConfig(model: String) -> [String: Any]? {
+        let lower = model.lowercased()
+        if lower.hasPrefix("gemini-2.5-") { return ["thinkingBudget": 0] }
+        if lower.hasPrefix("gemini-3") { return ["thinkingLevel": "low"] }
+        return nil
     }
 
     static func geminiGenerateRequest(baseURL: String, apiKey: String, model: String,
@@ -565,8 +577,8 @@ enum DirectAICodec {
             "temperature": temperature,
             "maxOutputTokens": maxOutputTokens,
         ]
-        if cleanModel.lowercased().hasPrefix("gemini-2.5-") {
-            generationConfig["thinkingConfig"] = ["thinkingBudget": 0]
+        if let thinking = geminiThinkingConfig(model: cleanModel) {
+            generationConfig["thinkingConfig"] = thinking
         }
         let body: [String: Any] = [
             "systemInstruction": ["parts": [["text": systemInstruction]]],

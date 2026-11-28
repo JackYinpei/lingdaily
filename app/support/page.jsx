@@ -19,9 +19,9 @@ export default function SupportPage() {
         <p>练习记录、生词和学习进度分别在<Link href="/history">历史</Link>、<Link href="/vocabulary">生词本</Link>和<Link href="/progress">学习进度</Link>查看。请等待保存完成后再关闭页面。如需账号或数据删除帮助，请通过上方邮箱联系我们；不要通过邮件发送密码。</p>
         <h2 id="app">iOS / Android App</h2>
         <h2>开始练习</h2>
-        <p>打开 App 即可浏览内置场景、收听每日播客，不需要登录。App 不内置 AI 模型：到「我的 → 接口设置」填入自己的 Google Gemini 或 OpenAI API Key，以及文字模型和实时语音模型（可点「获取模型列表」选择），保存后回到场景，在准备页选择「文字对话」或「语音通话」开始。拒绝麦克风权限后仍可打字练习。App 面向成年人，当前面向中文母语的英语场景练习。</p>
+        <p>打开 App 即可浏览内置场景、收听每日播客，不需要登录。App 不内置 AI 模型：到「我的 → 接口设置」选择 Google Gemini 或 OpenAI，填入自己的 API Key（文字模型和实时语音模型已预填目前最新的，一般不用改），点「保存」后回到场景，在准备页选择「文字对话」或「语音通话」开始。拒绝麦克风权限后仍可打字练习。App 面向成年人，当前面向中文母语的英语场景练习。</p>
         <h2>接口地址</h2>
-        <p>接口地址留空即直连 Google 或 OpenAI 官方。手机网络无法直连时，可填写能访问的中转地址，例如 Gemini 填 <code>https://lingdailyapi-jp.yasobi.xyz</code>，OpenAI 填 <code>https://lingdailyapi-jp.yasobi.xyz/openai</code>。提示 API Key 无效、找不到模型或额度不足时，请在对应服务商的控制台检查 Key、模型名称和余额。</p>
+        <p>接口地址留空时，请求经我们在东京的中转服务器转发到 Google 或 OpenAI，国内网络也能用。想直连官方或使用自己的中转，填写对应地址即可，例如 Google 官方填 <code>https://generativelanguage.googleapis.com</code>，OpenAI 官方填 <code>https://api.openai.com</code>。提示 API Key 无效、找不到模型或额度不足时，请在对应服务商的控制台检查 Key、模型名称和余额。</p>
         <h2>通话没有声音或断开</h2>
         <p>检查网络、系统音量和系统设置里 LingDaily 的麦克风权限，以及接口设置里的实时语音模型。结束通话后重新连接；iPhone 切到后台、来电或系统音频中断会结束当前连接，回来后需手动重连。静音只关闭你的麦克风，对方仍可说话。</p>
         <h2>记录与同步</h2>

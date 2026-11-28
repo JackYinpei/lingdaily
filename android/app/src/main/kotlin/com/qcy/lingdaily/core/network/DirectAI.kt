@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
@@ -39,8 +40,12 @@ import com.qcy.lingdaily.core.realtime.LiveTokenRequest
  * matching `app/lib/ios/practice.js`, `review.js`, `live.js` and `interests.js`.
  */
 object DirectAI {
-    const val DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com"
-    const val DEFAULT_OPENAI_BASE_URL = "https://api.openai.com"
+    /**
+     * An empty base URL uses the project's Tokyo relay (phones in mainland China cannot reach the
+     * official endpoints); a URL the learner enters, official or their own relay, replaces it.
+     */
+    const val DEFAULT_GEMINI_BASE_URL = "https://lingdailyapi-jp.yasobi.xyz"
+    const val DEFAULT_OPENAI_BASE_URL = "https://lingdailyapi-jp.yasobi.xyz/openai"
 
     // ---- Endpoint normalization ----
 
@@ -153,9 +158,21 @@ object DirectAI {
 
     // ---- Provider wire codecs ----
 
+    /** Reasoning models (o-series, GPT-5 and later) reject any temperature but the default. */
     fun isReasoningOpenAIModel(model: String): Boolean {
         val lower = model.trim().lowercase()
-        return lower.startsWith("o1") || lower.startsWith("o3") || lower.startsWith("o4") || lower.startsWith("gpt-5")
+        if (Regex("^o\\d").containsMatchIn(lower)) return true
+        val major = Regex("^gpt-(\\d+)").find(lower)?.groupValues?.get(1)?.toIntOrNull() ?: return false
+        return major >= 5
+    }
+
+    /** Gemini 2.5 can skip thinking; Gemini 3 cannot, but thinks far less (and answers 3x faster) at "low". */
+    private fun JsonObjectBuilder.putGeminiThinking(cleanModel: String) {
+        val lower = cleanModel.lowercase()
+        when {
+            lower.startsWith("gemini-2.5-") -> putJsonObject("thinkingConfig") { put("thinkingBudget", 0) }
+            lower.startsWith("gemini-3") -> putJsonObject("thinkingConfig") { put("thinkingLevel", "low") }
+        }
     }
 
     fun stripJsonFences(raw: String): String {
@@ -195,9 +212,7 @@ object DirectAI {
                 put("responseSchema", responseSchema)
                 put("temperature", temperature)
                 put("maxOutputTokens", maxOutputTokens)
-                if (cleanModel.lowercase().startsWith("gemini-2.5-")) {
-                    putJsonObject("thinkingConfig") { put("thinkingBudget", 0) }
-                }
+                putGeminiThinking(cleanModel)
             }
         }.toString()
     }
@@ -226,9 +241,7 @@ object DirectAI {
                 put("responseSchema", TRANSCRIPT_SCHEMA)
                 put("temperature", 0.0)
                 put("maxOutputTokens", 1200)
-                if (cleanModel.lowercase().startsWith("gemini-2.5-")) {
-                    putJsonObject("thinkingConfig") { put("thinkingBudget", 0) }
-                }
+                putGeminiThinking(cleanModel)
             }
         }.toString()
     }

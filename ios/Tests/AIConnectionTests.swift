@@ -41,14 +41,14 @@ final class AIConnectionTests: XCTestCase {
     }
 
     func testNormalizesOfficialAndProxyBaseURLsAndBlocksPublicCleartext() throws {
-        XCTAssertEqual(try AIEndpointNormalizer.cleanGeminiBaseURL(""), "https://generativelanguage.googleapis.com")
+        XCTAssertEqual(try AIEndpointNormalizer.cleanGeminiBaseURL(""), "https://lingdailyapi-jp.yasobi.xyz", "Empty means the Tokyo relay")
         XCTAssertEqual(try AIEndpointNormalizer.cleanGeminiBaseURL("my-proxy.example.com/v1beta/"), "https://my-proxy.example.com")
         XCTAssertEqual(try AIEndpointNormalizer.cleanGeminiBaseURL("https://my-proxy.example.com/custom/v1alpha"), "https://my-proxy.example.com/custom")
         XCTAssertEqual(try AIEndpointNormalizer.cleanGeminiBaseURL("http://192.168.1.20:8080/"), "http://192.168.1.20:8080")
         XCTAssertEqual(try AIEndpointNormalizer.geminiGenerateContentURL(baseURL: "my-proxy.example.com/v1beta/", model: "models/gemini-2.5-flash").absoluteString,
                        "https://my-proxy.example.com/v1beta/models/gemini-2.5-flash:generateContent")
 
-        XCTAssertEqual(try AIEndpointNormalizer.cleanOpenAIV1BaseURL(""), "https://api.openai.com/v1")
+        XCTAssertEqual(try AIEndpointNormalizer.cleanOpenAIV1BaseURL(""), "https://lingdailyapi-jp.yasobi.xyz/openai/v1", "Empty means the Tokyo relay")
         XCTAssertEqual(try AIEndpointNormalizer.cleanOpenAIV1BaseURL("https://api.openai.com/v1/"), "https://api.openai.com/v1")
         XCTAssertEqual(try AIEndpointNormalizer.cleanOpenAIV1BaseURL("proxy.example.com/openai"), "https://proxy.example.com/openai/v1")
         XCTAssertEqual(try AIEndpointNormalizer.cleanOpenAIV1BaseURL("https://proxy.example.com/openai/v1/chat/completions"),
@@ -63,9 +63,10 @@ final class AIConnectionTests: XCTestCase {
         }
     }
 
-    func testNothingIsSentWithoutAKeyAndModel() async {
+    func testNothingIsSentWithoutAKeyForTheChosenProvider() async {
         let recorder = Recorder()
-        let unconfigured = AISettings(gemini: .init(apiKey: "key-only"), openai: .init(textModel: "gpt-4o-mini"))
+        // Text and voice follow the provider chosen in 接口设置; a key for the other one is not used.
+        let unconfigured = AISettings(textProvider: .gemini, voiceProvider: .openai, openai: .init(apiKey: "sk-other"))
         XCTAssertNil(unconfigured.resolvedText)
         XCTAssertNil(unconfigured.resolvedVoice)
         let api = PracticeAPIClient(accountSession: { nil }, aiSettings: { unconfigured }, aiTransport: { request in
@@ -106,10 +107,13 @@ final class AIConnectionTests: XCTestCase {
         XCTAssertEqual((config["thinkingConfig"] as? [String: Any])?["thinkingBudget"] as? Int, 0)
     }
 
-    func testFallsBackToTheOtherProviderAndOmitsTemperatureForReasoningModels() async throws {
+    func testAKeyAloneUsesTheNewestModelsAndTheirRequestRules() async throws {
         let recorder = Recorder()
-        let settings = AISettings(textProvider: .gemini, openai: .init(apiKey: "sk-test", textModel: "gpt-5-mini"))
-        XCTAssertEqual(settings.resolvedText?.provider, .openai)
+        let settings = AISettings(textProvider: .openai, voiceProvider: .openai, openai: .init(apiKey: "sk-test"))
+        XCTAssertEqual(settings.resolvedText?.config.textModel, "gpt-6.2-sol")
+        XCTAssertEqual(settings.resolvedVoice?.config.liveModel, "gpt-realtime-2.1")
+        XCTAssertEqual(settings.withDefaultModels().gemini.textModel, "gemini-3.8-flash")
+        XCTAssertEqual(settings.withDefaultModels().gemini.liveModel, "gemini-3.8-live")
         let api = PracticeAPIClient(accountSession: { nil }, aiSettings: { settings }, aiTransport: { [self] request in
             recorder.record(request)
             return try reply(["choices": [["finish_reason": "stop", "message": ["content": "{\"translation\":\"早上好。\"}"]]]], for: request)
@@ -117,16 +121,27 @@ final class AIConnectionTests: XCTestCase {
         let translation = try await api.translate("Good morning")
         XCTAssertEqual(translation, "早上好。")
         let request = try XCTUnwrap(recorder.requests.first)
-        XCTAssertEqual(request.url?.absoluteString, "https://api.openai.com/v1/chat/completions")
+        XCTAssertEqual(request.url?.absoluteString, "https://lingdailyapi-jp.yasobi.xyz/openai/v1/chat/completions")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer sk-test")
         let sent = try body(request)
-        XCTAssertEqual(sent["model"] as? String, "gpt-5-mini")
-        XCTAssertNil(sent["temperature"], "Reasoning models reject a custom temperature")
+        XCTAssertEqual(sent["model"] as? String, "gpt-6.2-sol")
+        XCTAssertNil(sent["temperature"], "GPT-5 and later reject a custom temperature")
         XCTAssertEqual((sent["response_format"] as? [String: Any])?["type"] as? String, "json_object")
 
+        for model in ["o1-mini", "o3-mini", "gpt-5-mini", "GPT-6.2-sol", "gpt-6-luna", "gpt-10"] {
+            XCTAssertTrue(DirectAICodec.omitsOpenAITemperature(model: model), model)
+        }
+        for model in ["gpt-4o-mini", "gpt-4.1-mini", "deepseek-chat"] {
+            XCTAssertFalse(DirectAICodec.omitsOpenAITemperature(model: model), model)
+        }
         let standard = try body(DirectAICodec.openAIChatRequest(baseURL: "", apiKey: "k", model: "gpt-4o-mini", systemInstruction: "s",
                                                                 schema: DirectAIPrompts.translationResponseSchema, payloadJSON: "{}", temperature: 0.4))
         XCTAssertEqual(standard["temperature"] as? Double, 0.4)
+
+        // Gemini 3 cannot skip thinking, but answers about 3x faster at "low" ("minimal" is rejected).
+        XCTAssertEqual(DirectAICodec.geminiThinkingConfig(model: "gemini-3.8-flash")?["thinkingLevel"] as? String, "low")
+        XCTAssertEqual(DirectAICodec.geminiThinkingConfig(model: "gemini-2.5-flash")?["thinkingBudget"] as? Int, 0)
+        XCTAssertNil(DirectAICodec.geminiThinkingConfig(model: "gemini-2.0-flash"))
     }
 
     func testHTTPErrorsBecomeReadableMessagesWithoutRetrying() async {
@@ -163,7 +178,7 @@ final class AIConnectionTests: XCTestCase {
         let session = PracticeSession(scenario: scenario(), useAI: true)
         let official = try LiveConnectionSpec.make(provider: .gemini, config: .init(apiKey: "AIza-k", liveModel: "models/gemini-live-test"), session: session)
         XCTAssertEqual(official.wsURL.absoluteString,
-                       "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=AIza-k")
+                       "wss://lingdailyapi-jp.yasobi.xyz/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=AIza-k")
         XCTAssertTrue(official.headers.isEmpty)
         let setup = try XCTUnwrap(try json(official.setupMessage)["setup"] as? [String: Any])
         XCTAssertEqual(setup["model"] as? String, "models/gemini-live-test")
@@ -179,8 +194,9 @@ final class AIConnectionTests: XCTestCase {
         let session = PracticeSession(scenario: scenario(), useAI: true)
         let spec = try LiveConnectionSpec.make(provider: .openai, config: .init(apiKey: "sk-live", liveModel: "gpt-realtime"),
                                                session: session, pauseMs: LivePause.standard)
-        XCTAssertEqual(spec.wsURL.absoluteString, "wss://api.openai.com/v1/realtime?model=gpt-realtime")
+        XCTAssertEqual(spec.wsURL.absoluteString, "wss://lingdailyapi-jp.yasobi.xyz/openai/v1/realtime?model=gpt-realtime")
         XCTAssertEqual(spec.headers, ["Authorization": "Bearer sk-live"], "The beta OpenAI-Beta header was shut down on 2026-05-12")
+        XCTAssertTrue(spec.setupMessage.contains(#""threshold":0.6"#), "OpenAI rejects 0.59999999999999998 (more than 16 decimals)")
 
         let update = try json(spec.setupMessage)
         XCTAssertEqual(update["type"] as? String, "session.update")

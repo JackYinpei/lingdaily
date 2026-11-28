@@ -403,7 +403,8 @@ enum LiveCodec {
                         "transcription": ["model": openAITranscriptionModel],
                         "turn_detection": [
                             "type": "server_vad",
-                            "threshold": 0.6,
+                            // A Double 0.6 serialises as 0.59999999999999998, which OpenAI rejects (max 16 decimals).
+                            "threshold": NSDecimalNumber(string: "0.6"),
                             "prefix_padding_ms": 300,
                             "silence_duration_ms": validPause,
                             "create_response": true,

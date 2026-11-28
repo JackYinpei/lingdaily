@@ -25,13 +25,10 @@ struct SettingsView: View {
     }
 
     private var apiSummary: String {
-        let current = aiSettings.settings
-        guard current.isAnyConfigured else {
-            return "未配置 · 点击填入 API Key 与模型"
+        guard let resolved = aiSettings.settings.resolvedText else {
+            return "未配置 · 点击填入 API Key"
         }
-        let textPart = current.resolvedText.map { "\($0.provider.title) (\($0.config.textModel))" } ?? "未配置"
-        let voicePart = current.resolvedVoice.map { "\($0.provider.title) (\($0.config.liveModel))" } ?? "未配置"
-        return "文字：\(textPart)\n语音：\(voicePart)"
+        return "\(resolved.provider.title)\n文字 \(resolved.config.textModel) · 语音 \(resolved.config.liveModel)"
     }
 
     var body: some View {

@@ -15,6 +15,7 @@ import org.junit.Test
 import com.qcy.lingdaily.core.model.AIPracticeAction
 import com.qcy.lingdaily.core.model.SentenceReviewRequest
 import com.qcy.lingdaily.core.model.parseScenarioCatalog
+import com.qcy.lingdaily.core.network.AIProviderKind
 import com.qcy.lingdaily.core.network.DirectAI
 import com.qcy.lingdaily.core.network.PracticeNetworkException
 
@@ -22,8 +23,8 @@ class DirectAITest {
 
     @Test
     fun normalizesGeminiAndOpenAIBaseURLsAndBlocksPublicCleartext() {
-        assertEquals("https://generativelanguage.googleapis.com", DirectAI.normalizeGeminiBaseURL(""))
-        assertEquals("https://generativelanguage.googleapis.com", DirectAI.normalizeGeminiBaseURL("   "))
+        assertEquals("Empty means the Tokyo relay", "https://lingdailyapi-jp.yasobi.xyz", DirectAI.normalizeGeminiBaseURL(""))
+        assertEquals("https://generativelanguage.googleapis.com", DirectAI.normalizeGeminiBaseURL("https://generativelanguage.googleapis.com/"))
         assertEquals("https://my-gemini-proxy.example.com", DirectAI.normalizeGeminiBaseURL("my-gemini-proxy.example.com/v1beta/"))
         assertEquals("https://my-gemini-proxy.example.com/custom", DirectAI.normalizeGeminiBaseURL("https://my-gemini-proxy.example.com/custom/v1alpha"))
         assertEquals("http://localhost:8787", DirectAI.normalizeGeminiBaseURL("http://localhost:8787/v1beta/"))
@@ -34,7 +35,7 @@ class DirectAITest {
             DirectAI.geminiGenerateContentURL("my-gemini-proxy.example.com/v1beta/", "models/gemini-2.5-flash"),
         )
 
-        assertEquals("https://api.openai.com/v1", DirectAI.normalizeOpenAIV1BaseURL(""))
+        assertEquals("Empty means the Tokyo relay", "https://lingdailyapi-jp.yasobi.xyz/openai/v1", DirectAI.normalizeOpenAIV1BaseURL(""))
         assertEquals("https://api.openai.com/v1", DirectAI.normalizeOpenAIV1BaseURL("https://api.openai.com/"))
         assertEquals("https://api.openai.com/v1", DirectAI.normalizeOpenAIV1BaseURL("https://api.openai.com/v1/"))
         assertEquals("https://proxy.example.com/openai/v1", DirectAI.normalizeOpenAIV1BaseURL("proxy.example.com/openai"))
@@ -79,6 +80,19 @@ class DirectAITest {
         ).jsonObject
         assertFalse("thinkingConfig" in geminiOtherBody.getValue("generationConfig").jsonObject)
 
+        // Gemini 3 cannot skip thinking, but answers about 3x faster at "low" ("minimal" is rejected).
+        val gemini3Body = Json.parseToJsonElement(
+            DirectAI.buildGeminiGenerateContentBody(
+                model = AIProviderKind.GEMINI.defaultTextModel,
+                systemInstruction = DirectAI.TRANSLATION_INSTRUCTION,
+                userPayloadJson = """{"line":"Hello"}""",
+                responseSchema = DirectAI.TRANSLATION_RESPONSE_SCHEMA,
+                temperature = 0.2,
+                maxOutputTokens = 1200,
+            ),
+        ).jsonObject
+        assertEquals("low", gemini3Body.getValue("generationConfig").jsonObject.getValue("thinkingConfig").jsonObject.getValue("thinkingLevel").jsonPrimitive.content)
+
         val geminiRawResponse = """
             {
               "candidates": [{
@@ -101,7 +115,7 @@ class DirectAITest {
         assertTrue("temperature" in openAIStandard)
         assertEquals("json_object", openAIStandard.getValue("response_format").jsonObject.getValue("type").jsonPrimitive.content)
 
-        for (reasoningModel in listOf("o1-mini", "o3-mini", "o4-mini", "gpt-5", "GPT-5-mini")) {
+        for (reasoningModel in listOf("o1-mini", "o3-mini", "o4-mini", "gpt-5", "GPT-5-mini", AIProviderKind.OPENAI.defaultTextModel, "gpt-6-luna", "gpt-10")) {
             val body = Json.parseToJsonElement(
                 DirectAI.buildOpenAIChatCompletionBody(reasoningModel, "sys", DirectAI.TRANSLATION_JSON_CONTRACT, """{"line":"Hi"}""", 0.4),
             ).jsonObject

@@ -213,9 +213,15 @@ class LiveCoreTest {
             pauseMs = 1500,
         )
         assertEquals(
-            "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key%2B1%2F2",
+            "wss://lingdailyapi-jp.yasobi.xyz/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key%2B1%2F2",
             gemini.webSocketURL(),
         )
+        assertEquals("An empty base URL goes through the Tokyo relay",
+            "wss://lingdailyapi-jp.yasobi.xyz/openai/v1/realtime?model=gpt-realtime-2.1",
+            gemini.copy(provider = AIProviderKind.OPENAI, model = "gpt-realtime-2.1").webSocketURL())
+        assertEquals("A URL the learner enters replaces the relay",
+            "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key%2B1%2F2",
+            gemini.copy(baseURL = "https://generativelanguage.googleapis.com").webSocketURL())
 
         val openai = gemini.copy(
             provider = AIProviderKind.OPENAI,

@@ -96,10 +96,8 @@ private fun <T> MenuPicker(label: String, options: List<Pair<T, String>>, onSele
 }
 
 private fun apiSummary(aiSettings: AISettings): String {
-    val text = aiSettings.resolvedText?.let { "${it.provider.shortTitle} (${it.textModel})" }
-    val voice = aiSettings.resolvedVoice?.let { "${it.provider.shortTitle} (${it.liveModel})" }
-    if (text == null && voice == null) return "未配置 · 填入 Gemini 或 OpenAI 密钥与模型即可对话"
-    return "文字：${text ?: "未配置"} · 语音：${voice ?: "未配置"}"
+    val resolved = aiSettings.resolvedText ?: return "未配置 · 填入 Gemini 或 OpenAI 的 API Key 即可对话"
+    return "${resolved.provider.title} · 文字 ${resolved.textModel} · 语音 ${resolved.liveModel}"
 }
 
 /** 我的: API settings, optional account sync, appearance, practice choices, reminders and links. */

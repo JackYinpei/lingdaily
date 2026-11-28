@@ -272,47 +272,33 @@ class CloudSyncTest {
     }
 
     @Test
-    fun aiSettingsResolutionFollowsSelectedProviderWithFallbackAndEmptyFreshInstall() {
+    fun aiSettingsUseOnlyTheChosenProviderAndDefaultModels() {
         val fresh = AISettings()
         assertEquals("", fresh.gemini.apiKey)
-        assertEquals("", fresh.gemini.baseURL)
-        assertEquals("", fresh.gemini.textModel)
-        assertEquals("", fresh.gemini.liveModel)
         assertEquals("", fresh.openai.apiKey)
-        assertEquals("", fresh.openai.baseURL)
-        assertEquals("", fresh.openai.textModel)
-        assertEquals("", fresh.openai.liveModel)
         assertFalse(fresh.hasAnyValue)
         assertFalse(fresh.isAnyConfigured)
         assertNull(fresh.resolvedText)
         assertNull(fresh.resolvedVoice)
 
-        val openaiOnly = AISettings(
-            updatedAt = base,
-            textProvider = AIProviderKind.GEMINI,
-            voiceProvider = AIProviderKind.GEMINI,
-            openai = AIProviderConfiguration(
-                apiKey = " sk-test ",
-                baseURL = " https://api.openai.com ",
-                textModel = " gpt-4o-mini ",
-                liveModel = " gpt-4o-realtime-preview ",
-            ),
-        )
-        assertTrue(openaiOnly.hasAnyValue)
-        assertTrue(openaiOnly.isAnyConfigured)
-        assertEquals(AIProviderKind.OPENAI, openaiOnly.resolvedText?.provider)
-        assertEquals("gpt-4o-mini", openaiOnly.resolvedText?.textModel)
-        assertEquals(AIProviderKind.OPENAI, openaiOnly.resolvedVoice?.provider)
-        assertEquals("gpt-4o-realtime-preview", openaiOnly.resolvedVoice?.liveModel)
+        // A key alone is enough: the newest models fill empty model fields.
+        val keyOnly = AISettings(updatedAt = base, textProvider = AIProviderKind.OPENAI, voiceProvider = AIProviderKind.OPENAI,
+            openai = AIProviderConfiguration(apiKey = " sk-test "))
+        assertTrue(keyOnly.isAnyConfigured)
+        assertEquals("sk-test", keyOnly.resolvedText?.apiKey)
+        assertEquals(AIProviderKind.OPENAI.defaultTextModel, keyOnly.resolvedText?.textModel)
+        assertEquals(AIProviderKind.OPENAI.defaultLiveModel, keyOnly.resolvedVoice?.liveModel)
+        assertEquals("gemini-3.8-live", keyOnly.withDefaultModels().gemini.liveModel)
 
-        val split = openaiOnly.copy(
-            textProvider = AIProviderKind.GEMINI,
-            voiceProvider = AIProviderKind.OPENAI,
-            gemini = AIProviderConfiguration(apiKey = "AIza-test", textModel = "gemini-2.5-flash"),
-        )
-        assertEquals(AIProviderKind.GEMINI, split.resolvedText?.provider)
-        assertEquals("gemini-2.5-flash", split.resolvedText?.textModel)
-        assertEquals(AIProviderKind.OPENAI, split.resolvedVoice?.provider)
+        // Text and voice both follow the provider chosen in 接口设置, with no fallback to the other one.
+        val otherProviderOnly = keyOnly.copy(textProvider = AIProviderKind.GEMINI, voiceProvider = AIProviderKind.OPENAI)
+        assertNull(otherProviderOnly.resolvedText)
+        assertNull(otherProviderOnly.resolvedVoice)
+        assertFalse(otherProviderOnly.isAnyConfigured)
+
+        val custom = keyOnly.copy(openai = AIProviderConfiguration(apiKey = "sk-test", textModel = " gpt-4o-mini ", liveModel = "gpt-realtime-mini"))
+        assertEquals("gpt-4o-mini", custom.resolvedText?.textModel)
+        assertEquals("gpt-realtime-mini", custom.resolvedVoice?.liveModel)
     }
 
     @Test

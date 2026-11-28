@@ -9,9 +9,9 @@ App Store 版本 **2.0（构建 35）已于 2026-11-26 上传，尚待在 App St
 ## BYOK：接口设置
 
 - **不填 Key 能用的**：全部 25 个内置场景（打包在 `LingDaily/Resources/ScenarioCatalog.json`，联网时从公开的 `GET /api/ios/scenarios` 刷新）、播客 Tab（公开的 `GET /api/ios/podcasts`）、学习记录与词库、提醒。需要模型的入口（开始练习、语音通话、新建场景、聊聊这期播客、复盘）在未配置时引导去「接口设置」。
-- **接口设置**（`Features/Settings/APISettingsView.swift`）：Gemini 与 OpenAI 各一套 API Key、Base URL（留空=官方）、文字模型、实时语音模型；可「获取模型列表」（`/v1beta/models`、`/v1/models`）或手动输入。文字和语音各选一个供应商，选中的没配好时自动用另一家。
+- **接口设置**（`Features/Settings/APISettingsView.swift`）：顶部选「使用的服务商」（Gemini 或 OpenAI），文字对话和语音通话都用它，不再分开选、也不回退到另一家；下面是该服务商的 API Key、Base URL（留空=默认走东京中转，用户填了自己的地址才用他的）、文字模型、实时语音模型。模型预填目前最新的（Gemini `gemini-3.8-flash` / `gemini-3.8-live`，OpenAI `gpt-6.2-sol` / `gpt-realtime-2.1`，在 `AIProviderKind.defaultTextModel/defaultLiveModel`），所以只填 Key 就能用。改动点「保存」才生效，返回时有未保存的修改会先问。
 - **请求去向**：Gemini 文字 `POST {base}/v1beta/models/{model}:generateContent`（Key 放 `x-goog-api-key` 头），Gemini Live `wss://{base}/ws/…BidiGenerateContent?key=`；OpenAI 文字 `POST {base}/v1/chat/completions`，实时语音 `wss://{base}/v1/realtime?model=`（GA 接口，`Authorization: Bearer`；旧的 `OpenAI-Beta: realtime=v1` 已于 2026-05-12 被 OpenAI 下线）。prompt、schema 和校验与服务端 `app/lib/ios/*.js` 一致（`Core/Network/DirectAIProvider.swift`）。
-- **东京中转**（可选）：Base URL 填 `https://lingdailyapi-jp.yasobi.xyz`（Gemini）或 `https://lingdailyapi-jp.yasobi.xyz/openai`（OpenAI），配置见 `nginx/gemini-proxy.conf`。App 里不写死任何中转域名。只接受 `https://`；`http://` 仅限本机和私有局域网地址。
+- **东京中转（默认）**：接口地址留空时，Gemini 走 `https://lingdailyapi-jp.yasobi.xyz`，OpenAI 走 `https://lingdailyapi-jp.yasobi.xyz/openai`（`AIEndpointNormalizer.defaultGeminiBase/defaultOpenAIBase`），因为国内手机网络连不上官方接口；用户填了自己的地址（官方或自己的中转）才用他的。中转配置见 `nginx/gemini-proxy.conf`。只接受 `https://`；`http://` 仅限本机和私有局域网地址。
 - **存储**：本机 Keychain（`ThisDeviceOnly`）。登录后经 `/api/ios/sync` 同步到账号，服务端用按用户派生的密钥 AES-256-GCM 加密存入 `user_ai_settings`。退出登录、删除账号或换账号登录会清掉本机的接口设置。
 - 文字模式的听写与朗读仍用系统的设备端语音识别和 TTS，不消耗接口额度。
 
@@ -21,7 +21,7 @@ App Store 版本 **2.0（构建 35）已于 2026-11-26 上传，尚待在 App St
 open ios/LingDaily/LingDaily.xcodeproj
 ```
 
-选择 iPhone 或模拟器，按 `⌘R`。首页直接能看场景、播客 Tab 直接能听；到「我的 → 接口设置」填一家的 Key 和模型（例如 Gemini 文字 `gemini-2.5-flash`、语音用 `获取模型列表` 里带 `live`/`native-audio` 的；OpenAI 文字 `gpt-4o-mini`、语音 `gpt-realtime`），保存后回到场景即可开始。手机网络需要能访问所填的接口地址。
+选择 iPhone 或模拟器，按 `⌘R`。首页直接能看场景、播客 Tab 直接能听；到「我的 → 接口设置」选服务商、粘贴 Key（模型已预填），点「保存」后回到场景即可开始。手机网络需要能访问所填的接口地址。
 
 登录（可选）：「我的」点「通过 Apple 登录」→ `POST /api/ios/auth/apple` 校验后返回 60 天 iOS 会话，存入 Keychain；会话失效时接口返回 401，App 自动退出登录。
 
